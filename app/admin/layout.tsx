@@ -1,0 +1,2 @@
+import { AdminSidebar } from '@/components/AdminSidebar'; import { AdminTopBar } from '@/components/AdminTopBar'; import { RoleGate } from '@/components/RoleGate';
+export default function AdminLayout({children}:{children:React.ReactNode}){return <RoleGate role="admin"><div className="min-h-screen flex bg-page-bg"><AdminSidebar/><div className="portal-main flex-1 min-w-0"><AdminTopBar/><main id="main-content">{children}</main></div></div></RoleGate>}

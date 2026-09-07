@@ -1,0 +1,5 @@
+'use client';
+import { Search, CircleHelp } from 'lucide-react';
+import { usePortal } from './PortalProvider';
+import { useRouter } from 'next/navigation';
+export function TopBar({title='Barangay San Jose Staff Panel'}:{title?:string}) { const {user}=usePortal();const router=useRouter();return <header className="portal-topbar bg-white border-b border-slate-300 px-5 flex flex-wrap gap-3 items-center justify-between py-3"><p className="text-lg font-bold text-brand-ink">{title}</p><div className="flex items-center gap-4 text-slate-600"><form className="hidden lg:flex items-center border border-slate-300 px-3 py-2 w-[185px]" onSubmit={e=>{e.preventDefault();const q=new FormData(e.currentTarget).get('q');router.push('/'+user?.role+'/'+(user?.role==='admin'?'transactions':'applications')+'?q='+encodeURIComponent(String(q||'')));}}><Search size={15}/><input aria-label="Search applications" name="q" className="ml-2 outline-none w-full text-xs" placeholder="Search..."/></form><span className="text-xs">{user?.firstName} {user?.lastName}</span><a aria-label="Service information" href="/information"><CircleHelp size={18}/></a></div></header>}

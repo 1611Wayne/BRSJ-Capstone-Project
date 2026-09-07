@@ -1,0 +1,1 @@
+import { ApplicationsList } from '@/components/ApplicationsList';export default function Page(){return <ApplicationsList role="staff" assessment/>}

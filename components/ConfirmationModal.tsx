@@ -1,0 +1,2 @@
+import { Modal } from './Modal';
+export function ConfirmationModal({title,children,onClose,onConfirm}:{title:string;children:React.ReactNode;onClose:()=>void;onConfirm:()=>void}){return <Modal title={title} onClose={onClose}><div className="text-sm mt-4">{children}</div><div className="flex justify-end gap-2 mt-6"><button className="secondary-btn" onClick={onClose}>Cancel</button><button className="primary-btn" onClick={onConfirm}>Confirm</button></div></Modal>}

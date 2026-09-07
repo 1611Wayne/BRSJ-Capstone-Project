@@ -1,0 +1,1 @@
+import { Sidebar } from './Sidebar'; export function StaffSidebar(){return <Sidebar role="staff"/>}

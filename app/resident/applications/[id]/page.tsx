@@ -1,0 +1,1 @@
+import { ApplicationDetail } from '@/components/ApplicationDetail';export default function Page({params}:{params:{id:string}}){return <ApplicationDetail reference={params.id}/>}

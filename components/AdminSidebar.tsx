@@ -1,0 +1,1 @@
+import { Sidebar } from './Sidebar'; export function AdminSidebar(){return <Sidebar role="admin"/>}

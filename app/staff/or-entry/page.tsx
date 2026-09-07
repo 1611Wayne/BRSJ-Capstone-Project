@@ -1,0 +1,1 @@
+import { WorkflowPage } from '@/components/WorkflowPage';export default function Page(){return <WorkflowPage step={3} staff/>}

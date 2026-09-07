@@ -1,0 +1,3 @@
+'use client';
+import Link from 'next/link';import { useEffect,useState } from 'react';import qrcode from 'qrcode-generator';
+export function ClearanceQR({reference}:{reference:string}){const [src,setSrc]=useState('');useEffect(()=>{const qr=qrcode(0,'M');qr.addData(window.location.origin+'/verify/'+reference);qr.make();setSrc(qr.createDataURL(3,12));},[reference]);return <Link href={'/verify/'+reference} className="text-center inline-block">{src&&<img src={src} width={96} height={96} className="bg-white" alt={'Verification QR code for '+reference}/>}<span className="text-xs underline block mt-1">Verify clearance</span></Link>}

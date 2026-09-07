@@ -1,0 +1,3 @@
+import type { FeeComponent } from '@/types';
+import { formatPeso } from '@/data/revenueCodeData';
+export function FeeTable({items}:{items:FeeComponent[]}) { return <div className="table-wrap"><table className="portal-table border border-slate-300"><thead><tr><th>Fee Component</th><th className="!text-right">Amount</th></tr></thead><tbody>{items.map((item,i)=><tr key={i}><td>{item.name}</td><td className="text-right whitespace-nowrap">{formatPeso(item.amount)}</td></tr>)}<tr className="bg-slate-100"><td className="!text-lg font-bold">Total Amount Due</td><td className="text-right !text-lg font-bold whitespace-nowrap">{formatPeso(items.reduce((sum,item)=>sum+item.amount,0))}</td></tr></tbody></table></div>; }

@@ -1,0 +1,2 @@
+import { StaffSidebar } from '@/components/StaffSidebar'; import { TopBar } from '@/components/TopBar'; import { RoleGate } from '@/components/RoleGate';
+export default function StaffLayout({children}:{children:React.ReactNode}){return <RoleGate role="staff"><div className="min-h-screen flex bg-page-bg"><StaffSidebar/><div className="portal-main flex-1 min-w-0"><TopBar/><main id="main-content">{children}</main></div></div></RoleGate>}

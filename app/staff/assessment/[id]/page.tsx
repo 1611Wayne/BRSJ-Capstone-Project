@@ -1,0 +1,1 @@
+import { AssessmentPage } from '@/components/AssessmentPage';export default function Page({params}:{params:{id:string}}){return <AssessmentPage reference={params.id}/>}

@@ -1,0 +1,2 @@
+'use client';
+import { usePathname } from 'next/navigation';import { TopBar } from './TopBar';export function AdminTopBar(){const path=usePathname();return path==='/admin/fee-configuration'?null:<TopBar title="San Jose Portal"/>}
