@@ -73,6 +73,13 @@ input, select, textarea { accent-color: var(--brand-primary); }
   border-color: var(--brand-primary);
   box-shadow: 0 0 0 2px rgba(168, 73, 19, 0.15);
 }
+.required-marker { color: #dc2626; }
+.text-field:user-invalid,
+.select-field:user-invalid,
+.textarea-field:user-invalid {
+  border-color: #dc2626;
+  box-shadow: 0 0 0 2px rgba(220, 38, 38, 0.12);
+}
 
 .primary-btn {
   background: var(--brand-primary);
