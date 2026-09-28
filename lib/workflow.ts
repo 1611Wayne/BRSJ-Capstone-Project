@@ -1,4 +1,4 @@
-import type { Application, ApplicationInput, DocumentRequirement, FeeSchedule, InspectionReport, PortalState, TransactionReversion, UploadedDocument, User } from '@/types';
+import type { Application, ApplicationInput, DocumentRequirement, FeeSchedule, InspectionReport, PortalState, SimulatedPayment, TransactionReversion, UploadedDocument, User } from '@/types';
 import { clearanceTypes } from '@/data/clearanceTypes';
 import { fullName } from '@/data/mockUsers';
 export const today = () => new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' });
@@ -22,13 +22,14 @@ export function validateOR(number: string, date: string, amount: string | number
   requireThat(Math.round(Number(amount) * 100) === Math.round(total * 100), 'Amount Paid must match the assessed amount.');
 }
 export type Command =
-  | { type: 'login'; email: string; password: string; staffLogin: boolean } | { type: 'logout' }
+  | { type: 'login'; email: string; password: string; staffLogin?: boolean } | { type: 'logout' }
   | { type: 'register'; user: User }
   | { type: 'saveApplication'; application: ApplicationInput; reference?: string; draft: boolean }
   | { type: 'review'; reference: string; documents: UploadedDocument[] }
   | { type: 'inspection'; reference: string; report: InspectionReport }
   | { type: 'assess'; reference: string; category: string; classification: string }
-  | { type: 'or'; reference: string; number: string; date: string; amount: string }
+  | { type: 'or'; reference: string; number: string; date: string; amount: string; receiptPhoto?: UploadedDocument }
+  | { type: 'onlinePayment'; reference: string; method: SimulatedPayment['method']; amount: number }
   | { type: 'download' | 'confirm'; reference: string }
   | { type: 'feedback'; reference: string; rating: number; comment: string }
   | { type: 'revert'; data: TransactionReversion }
@@ -41,8 +42,8 @@ export function transition(state: PortalState, command: Command, now = new Date(
   if (command.type === 'logout') { s.currentUserId = null; return s; }
   if (command.type === 'login') {
     const user = s.users.find(u => u.email.toLowerCase() === command.email.trim().toLowerCase() && u.password === command.password && u.status === 'Active');
-    requireThat(user && (command.staffLogin ? user.role !== 'resident' : user.role === 'resident'), 'The account details are incorrect, inactive, or belong to a different login area.');
-    s.currentUserId = user.id; return s;
+    requireThat(user, 'The account details are incorrect or the account is inactive.');
+    s.currentUserId = user!.id; return s;
   }
   const validateUser = (u: User) => {
     requireThat(u.firstName.trim() && u.lastName.trim() && u.email.trim() && u.password.length >= 8, 'Name, email / username, and a password of at least 8 characters are required.');
@@ -116,12 +117,23 @@ export function transition(state: PortalState, command: Command, now = new Date(
     requireThat(a.status === 'Awaiting OR' && a.assessment, 'Staff must complete assessment before OR entry.');
     validateOR(command.number, command.date, command.amount, a.assessment.total);
     requireThat(!s.applications.some(x => x.reference !== reference && x.receipt?.orNumber === command.number), 'This OR number is already recorded for another request.');
-    a.receipt = { orNumber: command.number, orDate: command.date, amountPaid: Number(command.amount), recordedAt: now, encodedBy: fullName(actor) };
+    a.receipt = { orNumber: command.number, orDate: command.date, amountPaid: Number(command.amount), recordedAt: now, encodedBy: fullName(actor), ...(command.receiptPhoto ? { receiptPhoto: command.receiptPhoto } : {}) };
     a.clearance = { issueDate: today(), generatedAt: now }; a.status = 'Ready for Download';
-    log('OR details recorded', reference, '', JSON.stringify(a.receipt)); log('Clearance generated', reference, original.status, a.status);
+    log('OR details recorded', reference, '', JSON.stringify({ orNumber: command.number, orDate: command.date, amountPaid: command.amount, hasPhoto: !!command.receiptPhoto })); log('Clearance generated', reference, original.status, a.status);
+  }
+  if (command.type === 'onlinePayment') {
+    requireThat(actor.role === 'resident' || actor.role === 'staff', 'Only Residents or Staff can record payment.');
+    requireThat(a.status === 'Awaiting OR' && a.assessment, 'Staff must complete assessment before payment.');
+    requireThat(!a.simulatedPayment, 'A simulated payment has already been recorded for this application.');
+    const datePart = now.slice(0,10).replace(/-/g,'');
+    const seqPart = String(Math.floor(10000 + Math.random() * 89999));
+    const simRef = `SIM-${datePart}-${seqPart}`;
+    a.simulatedPayment = { method: command.method, referenceNumber: simRef, amount: command.amount, paidAt: now, note: 'SIMULATION – not an official Treasury payment' };
+    a.clearance = { issueDate: today(), generatedAt: now }; a.status = 'Ready for Download';
+    log('Simulated online payment', reference, '', JSON.stringify({ method: command.method, referenceNumber: simRef, amount: command.amount }));
   }
   if (command.type === 'download') {
-    requireThat(actor.role === 'resident' && a.receipt && a.clearance && (a.status === 'Ready for Download' || a.status === 'Closed - Cleared'), 'Clearance is not available for download.');
+    requireThat(actor.role === 'resident' && (a.receipt || a.simulatedPayment) && a.clearance && (a.status === 'Ready for Download' || a.status === 'Closed - Cleared'), 'Clearance is not available for download.');
     a.clearance = { ...a.clearance, downloadedAt: now }; log('Clearance downloaded', reference);
   }
   if (command.type === 'confirm') {

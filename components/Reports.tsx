@@ -2,7 +2,7 @@
 import { useState } from 'react';import Link from 'next/link';import { usePortal } from './PortalProvider';import { Field } from './Field';import { ReportTable } from './ReportTable';import { monthlyRows } from '@/data/mockReports';import { clearanceTypes } from '@/data/clearanceTypes';import { formatPeso } from '@/data/revenueCodeData';import { dateLabel,today } from '@/lib/workflow';import { exportCSV } from '@/lib/downloads';
 type Kind='monthly'|'daily'|'reversion'|'audit';
 export function Reports({kind}:{kind:Kind}){
- const {state}=usePortal();const initial={date:'2026-09-06',month:'09',year:'2026',type:'',from:'',to:'',admin:'',action:''};const [draft,setDraft]=useState(initial),[filter,setFilter]=useState(initial);
+ const {state}=usePortal();const currentYear=new Date().getFullYear().toString();const initial={date:new Date().toLocaleDateString('en-CA',{timeZone:'Asia/Manila'}),month:String(new Date().getMonth()+1).padStart(2,'0'),year:currentYear,type:'',from:'',to:'',admin:'',action:''};const [draft,setDraft]=useState(initial),[filter,setFilter]=useState(initial);
  const titles={monthly:'Monthly Collection Report',daily:'Daily OR Summary',reversion:'Reversion Audit Report',audit:'Audit Trail'};
  let headers:string[]=[],rows:(string|number)[][]=[],summaries:{label:string;value:string|number}[]=[];
  if(kind==='monthly'){

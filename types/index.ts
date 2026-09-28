@@ -16,7 +16,8 @@ export interface AssessmentItem extends FeeComponent {}
 export interface FeeSchedule { id: string; clearanceType: string; category: string; classification: string; items: FeeComponent[]; effectiveDate: string; ordinance: string; notes: string; changedBy: string; createdAt: string }
 export interface Assessment { items: AssessmentItem[]; total: number; category: string; classification: string; assessedBy: string; assessedAt: string; scheduleId: string }
 export interface BusinessAssessment extends Assessment {}
-export interface OfficialReceipt { orNumber: string; orDate: string; amountPaid: number; recordedAt: string; encodedBy: string }
+export interface OfficialReceipt { orNumber: string; orDate: string; amountPaid: number; recordedAt: string; encodedBy: string; receiptPhoto?: UploadedDocument }
+export interface SimulatedPayment { method: 'GCash' | 'Bank Transfer' | 'Maya' | 'Other'; referenceNumber: string; amount: number; paidAt: string; note: string }
 export interface Clearance { issueDate: string; generatedAt: string; revisedFrom?: string; downloadedAt?: string }
 export interface ReceiptConfirmation { timestamp: string; ipPlaceholder: string; completionTime: string }
 export interface Feedback { rating: number; comment: string; submittedAt: string }
@@ -26,6 +27,7 @@ export interface Application {
   businessName: string; businessLocation: string; initialOperation: string; applicationType: 'New Application' | 'Renewal'; ownership: Ownership; propertyOwner: string; businessContact: string;
   source: 'Online' | 'Assisted / Walk-in'; staffEncoder?: string; documents: UploadedDocument[]; certified: boolean;
   assessment?: Assessment; receipt?: OfficialReceipt; clearance?: Clearance; confirmation?: ReceiptConfirmation; feedback?: Feedback; inspection?: InspectionReport;
+  simulatedPayment?: SimulatedPayment;
 }
 export type ApplicationInput = Omit<Application, 'reference' | 'dateRequested' | 'status'>;
 export type ReversionAction = 'Edit Fields' | 'Void Transaction' | 'Mark Under Review';
