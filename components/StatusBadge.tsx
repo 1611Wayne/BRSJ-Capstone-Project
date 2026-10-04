@@ -8,6 +8,7 @@ const styles: Record<ApplicationStatus, string> = {
   'Closed - Cleared': 'bg-green-100 text-green-800',
   'Under Review': 'bg-orange-100 text-orange-800',
   'Void': 'bg-red-100 text-red-700',
+  'Rejected': 'bg-red-700 text-white',
 };
 
 export function StatusBadge({ status }: { status: ApplicationStatus }) {
