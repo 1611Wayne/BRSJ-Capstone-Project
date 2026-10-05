@@ -3,6 +3,23 @@ import { clearanceTypes } from '@/data/clearanceTypes';
 import { fullName } from '@/data/mockUsers';
 export const today = () => new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' });
 export const dateLabel = (value?: string) => value ? new Date(value).toLocaleString('en-PH', { timeZone: 'Asia/Manila', dateStyle: 'medium', ...(value.includes('T') ? { timeStyle: 'short' as const } : {}) }) : '—';
+export type DateRangePreset = 'annual' | 'quarterly' | 'weekly' | 'daily';
+const iso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+// Calendar-aligned periods (matching the Monthly Collection Report's own calendar-month convention), computed
+// from the plain Y-M-D parts of `anchor` — no timezone conversion needed since we never leave calendar-date math.
+export function presetRange(preset: DateRangePreset, anchor = today()): { from: string; to: string } {
+  const [y, m, d] = anchor.split('-').map(Number);
+  if (preset === 'daily') return { from: anchor, to: anchor };
+  if (preset === 'weekly') {
+    const monday = new Date(y, m - 1, d - ((new Date(y, m - 1, d).getDay() + 6) % 7));
+    return { from: iso(monday), to: iso(new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + 6)) };
+  }
+  if (preset === 'quarterly') {
+    const qStart = Math.floor((m - 1) / 3) * 3;
+    return { from: iso(new Date(y, qStart, 1)), to: iso(new Date(y, qStart + 3, 0)) };
+  }
+  return { from: `${y}-01-01`, to: `${y}-12-31` };
+}
 export function requirements(a: Pick<Application, 'clearanceType' | 'ownership' | 'applicationType'>): DocumentRequirement[] {
   if (a.clearanceType !== 'Business Clearance') return [{ name: 'Valid ID', required: true }, { name: 'Supporting Property / Clearance Document', required: true }];
   return [{ name: 'Valid ID of Owner', required: true }, { name: 'Picture of Establishment / Business', required: true }, { name: 'DTI / SEC Document', required: true }, ...(a.ownership === 'Renter' ? [{ name: 'Contract of Lease', required: true }] : []), ...(a.applicationType === 'Renewal' ? [{ name: 'Old Business Clearance', required: true }] : [])];
@@ -22,7 +39,7 @@ export function validateOR(number: string, date: string, amount: string | number
   requireThat(Math.round(Number(amount) * 100) === Math.round(total * 100), 'Amount Paid must match the assessed amount.');
 }
 export type Command =
-  | { type: 'login'; email: string; password: string; staffLogin?: boolean } | { type: 'logout' }
+  | { type: 'login'; email: string; password: string } | { type: 'logout' }
   | { type: 'register'; user: User }
   | { type: 'saveApplication'; application: ApplicationInput; reference?: string; draft: boolean }
   | { type: 'review'; reference: string; documents: UploadedDocument[] }

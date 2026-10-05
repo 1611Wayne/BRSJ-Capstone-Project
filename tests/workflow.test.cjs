@@ -14,19 +14,24 @@ const app = s => s.applications.find(a=>a.reference===ref);
 const role = (s,id) => ({...s,currentUserId:id});
 const assess = s => transition(role(s,'staff-maria'),{type:'assess',reference:ref,category:'Sari-Sari Store',classification:'Medium'},at);
 const or = s => transition(role(s,'resident-maria'),{type:'or',reference:ref,number:'TR-2026-54321',date:'2026-09-06',amount:'600.00'},at);
-test('exactly thirteen supported clearance types',()=>{
- assert.equal(clearanceTypes.length,13);
- assert.equal(new Set(clearanceTypes.map(c=>c.name)).size,13);
- assert.deepEqual(clearanceTypes.map(c=>c.name),['Business Clearance','Building Clearance','Electrical Clearance','Fencing Clearance','Excavation Clearance','Lot Survey Clearance','Water/MWSS Clearance','PODA Clearance','TODA Clearance','Ambulant Clearance','Lessor (Paupahan) Clearance','Film Shooting Clearance','Products Promo Clearance']);
+// Updated 2026-10-05: the paper's Scope (Ch. 1.4) lists 13, but the user confirmed directly with Barangay
+// San Jose office staff that only 9 are real; Ambulant and Lessor (Paupahan) were folded into Business
+// Clearance, Film Shooting and Products Promo don't exist at this barangay. See CHANGES.md for the full note.
+test('exactly nine supported clearance types (confirmed with the barangay office, supersedes the paper\'s 13)',()=>{
+ assert.equal(clearanceTypes.length,9);
+ assert.equal(new Set(clearanceTypes.map(c=>c.name)).size,9);
+ assert.deepEqual(clearanceTypes.map(c=>c.name),['Business Clearance','Building Clearance','Electrical Clearance','Fencing Clearance','Excavation Clearance','Lot Survey Clearance','Water/MWSS Clearance','PODA Clearance','TODA Clearance']);
 });
-test('registration requires consent and valid ID; login validates identity and area',()=>{
+// Updated 2026-10-05: the Staff/Admin login toggle this test used to check (staffLogin) was removed by the
+// 2026-09-29 "unified login" revision — one login form now, redirect comes from the account's own role, not
+// a user-picked toggle. The old /different login/ assertion tested a check that no longer exists; removed.
+test('registration requires consent and valid ID; login validates identity',()=>{
  let s=state(null);const user={...mockUsers[0],id:'new',email:'new@example.com',validId:{requirement:'ID',name:'id.pdf',size:2000,type:'application/pdf',status:'Needs Replacement'},privacyConsentAt:at};
  assert.throws(()=>transition(s,{type:'register',user:{...user,privacyConsentAt:undefined}}),/consent/);
  s=transition(s,{type:'register',user});
- assert.equal(transition(s,{type:'login',email:user.email,password:user.password,staffLogin:false}).currentUserId,user.id);
+ assert.equal(transition(s,{type:'login',email:user.email,password:user.password}).currentUserId,user.id);
  assert.throws(()=>transition(s,{type:'register',user:{...user,id:'duplicate'}}),/already registered/);
- assert.throws(()=>transition(s,{type:'login',email:user.email,password:'wrong',staffLogin:false}),/incorrect/);
- assert.throws(()=>transition(s,{type:'login',email:user.email,password:user.password,staffLogin:true}),/different login/);
+ assert.throws(()=>transition(s,{type:'login',email:user.email,password:'wrong'}),/incorrect/);
 });
 test('renter renewal documents and 5 MB/type boundaries',()=>{
  assert.equal(requirements({...app(state()),ownership:'Renter',applicationType:'Renewal'}).length,5);
@@ -129,9 +134,9 @@ test('reset passwords and deactivated users affect login without leaking passwor
  let s=state('admin'),resident={...mockUsers[0],password:'new-password-123'};
  s=transition(s,{type:'user',user:resident,reason:'Password reset'},at);
  assert.ok(!JSON.stringify(s.audits).includes(resident.password));
- assert.equal(transition(s,{type:'login',email:resident.email,password:resident.password,staffLogin:false}).currentUserId,resident.id);
+ assert.equal(transition(s,{type:'login',email:resident.email,password:resident.password}).currentUserId,resident.id);
  s=transition(s,{type:'user',user:{...resident,status:'Inactive'},reason:'Deactivated'},at);
- assert.throws(()=>transition(s,{type:'login',email:resident.email,password:resident.password,staffLogin:false}),/inactive/);
+ assert.throws(()=>transition(s,{type:'login',email:resident.email,password:resident.password}),/inactive/);
  assert.throws(()=>transition(s,{type:'user',user:{...resident,role:'admin'},reason:'Bad role'}),/Admin accounts/);
 });
 test('report totals match included requests; drafts and voids are excluded',()=>{
