@@ -28,6 +28,7 @@ export type Command =
   | { type: 'review'; reference: string; documents: UploadedDocument[] }
   | { type: 'inspection'; reference: string; report: InspectionReport }
   | { type: 'assess'; reference: string; category: string; classification: string }
+  | { type: 'reject'; reference: string; reason: string }
   | { type: 'or'; reference: string; number: string; date: string; amount: string; receiptPhoto?: UploadedDocument }
   | { type: 'onlinePayment'; reference: string; method: SimulatedPayment['method']; amount: number }
   | { type: 'download' | 'confirm'; reference: string }
@@ -111,6 +112,14 @@ export function transition(state: PortalState, command: Command, now = new Date(
     requireThat(schedule, 'No effective fee schedule matches this selection.');
     a.assessment = { items: schedule.items.map(i => ({ ...i })), total: Math.round(schedule.items.reduce((sum,i) => sum + i.amount,0)*100)/100, category: schedule.category, classification: schedule.classification, scheduleId: schedule.id, assessedBy: fullName(actor), assessedAt: now };
     a.status = 'Awaiting OR'; a.staffEncoder = fullName(actor); log('Assessment confirmed', reference, original.status, JSON.stringify(a.assessment));
+  }
+  if (command.type === 'reject') {
+    requireThat(actor.role === 'staff' || actor.role === 'admin', 'Only Staff or Admin can reject an application.');
+    requireThat(command.reason.trim(), 'A rejection reason is required.');
+    requireThat(['Pending Assessment', 'Under Review'].includes(a.status), 'Only applications pending assessment or under review can be rejected.');
+    a.status = 'Rejected';
+    a.rejection = { reason: command.reason.trim(), rejectedBy: fullName(actor), timestamp: now };
+    log('Application rejected', reference, original.status, 'Rejected', command.reason);
   }
   if (command.type === 'or') {
     requireThat(actor.role === 'resident' || actor.role === 'staff', 'Only Residents or Staff can record OR details.');

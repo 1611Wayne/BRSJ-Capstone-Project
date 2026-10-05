@@ -5,7 +5,7 @@ const seeds: [string, string, ApplicationStatus, string, string][] = [
   ['000124', 'Building Clearance', 'Awaiting OR', 'resident-juan', 'Juan Dela Cruz'],
   ['000125', 'Electrical Clearance', 'Ready for Download', 'resident-maria', 'Maria Clara'],
   ['000119', 'TODA Clearance', 'Closed - Cleared', 'resident-andres', 'Andres Rizal'],
-  ['000117', 'Lessor (Paupahan) Clearance', 'Closed - Cleared', 'resident-maria', 'Maria Clara'],
+  ['000117', 'Business Clearance', 'Closed - Cleared', 'resident-maria', 'Maria Clara'],
   ['000126', 'Business Clearance', 'Awaiting OR', 'resident-maria', 'Maria Clara'],
 ];
 export const mockApplications: Application[] = seeds.map(([number, type, status, residentId, applicant], index) => {

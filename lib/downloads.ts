@@ -19,9 +19,42 @@ export function makePDF(title:string,lines:string[],verificationURL?:string):Blo
 }
 export function applicationPDF(a:Application,kind:'assessment'|'clearance'){
  if(!a.assessment)throw new Error('Assessment is not available.');
- if(kind==='clearance'&&(!a.receipt||!a.clearance||!['Ready for Download','Closed - Cleared'].includes(a.status)))throw new Error('Clearance is not available.');
- const lines=['Rodriguez, Rizal', 'Reference No.: '+a.reference,'Clearance Type: '+a.clearanceType,'Applicant: '+a.applicant,'Application Type: '+a.applicationType];
- if(kind==='assessment')lines.push('Business Category: '+(a.assessment.category||'Not applicable'),'Classification / Scale: '+(a.assessment.classification||'Not applicable'),'',...a.assessment.items.map(i=>i.name+': PHP '+i.amount.toFixed(2)),'TOTAL: PHP '+a.assessment.total.toFixed(2),'Assessed By: '+a.assessment.assessedBy,'Assessed At: '+dateLabel(a.assessment.assessedAt),'','Present this sample Pre-Assessment Slip at the Municipal Treasury in the demo workflow.','The portal does not collect payments or issue Official Receipts.','All fee values are illustrative.');
- else lines.push('OR Number: '+a.receipt!.orNumber,'OR Date: '+a.receipt!.orDate,'Amount Paid: PHP '+a.receipt!.amountPaid.toFixed(2),'Issue Date: '+a.clearance!.issueDate,...(a.clearance!.revisedFrom?['REVISED - Original on '+a.clearance!.revisedFrom]:[]),'','This sample demonstrates fulfillment of a clearance request.','It is not a legally valid clearance and contains no official signature or seal.','','Verification: '+window.location.origin+'/verify/'+a.reference);
- downloadBlob(a.reference+'-'+kind+'.pdf',makePDF(kind==='assessment'?'Pre-Assessment Slip':a.clearanceType,lines,kind==='clearance'?window.location.origin+'/verify/'+a.reference:undefined));
+ if(kind==='clearance'&&(!(a.receipt||a.simulatedPayment)||!a.clearance||!['Ready for Download','Closed - Cleared'].includes(a.status)))throw new Error('Clearance is not available.');
+ if(kind==='assessment'){
+  const items=a.assessment.items.filter(i=>i.amount>0);
+  const lines=[
+   'REPUBLIKA NG PILIPINAS',
+   'LALAWIGAN NG RIZAL • BAYAN NG RODRIGUEZ',
+   '','PRE-ASSESSMENT SLIP','',
+   '----------------------------------------------------------------',
+   'REFERENCE NO.  : '+a.reference,
+   'APPLICANT      : '+a.applicant,
+   'CLEARANCE TYPE : '+a.clearanceType,
+   ...(a.assessment.category?['CATEGORY       : '+a.assessment.category+(a.assessment.classification?' - '+a.assessment.classification:'')] : []),
+   'APPLICATION    : '+a.applicationType,
+   'DATE ASSESSED  : '+dateLabel(a.assessment.assessedAt),
+   'ASSESSED BY    : '+a.assessment.assessedBy,
+   '----------------------------------------------------------------',
+   'FEE BREAKDOWN',
+   '----------------------------------------------------------------',
+   ...items.map(i=>{const label=i.name.padEnd(28,' ');const amount=('PHP '+i.amount.toFixed(2)).padStart(14,' ');return label+amount;}),
+   '----------------------------------------------------------------',
+   ('TOTAL DUE'.padEnd(28,' ')+('PHP '+a.assessment.total.toFixed(2)).padStart(14,' ')),
+   '----------------------------------------------------------------',
+   '',
+   'Please present this slip at the Municipal Treasury',
+   'of Rodriguez, Rizal and pay the amount shown above.',
+   'An Official Receipt (OR) will be issued upon payment.',
+   '',
+   'SAMPLE ONLY - NOT AN OFFICIAL DOCUMENT',
+   'All fee values are illustrative.',
+  ];
+  downloadBlob(a.reference+'-assessment.pdf',makePDF('PRE-ASSESSMENT SLIP — BARANGAY SAN JOSE',lines));
+ } else {
+  const lines=['Rodriguez, Rizal','Reference No.: '+a.reference,'Clearance Type: '+a.clearanceType,'Applicant: '+a.applicant,'Application Type: '+a.applicationType];
+  if(a.simulatedPayment){lines.push('Payment Method: '+a.simulatedPayment.method+' (Simulated)','Sim. Reference: '+a.simulatedPayment.referenceNumber,'Amount: PHP '+a.simulatedPayment.amount.toFixed(2),'SIMULATION – not an official Treasury payment');}
+  else{lines.push('OR Number: '+a.receipt!.orNumber,'OR Date: '+a.receipt!.orDate,'Amount Paid: PHP '+a.receipt!.amountPaid.toFixed(2));}
+  lines.push('Issue Date: '+a.clearance!.issueDate,...(a.clearance!.revisedFrom?['REVISED - Original on '+a.clearance!.revisedFrom]:[]),'','This sample demonstrates fulfillment of a clearance request.','It is not a legally valid clearance.','','Verification: '+window.location.origin+'/verify/'+a.reference);
+  downloadBlob(a.reference+'-clearance.pdf',makePDF(a.clearanceType,lines,window.location.origin+'/verify/'+a.reference));
+ }
 }

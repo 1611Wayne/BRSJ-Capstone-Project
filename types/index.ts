@@ -1,5 +1,5 @@
 export type UserRole = 'resident' | 'staff' | 'admin';
-export type ApplicationStatus = 'Draft' | 'Pending Assessment' | 'Awaiting OR' | 'Ready for Download' | 'Closed - Cleared' | 'Under Review' | 'Void';
+export type ApplicationStatus = 'Draft' | 'Pending Assessment' | 'Awaiting OR' | 'Ready for Download' | 'Closed - Cleared' | 'Under Review' | 'Void' | 'Rejected';
 export interface User { id: string; firstName: string; lastName: string; email: string; password: string; role: UserRole; status: 'Active' | 'Inactive'; createdAt: string; contact: string; address: string; validId?: UploadedDocument; privacyConsentAt?: string }
 export interface Resident extends User { role: 'resident' }
 export interface Staff extends User { role: 'staff' }
@@ -26,8 +26,10 @@ export interface Application {
   reference: string; residentId: string; applicant: string; address: string; contact: string; purpose: string; clearanceType: string; dateRequested: string; status: ApplicationStatus;
   businessName: string; businessLocation: string; initialOperation: string; applicationType: 'New Application' | 'Renewal'; ownership: Ownership; propertyOwner: string; businessContact: string;
   source: 'Online' | 'Assisted / Walk-in'; staffEncoder?: string; documents: UploadedDocument[]; certified: boolean;
+  hasEmployees?: boolean; employeeCount?: number;
   assessment?: Assessment; receipt?: OfficialReceipt; clearance?: Clearance; confirmation?: ReceiptConfirmation; feedback?: Feedback; inspection?: InspectionReport;
   simulatedPayment?: SimulatedPayment;
+  rejection?: { reason: string; rejectedBy: string; timestamp: string };
 }
 export type ApplicationInput = Omit<Application, 'reference' | 'dateRequested' | 'status'>;
 export type ReversionAction = 'Edit Fields' | 'Void Transaction' | 'Mark Under Review';
