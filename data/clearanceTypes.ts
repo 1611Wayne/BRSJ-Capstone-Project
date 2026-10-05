@@ -1,5 +1,7 @@
 import type { ClearanceType } from '@/types';
 
+export const businessSubcategories = ['Ambulant', 'Lessor (Paupahan)'] as const;
+
 export const clearanceTypes: ClearanceType[] = [
   { id: 'business', name: 'Business Clearance', shortName: 'Business', description: 'For local businesses including stores, Ambulant vendors, and Lessors (Paupahan).', icon: 'Store' },
   { id: 'building', name: 'Building Clearance', shortName: 'Building', description: 'For residential or commercial building construction.', icon: 'Building2' },

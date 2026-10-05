@@ -16,7 +16,7 @@ export function PortalProvider({children}:{children:React.ReactNode}) {
   },[]);
   function act(command: Command) {
     const next = transition(latest.current, command); latest.current = next; setState(next);
-    try { sessionStorage.setItem('san-jose-prototype-v2', JSON.stringify(next, (key,value) => key === 'url' ? undefined : value)); } catch { /* State still works in memory. */ }
+    try { sessionStorage.setItem('san-jose-prototype-v2', JSON.stringify(next, (key,value) => key === 'url' && !String(value).startsWith('data:') ? undefined : value)); } catch { /* State still works in memory. */ }
     return next;
   }
   return <Context.Provider value={{state, user: state.users.find(u => u.id === state.currentUserId && u.status === 'Active'), ready, act}}>{children}</Context.Provider>;

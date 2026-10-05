@@ -1,25 +1,8 @@
 import type { Application, ApplicationInput, DocumentRequirement, FeeSchedule, InspectionReport, PortalState, SimulatedPayment, TransactionReversion, UploadedDocument, User } from '@/types';
-import { clearanceTypes } from '@/data/clearanceTypes';
+import { clearanceTypes, businessSubcategories } from '@/data/clearanceTypes';
 import { fullName } from '@/data/mockUsers';
 export const today = () => new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' });
 export const dateLabel = (value?: string) => value ? new Date(value).toLocaleString('en-PH', { timeZone: 'Asia/Manila', dateStyle: 'medium', ...(value.includes('T') ? { timeStyle: 'short' as const } : {}) }) : '—';
-export type DateRangePreset = 'annual' | 'quarterly' | 'weekly' | 'daily';
-const iso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-// Calendar-aligned periods (matching the Monthly Collection Report's own calendar-month convention), computed
-// from the plain Y-M-D parts of `anchor` — no timezone conversion needed since we never leave calendar-date math.
-export function presetRange(preset: DateRangePreset, anchor = today()): { from: string; to: string } {
-  const [y, m, d] = anchor.split('-').map(Number);
-  if (preset === 'daily') return { from: anchor, to: anchor };
-  if (preset === 'weekly') {
-    const monday = new Date(y, m - 1, d - ((new Date(y, m - 1, d).getDay() + 6) % 7));
-    return { from: iso(monday), to: iso(new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + 6)) };
-  }
-  if (preset === 'quarterly') {
-    const qStart = Math.floor((m - 1) / 3) * 3;
-    return { from: iso(new Date(y, qStart, 1)), to: iso(new Date(y, qStart + 3, 0)) };
-  }
-  return { from: `${y}-01-01`, to: `${y}-12-31` };
-}
 export function requirements(a: Pick<Application, 'clearanceType' | 'ownership' | 'applicationType'>): DocumentRequirement[] {
   if (a.clearanceType !== 'Business Clearance') return [{ name: 'Valid ID', required: true }, { name: 'Supporting Property / Clearance Document', required: true }];
   return [{ name: 'Valid ID of Owner', required: true }, { name: 'Picture of Establishment / Business', required: true }, { name: 'DTI / SEC Document', required: true }, ...(a.ownership === 'Renter' ? [{ name: 'Contract of Lease', required: true }] : []), ...(a.applicationType === 'Renewal' ? [{ name: 'Old Business Clearance', required: true }] : [])];
@@ -39,15 +22,18 @@ export function validateOR(number: string, date: string, amount: string | number
   requireThat(Math.round(Number(amount) * 100) === Math.round(total * 100), 'Amount Paid must match the assessed amount.');
 }
 export type Command =
-  | { type: 'login'; email: string; password: string } | { type: 'logout' }
+  | { type: 'login'; email: string; password: string; staffLogin?: boolean } | { type: 'logout' }
   | { type: 'register'; user: User }
   | { type: 'saveApplication'; application: ApplicationInput; reference?: string; draft: boolean }
   | { type: 'review'; reference: string; documents: UploadedDocument[] }
   | { type: 'inspection'; reference: string; report: InspectionReport }
-  | { type: 'assess'; reference: string; category: string; classification: string }
+  | { type: 'assess'; reference: string; category: string; classification: string; amounts?: number[] }
   | { type: 'reject'; reference: string; reason: string }
   | { type: 'or'; reference: string; number: string; date: string; amount: string; receiptPhoto?: UploadedDocument }
   | { type: 'onlinePayment'; reference: string; method: SimulatedPayment['method']; amount: number }
+  | { type: 'receiptPhoto'; reference: string; photo: UploadedDocument }
+  | { type: 'verifyPayment'; reference: string; orNumber?: string }
+  | { type: 'returnPayment'; reference: string; reason: string }
   | { type: 'download' | 'confirm'; reference: string }
   | { type: 'feedback'; reference: string; rating: number; comment: string }
   | { type: 'revert'; data: TransactionReversion }
@@ -101,6 +87,7 @@ export function transition(state: PortalState, command: Command, now = new Date(
     requireThat(actor.role === 'staff' || (actor.role === 'resident' && a.residentId === actor.id), 'This request belongs to another resident.');
     requireThat(!previous || (previous.status === 'Draft' && previous.residentId === a.residentId), 'Only drafts can be edited.');
     requireThat(clearanceTypes.some(c => c.name === a.clearanceType), 'Choose a supported clearance type.');
+    requireThat(!a.businessSubcategory || businessSubcategories.includes(a.businessSubcategory), 'Choose a supported business subcategory.');
     if (!command.draft) {
       requireThat(a.applicant.trim() && a.address.trim() && a.purpose.trim() && /^(09\d{9}|\+639\d{9})$/.test(a.contact), 'Complete applicant details and enter a valid Philippine mobile number.');
       requireThat(a.businessLocation.trim(), 'Business / property location is required.');
@@ -111,7 +98,7 @@ export function transition(state: PortalState, command: Command, now = new Date(
     }
     const next = Math.max(126, ...s.applications.map(x => Number(x.reference.split('-')[2]))) + 1;
     const reference = previous?.reference || `SJ-${now.slice(0,4)}-${String(next).padStart(6,'0')}`;
-    const record: Application = { ...a, source: actor.role === 'staff' ? 'Assisted / Walk-in' : 'Online', staffEncoder: actor.role === 'staff' ? fullName(actor) : undefined, reference, dateRequested: command.draft ? previous?.dateRequested || now : now, status: command.draft ? 'Draft' : 'Pending Assessment' };
+    const record: Application = { ...a, businessSubcategory: a.clearanceType === 'Business Clearance' ? a.businessSubcategory : undefined, documents: a.documents.map(d => ({ ...d, status: 'Pending Review' as const })), source: actor.role === 'staff' ? 'Assisted / Walk-in' : 'Online', staffEncoder: actor.role === 'staff' ? fullName(actor) : undefined, reference, dateRequested: command.draft ? previous?.dateRequested || now : now, status: command.draft ? 'Draft' : 'Pending Assessment' };
     s.applications = previous ? s.applications.map(x => x.reference === reference ? record : x) : [record, ...s.applications];
     log(command.draft ? 'Draft saved' : 'Application submitted', reference, previous?.status, record.status); return s;
   }
@@ -127,7 +114,13 @@ export function transition(state: PortalState, command: Command, now = new Date(
     requireThat(requirements(a).every(r => a.documents.some(d => d.requirement === r.name && d.status === 'Verified')), 'Verify every required document before confirming assessment.');
     const schedule = activeSchedule(s.schedules, a.clearanceType, command.category, command.classification);
     requireThat(schedule, 'No effective fee schedule matches this selection.');
-    a.assessment = { items: schedule.items.map(i => ({ ...i })), total: Math.round(schedule.items.reduce((sum,i) => sum + i.amount,0)*100)/100, category: schedule.category, classification: schedule.classification, scheduleId: schedule.id, assessedBy: fullName(actor), assessedAt: now };
+    const amounts = command.amounts || schedule.items.map(item => item.amount);
+    requireThat(amounts.length === schedule.items.length && amounts.every(amount => typeof amount === 'number' && Number.isFinite(amount) && amount >= 0 && Number.isSafeInteger(Math.round(amount * 100)) && Math.abs(amount * 100 - Math.round(amount * 100)) < 0.000001), 'Enter a valid non-negative amount with at most two decimal places for every fee component.');
+    const items = schedule.items.map((item, index) => ({ ...item, amount: amounts[index] }));
+    const totalCents = items.reduce((sum, item) => sum + Math.round(item.amount * 100), 0);
+    requireThat(Number.isSafeInteger(totalCents), 'The total assessment amount is too large.');
+    if (items.some((item, index) => item.amount !== schedule.items[index].amount)) log('Assessment fee amounts adjusted', reference, JSON.stringify(schedule.items), JSON.stringify(items));
+    a.assessment = { items, total: totalCents/100, category: schedule.category, classification: schedule.classification, scheduleId: schedule.id, assessedBy: fullName(actor), assessedAt: now };
     a.status = 'Awaiting OR'; a.staffEncoder = fullName(actor); log('Assessment confirmed', reference, original.status, JSON.stringify(a.assessment));
   }
   if (command.type === 'reject') {
@@ -144,22 +137,60 @@ export function transition(state: PortalState, command: Command, now = new Date(
     validateOR(command.number, command.date, command.amount, a.assessment.total);
     requireThat(!s.applications.some(x => x.reference !== reference && x.receipt?.orNumber === command.number), 'This OR number is already recorded for another request.');
     a.receipt = { orNumber: command.number, orDate: command.date, amountPaid: Number(command.amount), recordedAt: now, encodedBy: fullName(actor), ...(command.receiptPhoto ? { receiptPhoto: command.receiptPhoto } : {}) };
-    a.clearance = { issueDate: today(), generatedAt: now }; a.status = 'Ready for Download';
-    log('OR details recorded', reference, '', JSON.stringify({ orNumber: command.number, orDate: command.date, amountPaid: command.amount, hasPhoto: !!command.receiptPhoto })); log('Clearance generated', reference, original.status, a.status);
+    a.receiptPhoto = command.receiptPhoto; a.simulatedPayment = undefined; a.clearance = undefined;
+    a.paymentVerification = { status: 'Pending', submittedAt: now }; a.status = 'For Checking';
+    log('OR details submitted for checking', reference, '', JSON.stringify({ orNumber: command.number, orDate: command.date, amountPaid: command.amount, hasPhoto: !!command.receiptPhoto }));
   }
   if (command.type === 'onlinePayment') {
     requireThat(actor.role === 'resident' || actor.role === 'staff', 'Only Residents or Staff can record payment.');
     requireThat(a.status === 'Awaiting OR' && a.assessment, 'Staff must complete assessment before payment.');
     requireThat(!a.simulatedPayment, 'A simulated payment has already been recorded for this application.');
+    requireThat(['GCash','Bank Transfer','Maya','Other'].includes(command.method) && Number.isFinite(command.amount) && Math.round(command.amount * 100) === Math.round(a.assessment.total * 100), 'Payment amount must match the assessed amount.');
     const datePart = now.slice(0,10).replace(/-/g,'');
     const seqPart = String(Math.floor(10000 + Math.random() * 89999));
     const simRef = `SIM-${datePart}-${seqPart}`;
     a.simulatedPayment = { method: command.method, referenceNumber: simRef, amount: command.amount, paidAt: now, note: 'SIMULATION – not an official Treasury payment' };
-    a.clearance = { issueDate: today(), generatedAt: now }; a.status = 'Ready for Download';
+    a.receipt = undefined; a.receiptPhoto = undefined; a.clearance = undefined;
+    a.paymentVerification = { status: 'Pending', submittedAt: now }; a.status = 'For Checking';
     log('Simulated online payment', reference, '', JSON.stringify({ method: command.method, referenceNumber: simRef, amount: command.amount }));
   }
+  if (command.type === 'receiptPhoto') {
+    requireThat(actor.role === 'resident' || actor.role === 'staff', 'Only Residents or Staff can submit receipts.');
+    requireThat(a.status === 'Awaiting OR' && a.assessment, 'Staff must complete assessment before receipt submission.');
+    requireThat(validFile(command.photo), 'Upload a valid receipt in JPG, PNG, or PDF, up to 5 MB.');
+    a.receiptPhoto = command.photo; a.receipt = undefined; a.simulatedPayment = undefined; a.clearance = undefined;
+    a.paymentVerification = { status: 'Pending', submittedAt: now }; a.status = 'For Checking';
+    log('Receipt photo submitted for checking', reference, original.status, a.status);
+  }
+  if (command.type === 'verifyPayment' || command.type === 'returnPayment') {
+    staff();
+    requireThat(a.status === 'For Checking' && a.assessment && a.paymentVerification?.status === 'Pending', 'Only payments awaiting staff checking can be verified.');
+    if (command.type === 'returnPayment') {
+      requireThat(command.reason.trim(), 'Explain the correction needed.');
+      a.paymentVerification = { ...a.paymentVerification, status: 'Needs Correction', checkedBy: fullName(actor), checkedAt: now, notes: command.reason.trim() };
+      a.status = 'Awaiting OR'; a.clearance = undefined; a.simulatedPayment = undefined;
+      log('Payment returned for correction', reference, original.status, a.status, command.reason.trim());
+    } else {
+      requireThat(a.receipt || a.receiptPhoto || a.simulatedPayment, 'Payment evidence is required.');
+      if (a.receipt) {
+        validateOR(a.receipt.orNumber, a.receipt.orDate, a.receipt.amountPaid, a.assessment.total);
+        requireThat(!s.applications.some(x => x.reference !== reference && x.receipt?.orNumber === a.receipt!.orNumber), 'This OR number is already recorded for another request.');
+      } else if (a.simulatedPayment) requireThat(a.simulatedPayment.amount === a.assessment.total, 'Payment amount must match the assessed amount.');
+      else requireThat(a.receiptPhoto && validFile(a.receiptPhoto), 'A valid receipt photo is required.');
+      const orNumber = command.orNumber?.trim();
+      if (!a.simulatedPayment) {
+        requireThat(orNumber, 'Enter the OR number from the receipt before verifying payment.');
+        requireThat(!s.applications.some(x => x.reference !== reference && (x.receipt?.orNumber === orNumber || x.paymentVerification?.orNumber === orNumber)), 'This OR number is already recorded for another request.');
+        if (a.receipt) a.receipt = { ...a.receipt, orNumber };
+      }
+      a.paymentVerification = { ...a.paymentVerification, status: 'Verified', checkedBy: fullName(actor), checkedAt: now, ...(orNumber && !a.simulatedPayment ? { orNumber } : {}) };
+      if (orNumber && !a.simulatedPayment) log('OR number recorded by staff', reference, JSON.stringify({ orNumber: original.paymentVerification?.orNumber || original.receipt?.orNumber || '' }), JSON.stringify({ orNumber }));
+      a.clearance = { issueDate: today(), generatedAt: now }; a.status = 'Ready for Download';
+      log('Payment verified by staff', reference, original.status, a.status); log('Clearance generated', reference, original.status, a.status);
+    }
+  }
   if (command.type === 'download') {
-    requireThat(actor.role === 'resident' && (a.receipt || a.simulatedPayment) && a.clearance && (a.status === 'Ready for Download' || a.status === 'Closed - Cleared'), 'Clearance is not available for download.');
+    requireThat(actor.role === 'resident' && (a.receipt || a.receiptPhoto || a.simulatedPayment) && a.clearance && (a.status === 'Ready for Download' || a.status === 'Closed - Cleared'), 'Clearance is not available for download.');
     a.clearance = { ...a.clearance, downloadedAt: now }; log('Clearance downloaded', reference);
   }
   if (command.type === 'confirm') {
@@ -180,6 +211,10 @@ export function transition(state: PortalState, command: Command, now = new Date(
         validateOR(d.orNumber, a.receipt.orDate, a.receipt.amountPaid, a.assessment!.total);
         requireThat(!s.applications.some(x => x.reference !== reference && x.receipt?.orNumber === d.orNumber), 'This OR number is already in use.');
         a.receipt = { ...a.receipt, orNumber: d.orNumber };
+        if (d.orNumber !== original.receipt?.orNumber) {
+          a.status = 'For Checking'; a.clearance = undefined; a.confirmation = undefined; a.feedback = undefined;
+          a.paymentVerification = { status: 'Pending', submittedAt: now };
+        }
       }
       a.applicant = d.applicant!.trim(); a.businessName = d.businessName?.trim() || a.businessName;
       if (a.clearance) a.clearance = { ...a.clearance, revisedFrom: a.clearance.revisedFrom || a.clearance.issueDate, downloadedAt: undefined };
@@ -190,4 +225,3 @@ export function transition(state: PortalState, command: Command, now = new Date(
   s.applications = s.applications.map(x => x.reference === reference ? a : x);
   return s;
 }
-

@@ -1,5 +1,5 @@
 export type UserRole = 'resident' | 'staff' | 'admin';
-export type ApplicationStatus = 'Draft' | 'Pending Assessment' | 'Awaiting OR' | 'Ready for Download' | 'Closed - Cleared' | 'Under Review' | 'Void' | 'Rejected';
+export type ApplicationStatus = 'Draft' | 'Pending Assessment' | 'Awaiting OR' | 'For Checking' | 'Ready for Download' | 'Closed - Cleared' | 'Under Review' | 'Void' | 'Rejected';
 export interface User { id: string; firstName: string; lastName: string; email: string; password: string; role: UserRole; status: 'Active' | 'Inactive'; createdAt: string; contact: string; address: string; validId?: UploadedDocument; privacyConsentAt?: string }
 export interface Resident extends User { role: 'resident' }
 export interface Staff extends User { role: 'staff' }
@@ -7,7 +7,7 @@ export interface Admin extends User { role: 'admin' }
 export interface ClearanceType { id: string; name: string; shortName: string; description: string; icon: string }
 export type Ownership = 'Owner' | 'Renter' | 'Occupant';
 export interface DocumentRequirement { name: string; required: boolean }
-export interface UploadedDocument { requirement: string; name: string; size: number; type: string; status: 'Verified' | 'Missing' | 'Needs Replacement'; url?: string }
+export interface UploadedDocument { requirement: string; name: string; size: number; type: string; status: 'Pending Review' | 'Verified' | 'Missing' | 'Needs Replacement'; url?: string }
 export interface BusinessClassification { name: string; businessClearance: number }
 export interface BusinessCategory { name: string; classifications?: BusinessClassification[]; businessClearance?: number }
 export type RevenueCategory = BusinessCategory;
@@ -27,8 +27,11 @@ export interface Application {
   businessName: string; businessLocation: string; initialOperation: string; applicationType: 'New Application' | 'Renewal'; ownership: Ownership; propertyOwner: string; businessContact: string;
   source: 'Online' | 'Assisted / Walk-in'; staffEncoder?: string; documents: UploadedDocument[]; certified: boolean;
   hasEmployees?: boolean; employeeCount?: number;
+  businessSubcategory?: 'Ambulant' | 'Lessor (Paupahan)';
   assessment?: Assessment; receipt?: OfficialReceipt; clearance?: Clearance; confirmation?: ReceiptConfirmation; feedback?: Feedback; inspection?: InspectionReport;
   simulatedPayment?: SimulatedPayment;
+  receiptPhoto?: UploadedDocument;
+  paymentVerification?: { status: 'Pending' | 'Verified' | 'Needs Correction'; submittedAt: string; checkedBy?: string; checkedAt?: string; orNumber?: string; notes?: string };
   rejection?: { reason: string; rejectedBy: string; timestamp: string };
 }
 export type ApplicationInput = Omit<Application, 'reference' | 'dateRequested' | 'status'>;

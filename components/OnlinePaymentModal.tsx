@@ -30,6 +30,7 @@ export function OnlinePaymentModal({ reference, amount, onSuccess, onClose }: Pr
       setSimRef(ref);
       setStep('done');
       setError('');
+      onSuccess(ref, method);
     } catch (e) {
       setError((e as Error).message);
     }
@@ -98,7 +99,7 @@ export function OnlinePaymentModal({ reference, amount, onSuccess, onClose }: Pr
                 <div><dt className="text-xs text-slate-500">Payment Method</dt><dd className="font-semibold mt-0.5">{method}</dd></div>
                 <div><dt className="text-xs text-slate-500">Amount</dt><dd className="font-semibold mt-0.5">{formatPeso(amount)}</dd></div>
               </dl>
-              <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded p-3 mt-4">⚠️ Clicking "Confirm Payment" will mark this application as paid (simulation only). A system-generated reference number will be issued — this is NOT an official Treasury OR.</p>
+              <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded p-3 mt-4">⚠️ Clicking "Confirm Payment" submits this simulated payment for Staff checking. Your clearance is released only after Staff approval. A system-generated reference number will be issued — this is NOT an official Treasury OR.</p>
               <ErrorMessage message={error} />
               <div className="flex gap-2 mt-5">
                 <button type="button" className="secondary-btn flex-1" onClick={() => { setStep('select'); setError(''); }}>Back</button>
@@ -113,7 +114,7 @@ export function OnlinePaymentModal({ reference, amount, onSuccess, onClose }: Pr
                 <CheckCircle2 size={30} className="text-green-600" aria-hidden="true" />
               </div>
               <h2 className="text-lg font-bold text-brand-ink">Payment Recorded</h2>
-              <p className="text-xs text-slate-500 mt-1">Simulated {method} payment confirmed.</p>
+              <p className="text-xs text-slate-500 mt-1">Simulated {method} payment submitted for Staff verification.</p>
               <div className="mt-5 bg-slate-50 border rounded-md p-4 text-left space-y-2">
                 <div><p className="text-xs text-slate-500">Simulation Reference No.</p><p className="text-sm font-bold text-brand-primary mt-0.5">{simRef}</p></div>
                 <div><p className="text-xs text-slate-500">Amount</p><p className="text-sm font-semibold mt-0.5">{formatPeso(amount)}</p></div>
@@ -121,7 +122,7 @@ export function OnlinePaymentModal({ reference, amount, onSuccess, onClose }: Pr
               </div>
               <p className="text-xs text-amber-700 mt-3">SIMULATION – not an official Treasury payment</p>
               <button type="button" className="primary-btn w-full mt-5" onClick={() => onSuccess(simRef, method)}>
-                Continue to Clearance
+                Continue to Staff Checking
               </button>
             </div>
           )}

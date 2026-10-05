@@ -110,6 +110,7 @@ export function Dashboard({ role }: { role: UserRole }) {
 
   const metrics = [
     { label: 'Pending Assessment', value: apps.filter(a => a.status === 'Pending Assessment').length, icon: ClipboardCheck },
+    { label: 'For Checking', value: apps.filter(a => a.status === 'For Checking').length, icon: ClipboardCheck },
     { label: 'Awaiting OR', value: apps.filter(a => a.status === 'Awaiting OR').length, icon: ReceiptText },
     { label: 'Ready for Download', value: apps.filter(a => a.status === 'Ready for Download').length, icon: Archive },
     { label: 'Closed - Cleared', value: apps.filter(a => a.status === 'Closed - Cleared').length, icon: CircleCheck },

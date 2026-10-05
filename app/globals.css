@@ -136,16 +136,14 @@ div:has(> input[type="file"]:focus-visible) { outline: 2px solid var(--brand-pri
 button:disabled { opacity: .5; cursor: not-allowed; }
 .portal-modal { width: calc(100% - 2rem); max-height: 90dvh; padding: 0; border: 1px solid var(--brand-border); border-radius: 4px; box-shadow: 0 20px 50px #0004; }
 .portal-modal::backdrop { background: #0008; }
-.portal-sidebar { width: 190px; height: 100dvh; flex-shrink: 0; display: flex; flex-direction: column; position: sticky; top: 0; overflow: hidden; }
+.portal-sidebar { position: sticky; top: 0; width: 190px; height: 100dvh; flex-shrink: 0; display: flex; flex-direction: column; }
+.portal-sidebar > div { flex-shrink: 0; }
 .portal-sidebar > nav { flex: 1; min-height: 0; overflow-y: auto; }
-.portal-sidebar > :first-child,
-.portal-sidebar > :last-child { flex-shrink: 0; }
-.sidebar-logout { position: sticky; bottom: 0; z-index: 2; background: var(--brand-nav); }
 .sidebar-dark { background: var(--brand-nav); color: var(--brand-ink); }
 .secondary-btn:hover { background: var(--brand-soft); }
 .sidebar-dark :focus-visible, .public-footer :focus-visible { outline-color: var(--brand-ink); }
 .public-navbar :focus-visible { outline-color: var(--brand-ink); }
-.mobile-nav-toggle,.mobile-nav-backdrop { display: none; }
+.mobile-nav-toggle,.mobile-nav-backdrop,.mobile-logout { display: none; }
 .portal-table th { white-space: nowrap; }
 .portal-table td { vertical-align: top; }
 .field-label { font-size: 12px; }
@@ -155,6 +153,7 @@ button:disabled { opacity: .5; cursor: not-allowed; }
  .portal-sidebar { display: none; position: fixed; inset: 0 auto 0 0; z-index: 50; width: 240px; max-height: 100dvh; overflow-y: auto; }
  .portal-sidebar.is-open { display: flex; }
  .mobile-nav-toggle { display: block; position: fixed; top: 8px; left: 8px; z-index: 30; padding: 8px; }
+ .mobile-logout { display: flex; align-items: center; gap: 6px; position: fixed; top: 8px; right: 8px; z-index: 35; padding: 8px 12px; box-shadow: 0 2px 6px #0002; }
  .mobile-nav-backdrop { display: block; position: fixed; inset: 0; background: #0008; z-index: 40; }
  .portal-main { padding-top: 45px; width: 100%; }
  .portal-main .p-8 { padding: 1.25rem; }

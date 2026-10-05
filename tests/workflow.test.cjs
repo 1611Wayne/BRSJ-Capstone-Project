@@ -14,24 +14,19 @@ const app = s => s.applications.find(a=>a.reference===ref);
 const role = (s,id) => ({...s,currentUserId:id});
 const assess = s => transition(role(s,'staff-maria'),{type:'assess',reference:ref,category:'Sari-Sari Store',classification:'Medium'},at);
 const or = s => transition(role(s,'resident-maria'),{type:'or',reference:ref,number:'TR-2026-54321',date:'2026-09-06',amount:'600.00'},at);
-// Updated 2026-10-05: the paper's Scope (Ch. 1.4) lists 13, but the user confirmed directly with Barangay
-// San Jose office staff that only 9 are real; Ambulant and Lessor (Paupahan) were folded into Business
-// Clearance, Film Shooting and Products Promo don't exist at this barangay. See CHANGES.md for the full note.
-test('exactly nine supported clearance types (confirmed with the barangay office, supersedes the paper\'s 13)',()=>{
- assert.equal(clearanceTypes.length,9);
- assert.equal(new Set(clearanceTypes.map(c=>c.name)).size,9);
- assert.deepEqual(clearanceTypes.map(c=>c.name),['Business Clearance','Building Clearance','Electrical Clearance','Fencing Clearance','Excavation Clearance','Lot Survey Clearance','Water/MWSS Clearance','PODA Clearance','TODA Clearance']);
+test('exactly thirteen supported clearance types',()=>{
+ assert.equal(clearanceTypes.length,13);
+ assert.equal(new Set(clearanceTypes.map(c=>c.name)).size,13);
+ assert.deepEqual(clearanceTypes.map(c=>c.name),['Business Clearance','Building Clearance','Electrical Clearance','Fencing Clearance','Excavation Clearance','Lot Survey Clearance','Water/MWSS Clearance','PODA Clearance','TODA Clearance','Ambulant Clearance','Lessor (Paupahan) Clearance','Film Shooting Clearance','Products Promo Clearance']);
 });
-// Updated 2026-10-05: the Staff/Admin login toggle this test used to check (staffLogin) was removed by the
-// 2026-09-29 "unified login" revision — one login form now, redirect comes from the account's own role, not
-// a user-picked toggle. The old /different login/ assertion tested a check that no longer exists; removed.
-test('registration requires consent and valid ID; login validates identity',()=>{
+test('registration requires consent and valid ID; login validates identity and area',()=>{
  let s=state(null);const user={...mockUsers[0],id:'new',email:'new@example.com',validId:{requirement:'ID',name:'id.pdf',size:2000,type:'application/pdf',status:'Needs Replacement'},privacyConsentAt:at};
  assert.throws(()=>transition(s,{type:'register',user:{...user,privacyConsentAt:undefined}}),/consent/);
  s=transition(s,{type:'register',user});
- assert.equal(transition(s,{type:'login',email:user.email,password:user.password}).currentUserId,user.id);
+ assert.equal(transition(s,{type:'login',email:user.email,password:user.password,staffLogin:false}).currentUserId,user.id);
  assert.throws(()=>transition(s,{type:'register',user:{...user,id:'duplicate'}}),/already registered/);
- assert.throws(()=>transition(s,{type:'login',email:user.email,password:'wrong'}),/incorrect/);
+ assert.throws(()=>transition(s,{type:'login',email:user.email,password:'wrong',staffLogin:false}),/incorrect/);
+ assert.throws(()=>transition(s,{type:'login',email:user.email,password:user.password,staffLogin:true}),/different login/);
 });
 test('renter renewal documents and 5 MB/type boundaries',()=>{
  assert.equal(requirements({...app(state()),ownership:'Renter',applicationType:'Renewal'}).length,5);
@@ -93,7 +88,9 @@ test('OR gate blocks premature, invalid, future, mismatched, duplicate and non-c
  assert.throws(()=>transition(s,{type:'or',reference:ref,number:'TR-2026-12342',date:'2026-09-06',amount:'600.00'}),/already recorded/);
 });
 test('download precedes confirmation; closure timestamps and feedback are recorded',()=>{
- let s=or(assess(state()));assert.equal(app(s).status,'Ready for Download');
+ let s=or(assess(state()));assert.equal(app(s).status,'For Checking');
+ assert.throws(()=>transition(s,{type:'download',reference:ref}),/not available/);
+ s=role(transition(role(s,'staff-maria'),{type:'verifyPayment',reference:ref,orNumber:'TR-2026-54321'},at),'resident-maria');assert.equal(app(s).status,'Ready for Download');
  assert.equal(app(s).receipt.amountPaid,app(s).assessment.total);assert.equal(processingSeconds(app(s)),0);
  assert.throws(()=>transition(s,{type:'confirm',reference:ref}),/Download your clearance/);
  assert.throws(()=>transition(s,{type:'feedback',reference:ref,rating:5,comment:''}),/confirmed receipt/);
@@ -116,7 +113,7 @@ test('fee histories retain old versions and do not change existing assessment sn
  assert.throws(()=>transition(s,{type:'fees',schedule:{...previous,items:[{name:'Test',amount:-1}]}}),/non-negative/);
 });
 test('admin reversion requires reason and preserves original and revised values',()=>{
- let s=or(assess(state()));const data={reference:ref,action:'Edit Fields',reason:'Correct applicant spelling',applicant:'Maria Clara Santos',businessName:'Maria Mini Mart',orNumber:'TR-2026-54321'};
+ let s=role(transition(role(or(assess(state())),'staff-maria'),{type:'verifyPayment',reference:ref,orNumber:'TR-2026-54321'},at),'resident-maria');const data={reference:ref,action:'Edit Fields',reason:'Correct applicant spelling',applicant:'Maria Clara Santos',businessName:'Maria Mini Mart',orNumber:'TR-2026-54321'};
  assert.throws(()=>transition(s,{type:'revert',data}),/Only Admin/);
  assert.throws(()=>transition(role(s,'admin'),{type:'revert',data:{...data,reason:''}}),/Reason/);
  s=transition(role(s,'admin'),{type:'revert',data},at);
@@ -134,9 +131,9 @@ test('reset passwords and deactivated users affect login without leaking passwor
  let s=state('admin'),resident={...mockUsers[0],password:'new-password-123'};
  s=transition(s,{type:'user',user:resident,reason:'Password reset'},at);
  assert.ok(!JSON.stringify(s.audits).includes(resident.password));
- assert.equal(transition(s,{type:'login',email:resident.email,password:resident.password}).currentUserId,resident.id);
+ assert.equal(transition(s,{type:'login',email:resident.email,password:resident.password,staffLogin:false}).currentUserId,resident.id);
  s=transition(s,{type:'user',user:{...resident,status:'Inactive'},reason:'Deactivated'},at);
- assert.throws(()=>transition(s,{type:'login',email:resident.email,password:resident.password}),/inactive/);
+ assert.throws(()=>transition(s,{type:'login',email:resident.email,password:resident.password,staffLogin:false}),/inactive/);
  assert.throws(()=>transition(s,{type:'user',user:{...resident,role:'admin'},reason:'Bad role'}),/Admin accounts/);
 });
 test('report totals match included requests; drafts and voids are excluded',()=>{
@@ -150,4 +147,96 @@ test('generated PDF has valid object offsets, prototype watermark and a real QR 
  const start=Number(pdf.match(/startxref\n(\d+)/)[1]);assert.equal(pdf.slice(start,start+4),'xref');
  const offsets=[...pdf.matchAll(/(\d{10}) 00000 n/g)].map(m=>Number(m[1]));
  offsets.forEach((offset,i)=>assert.ok(pdf.slice(offset).startsWith((i+1)+' 0 obj')));
+});
+
+
+test('all payment methods require staff verification and block release beforehand',()=>{
+ const photo={requirement:'Official Receipt Photo',name:'receipt.png',type:'image/png',size:1024,status:'Needs Replacement',url:'data:image/png;base64,example'};
+ for(const command of [
+  {type:'or',reference:ref,number:'TR-2026-54321',date:'2026-09-06',amount:'600.00'},
+  {type:'receiptPhoto',reference:ref,photo},
+  {type:'onlinePayment',reference:ref,method:'GCash',amount:600}
+ ]){
+  let s=role(assess(state()),'resident-maria');s=transition(s,command,at);
+  assert.equal(app(s).status,'For Checking');assert.equal(app(s).clearance,undefined);
+  assert.throws(()=>transition(s,{type:'download',reference:ref}),/not available/);
+  assert.throws(()=>transition(s,{type:'verifyPayment',reference:ref,orNumber:'TR-2026-54321'}),/Only Staff/);
+  assert.throws(()=>transition(role(s,'admin'),{type:'verifyPayment',reference:ref,orNumber:'TR-2026-54321'}),/Only Staff/);
+  const verify={type:'verifyPayment',reference:ref,orNumber:'TR-2026-54321'};
+  s=transition(role(s,'staff-maria'),verify,at);
+  assert.equal(app(s).status,'Ready for Download');assert.equal(app(s).paymentVerification.status,'Verified');
+  assert.ok(app(s).paymentVerification.checkedBy);assert.ok(app(s).clearance);
+  assert.doesNotThrow(()=>transition(role(s,'resident-maria'),{type:'download',reference:ref},at));
+  assert.throws(()=>transition(s,verify),/awaiting staff/);
+ }
+});
+
+test('staff returns payment with reason and resubmission requires another check',()=>{
+ let s=or(assess(state()));
+ assert.throws(()=>transition(role(s,'staff-maria'),{type:'returnPayment',reference:ref,reason:''}),/correction/);
+ s=transition(role(s,'staff-maria'),{type:'returnPayment',reference:ref,reason:'Upload a legible receipt'},at);
+ assert.equal(app(s).status,'Awaiting OR');assert.equal(app(s).paymentVerification.notes,'Upload a legible receipt');
+ s=or(s);assert.equal(app(s).status,'For Checking');assert.equal(app(s).paymentVerification.status,'Pending');
+ assert.equal(app(s).clearance,undefined);
+});
+
+test('changing an OR number revokes release and requires staff verification again',()=>{
+ let s=transition(role(or(assess(state())),'staff-maria'),{type:'verifyPayment',reference:ref,orNumber:'TR-2026-54321'},at);
+ s=transition(role(s,'admin'),{type:'revert',data:{reference:ref,action:'Edit Fields',reason:'Correct OR',applicant:app(s).applicant,orNumber:'TR-2026-77777'}},at);
+ assert.equal(app(s).status,'For Checking');assert.equal(app(s).clearance,undefined);
+ assert.throws(()=>transition(role(s,'resident-maria'),{type:'download',reference:ref}),/not available/);
+});
+
+
+test('submitted documents start pending review and require staff verification for assessment',()=>{
+ let s=transition(state(),{type:'saveApplication',application:app(state()),draft:false},at);
+ const submitted=s.applications[0];
+ assert.ok(submitted.documents.every(d=>d.status==='Pending Review'));
+ s=role(s,'staff-maria');
+ const command={type:'assess',reference:submitted.reference,category:'Sari-Sari Store',classification:'Medium'};
+ assert.throws(()=>transition(s,command,at),/Verify every/);
+ s=transition(s,{type:'review',reference:submitted.reference,documents:submitted.documents.map(d=>({...d,status:'Verified'}))},at);
+ assert.equal(transition(s,command,at).applications[0].status,'Awaiting OR');
+});
+
+
+test('business clearance supports optional Ambulant and Lessor subcategories',()=>{
+ for(const subcategory of [undefined,'Ambulant','Lessor (Paupahan)']){
+  const input={...app(state()),businessSubcategory:subcategory};
+  let s=transition(state(),{type:'saveApplication',application:input,draft:true},at);
+  const draft=s.applications[0];assert.equal(draft.clearanceType,'Business Clearance');assert.equal(draft.businessSubcategory,subcategory);
+  s=transition(s,{type:'saveApplication',application:draft,reference:draft.reference,draft:false},at);
+  assert.equal(s.applications[0].businessSubcategory,subcategory);assert.equal(s.applications[0].status,'Pending Assessment');
+ }
+ const s=transition(state(),{type:'saveApplication',application:{...app(state()),clearanceType:'Building Clearance',businessSubcategory:'Ambulant'},draft:true},at);
+ assert.equal(s.applications[0].businessSubcategory,undefined);
+});
+
+test('receipt photo verification requires a unique staff-entered OR number',()=>{
+ const photo={requirement:'Official Receipt',name:'receipt.jpg',size:1000,type:'image/jpeg',status:'Pending Review'};
+ let s=transition(role(assess(state()),'resident-maria'),{type:'receiptPhoto',reference:ref,photo},at);
+ s=role(s,'staff-maria');
+ for(const orNumber of [undefined,'','   '])assert.throws(()=>transition(s,{type:'verifyPayment',reference:ref,orNumber},at),/OR number/);
+ const duplicate=s.applications.find(a=>a.reference!==ref);duplicate.paymentVerification={status:'Verified',submittedAt:at,orNumber:'TR-2026-77777'};
+ assert.throws(()=>transition(s,{type:'verifyPayment',reference:ref,orNumber:'TR-2026-77777'},at),/already recorded/);
+ s=transition(s,{type:'verifyPayment',reference:ref,orNumber:' 123456 '},at);
+ assert.equal(app(s).paymentVerification.orNumber,'123456');
+ const entry=s.audits.find(log=>log.action==='OR number recorded by staff');
+ assert.equal(JSON.parse(entry.newValue).orNumber,'123456');assert.equal(entry.reference,ref);assert.equal(entry.role,'staff');assert.equal(entry.timestamp,at);
+ assert.equal(app(s).status,'Ready for Download');assert.deepEqual(app(s).receiptPhoto,photo);
+});
+
+test('staff can adjust assessment fees per application with validation and audit history',()=>{
+ const original=state('staff-maria');const schedules=structuredClone(original.schedules);
+ const baseline=app(assess(original)).assessment;
+ const amounts=baseline.items.map((item,index)=>index===0?123.45:item.amount);
+ const command={type:'assess',reference:ref,category:'Sari-Sari Store',classification:'Medium',amounts};
+ const s=transition(original,command,at);
+ assert.deepEqual(app(s).assessment.items.map(item=>item.amount),amounts);
+ assert.equal(app(s).assessment.total,amounts.reduce((sum,value)=>sum+Math.round(value*100),0)/100);
+ assert.deepEqual(s.schedules,schedules);assert.equal(app(s).status,'Awaiting OR');
+ const log=s.audits.find(log=>log.action==='Assessment fee amounts adjusted');
+ assert.deepEqual(JSON.parse(log.oldValue),baseline.items);assert.deepEqual(JSON.parse(log.newValue),app(s).assessment.items);assert.equal(log.role,'staff');
+ for(const invalid of [[],amounts.map(()=>-1),amounts.map(()=>NaN),amounts.map(()=>Infinity),amounts.map(()=>1.001),amounts.map(()=>'5')])assert.throws(()=>transition(original,{...command,amounts:invalid},at),/valid non-negative/);
+ assert.throws(()=>transition(role(original,'resident-maria'),command,at),/Only Staff/);
 });
