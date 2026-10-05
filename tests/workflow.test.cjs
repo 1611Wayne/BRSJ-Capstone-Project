@@ -245,3 +245,16 @@ test('staff can adjust assessment fees per application with validation and audit
  for(const invalid of [[],amounts.map(()=>-1),amounts.map(()=>NaN),amounts.map(()=>Infinity),amounts.map(()=>1.001),amounts.map(()=>'5')])assert.throws(()=>transition(original,{...command,amounts:invalid},at),/valid non-negative/);
  assert.throws(()=>transition(role(original,'resident-maria'),command,at),/Only Staff/);
 });
+
+test('staff make the final Business Category choice, whatever the Applicant indicated',()=>{
+ // Decision D8 (2026-10-06): the Applicant may indicate Ambulant or Lessor at intake; Staff decide at assessment.
+ for(const indicated of [undefined,'Ambulant','Lessor (Paupahan)']){
+  const s0=state('staff-maria');app(s0).businessSubcategory=indicated;
+  const s=transition(s0,{type:'assess',reference:ref,category:'Bakery',classification:'Medium'},at);
+  assert.equal(app(s).assessment.category,'Bakery');assert.equal(app(s).assessment.classification,'Medium');
+  assert.equal(app(s).businessSubcategory,indicated);assert.equal(app(s).status,'Awaiting OR');
+ }
+ const bank=transition(state('staff-maria'),{type:'assess',reference:ref,category:'Bank',classification:''},at);
+ assert.equal(app(bank).assessment.category,'Bank');
+ assert.throws(()=>transition(state('staff-maria'),{type:'assess',reference:ref,category:'No Such Category',classification:''},at),/No effective fee schedule/);
+});
