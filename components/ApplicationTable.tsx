@@ -4,7 +4,7 @@ import type { Application, UserRole } from '@/types'; import { StatusBadge } fro
 export function applicationAction(a:Application,role:UserRole){
  if(role==='resident'){if(a.status==='Draft')return {label:'Continue Application',href:'/resident/apply?draft='+a.reference};if(a.status==='Awaiting OR')return {label:'View Assessment',href:'/resident/apply/pre-assessment?ref='+a.reference};if(a.status==='Ready for Download')return {label:'Download Clearance',href:'/resident/apply/ready?ref='+a.reference};}
  if(role==='staff'){if(a.status==='For Checking')return {label:'Verify Payment',href:'/staff/applications/'+a.reference};if(a.status==='Pending Assessment')return {label:'Review / Assess',href:'/staff/assessment/'+a.reference};if(a.status==='Awaiting OR')return {label:'Assist OR Entry',href:'/staff/or-entry?ref='+a.reference};}
- return {label:a.status==='Closed - Cleared'?'View Transaction':'View',href:'/'+role+'/applications/'+a.reference};
+ return {label:'View',href:'/'+role+'/applications/'+a.reference};
 }
 export function ApplicationTable({applications,role}:{applications:Application[];role:UserRole}){
  const [page,setPage]=useState(1);const pages=Math.max(1,Math.ceil(applications.length/6)),current=Math.min(page,pages);const rows=applications.slice((current-1)*6,current*6);
