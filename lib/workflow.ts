@@ -43,6 +43,7 @@ export type Command =
   | { type: 'register'; user: User }
   | { type: 'saveApplication'; application: ApplicationInput; reference?: string; draft: boolean }
   | { type: 'review'; reference: string; documents: UploadedDocument[] }
+  | { type: 'replaceDocument'; reference: string; document: UploadedDocument }
   | { type: 'inspection'; reference: string; report: InspectionReport }
   | { type: 'assess'; reference: string; category: string; classification: string; amounts?: number[] }
   | { type: 'reject'; reference: string; reason: string }
@@ -125,6 +126,18 @@ export function transition(state: PortalState, command: Command, now = new Date(
   requireThat(actor.role !== 'resident' || original.residentId === actor.id, 'This request belongs to another resident.');
   const a = { ...original };
   if (command.type === 'review') { staff(); requireThat(a.status === 'Pending Assessment' || a.status === 'Under Review', 'Requirements can only be reviewed before assessment.'); a.documents = command.documents; log('Requirements reviewed', reference, JSON.stringify(original.documents.map(d => [d.requirement, d.status])), JSON.stringify(a.documents.map(d => [d.requirement, d.status]))); }
+  // A document Staff flagged (Missing / Needs Replacement) can be replaced with a new copy, by the Applicant or by Staff
+  // on the Applicant's behalf (e.g. at the counter). It goes back to Pending Review so Staff verify it again.
+  if (command.type === 'replaceDocument') {
+    requireThat(actor.role === 'staff' || actor.role === 'resident', 'Only the Applicant or Staff can replace a document.');
+    requireThat(a.status === 'Pending Assessment' || a.status === 'Under Review', 'Documents can only be replaced before assessment is confirmed.');
+    const index = a.documents.findIndex(d => d.requirement === command.document.requirement);
+    const old = a.documents[index];
+    requireThat(old && (old.status === 'Missing' || old.status === 'Needs Replacement'), 'Only a document that Staff marked Missing or Needs Replacement can be replaced.');
+    requireThat(validFile(command.document), 'Upload a valid file in JPG, PNG, or PDF, up to 5 MB.');
+    a.documents = a.documents.map((d, i) => i === index ? { ...command.document, requirement: old.requirement, status: 'Pending Review' as const } : d);
+    log(actor.role === 'staff' ? 'Document replaced by Staff for the Applicant' : 'Document replaced by Applicant', reference, JSON.stringify({ requirement: old.requirement, file: old.name, status: old.status }), JSON.stringify({ requirement: old.requirement, file: command.document.name, status: 'Pending Review' }));
+  }
   if (command.type === 'inspection') { staff(); requireThat(a.status !== 'Void', 'A void transaction cannot be inspected.'); requireThat(command.report.status !== 'Completed' || (command.report.inspector.trim() && command.report.date && command.report.date <= today()), 'Completed inspections need an inspector and valid date.'); a.inspection = { ...command.report, savedAt: now }; log('Inspection report saved', reference, JSON.stringify(original.inspection), JSON.stringify(a.inspection)); }
   if (command.type === 'assess') {
     staff(); requireThat(a.status === 'Pending Assessment' || (a.status === 'Under Review' && !a.receipt), 'This request cannot be assessed at its current stage.');

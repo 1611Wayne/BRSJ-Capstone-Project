@@ -258,3 +258,38 @@ test('staff make the final Business Category choice, whatever the Applicant indi
  assert.equal(app(bank).assessment.category,'Bank');
  assert.throws(()=>transition(state('staff-maria'),{type:'assess',reference:ref,category:'No Such Category',classification:''},at),/No effective fee schedule/);
 });
+
+// Document replacement (2026-10-06): Staff flag a document Missing / Needs Replacement; the Applicant uploads a new copy,
+// or Staff upload it on the Applicant's behalf; the new copy goes back to Pending Review and must be verified again.
+const newCopy=(requirement,patch={})=>({requirement,name:'new-copy.jpg',size:2000,type:'image/jpeg',status:'Pending Review',...patch});
+const flagDoc=(s,requirement,status='Needs Replacement')=>transition(role(s,'staff-maria'),{type:'review',reference:ref,documents:app(s).documents.map(d=>d.requirement===requirement?{...d,status}:d)},at);
+test('the Applicant or Staff can replace a document Staff flagged, and it goes back to review',()=>{
+ const first=app(state()).documents[0].requirement;
+ for(const [actorId,action] of [['resident-maria','Document replaced by Applicant'],['staff-maria','Document replaced by Staff for the Applicant']])for(const status of ['Needs Replacement','Missing']){
+  const flagged=flagDoc(state(),first,status);
+  const s=transition(role(flagged,actorId),{type:'replaceDocument',reference:ref,document:newCopy(first)},at);
+  const replaced=app(s).documents.find(d=>d.requirement===first);
+  assert.equal(replaced.name,'new-copy.jpg');assert.equal(replaced.status,'Pending Review');
+  assert.deepEqual(app(s).documents.filter(d=>d.requirement!==first),app(flagged).documents.filter(d=>d.requirement!==first));
+  assert.equal(s.audits[0].action,action);assert.match(s.audits[0].oldValue,new RegExp(status));assert.equal(app(s).status,'Pending Assessment');
+ }
+});
+test('only a flagged document can be replaced, by the right people, with a valid file, before assessment is confirmed',()=>{
+ const first=app(state()).documents[0].requirement;const flagged=flagDoc(state(),first);const replace=(s,id,document)=>transition(role(s,id),{type:'replaceDocument',reference:ref,document},at);
+ assert.throws(()=>replace(state(),'resident-maria',newCopy(first)),/Only a document that Staff marked/);
+ assert.throws(()=>replace(flagged,'resident-maria',newCopy('Not A Requirement')),/Only a document that Staff marked/);
+ assert.throws(()=>replace(flagged,'resident-juan',newCopy(first)),/belongs to another resident/);
+ assert.throws(()=>replace(flagged,'admin',newCopy(first)),/Only the Applicant or Staff/);
+ assert.throws(()=>replace(flagged,'resident-maria',newCopy(first,{name:'note.txt',type:'text/plain'})),/valid file/);
+ assert.throws(()=>replace(flagged,'resident-maria',newCopy(first,{size:6*1024*1024})),/valid file/);
+ const assessed=assess(state());assert.equal(app(assessed).status,'Awaiting OR');
+ assert.throws(()=>replace(assessed,'staff-maria',newCopy(first)),/before assessment is confirmed/);
+});
+test('a replaced document must be verified again before assessment can be confirmed',()=>{
+ const first=app(state()).documents[0].requirement;
+ let s=transition(role(flagDoc(state(),first),'resident-maria'),{type:'replaceDocument',reference:ref,document:newCopy(first)},at);
+ const assessCmd={type:'assess',reference:ref,category:'Sari-Sari Store',classification:'Medium'};
+ assert.throws(()=>transition(role(s,'staff-maria'),assessCmd,at),/Verify every required document/);
+ s=transition(role(s,'staff-maria'),{type:'review',reference:ref,documents:app(s).documents.map(d=>({...d,status:'Verified'}))},at);
+ assert.equal(app(transition(role(s,'staff-maria'),assessCmd,at)).status,'Awaiting OR');
+});
