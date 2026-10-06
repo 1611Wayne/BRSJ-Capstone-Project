@@ -1,7 +1,7 @@
 require('./register-ts.cjs');
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { transition, requirements, validateOR, validFile, activeSchedule } = require('../lib/workflow.ts');
+const { transition, requirements, validateOR, validFile, activeSchedule, hasPaymentEvidence, verifiableClearance } = require('../lib/workflow.ts');
 const { mockApplications } = require('../data/mockApplications.ts');
 const { mockUsers } = require('../data/mockUsers.ts');
 const { mockFeeSchedules } = require('../data/mockFeeSchedules.ts');
@@ -375,4 +375,28 @@ test('a correction that makes another document required adds it as Missing, to b
  assert.equal(app(staffEdit(state(),{purpose:'Changed'})).documents.length,app(state()).documents.length);
  assert.equal(app(staffEdit(rejectIt(state()),{applicationType:'Renewal'})).documents.some(d=>d.requirement==='Old Business Clearance'),true);
  assert.throws(()=>staffEdit(assess(state()),{ownership:'Renter',propertyOwner:'Pedro Santos'}),/another document required after assessment/);
+});
+
+// The public verification page (the QR code on the clearance) looks a clearance up with verifiableClearance. It used to
+// require application.receipt, which the receipt-photo (D1) and simulation flows never set, so those clearances showed as not found.
+test('a released clearance can be verified whichever way payment was shown: typed OR, receipt photo, or simulation',()=>{
+ const verify=(s,orNumber)=>transition(role(s,'staff-maria'),{type:'verifyPayment',reference:ref,orNumber},at);
+ const total=app(assess(state())).assessment.total;
+ const typed=verify(or(assess(state())),'TR-2026-54321');
+ const photo=verify(transition(role(assess(state()),'resident-maria'),{type:'receiptPhoto',reference:ref,photo:{requirement:'Official Receipt',name:'or.jpg',size:1000,type:'image/jpeg',status:'Pending Review'}},at),'TR-2026-77777');
+ const sim=verify(transition(role(assess(state()),'resident-maria'),{type:'onlinePayment',reference:ref,method:'GCash',amount:total},at));
+ for(const [name,s] of [['typed OR',typed],['receipt photo',photo],['simulation',sim]]){
+  assert.equal(app(s).status,'Ready for Download',name);assert.ok(app(s).clearance,name);
+  assert.equal(verifiableClearance(app(s)),true,name+' must be verifiable');
+ }
+ assert.equal(app(photo).receipt,undefined);assert.equal(app(photo).paymentVerification.orNumber,'TR-2026-77777');
+});
+test('a request with no released clearance, or no payment evidence, cannot be verified',()=>{
+ assert.equal(verifiableClearance(app(state())),false);
+ assert.equal(verifiableClearance(app(assess(state()))),false);
+ const sent=transition(role(assess(state()),'resident-maria'),{type:'receiptPhoto',reference:ref,photo:{requirement:'Official Receipt',name:'or.jpg',size:1000,type:'image/jpeg',status:'Pending Review'}},at);
+ assert.equal(app(sent).status,'For Checking');assert.equal(verifiableClearance(app(sent)),false);
+ assert.equal(verifiableClearance({...app(state()),clearance:{issueDate:'2026-09-06',generatedAt:at}}),false);
+ assert.equal(hasPaymentEvidence({}),false);
+ for(const a of state().applications.filter(a=>a.status==='Ready for Download'||a.status==='Closed - Cleared'))assert.equal(verifiableClearance(a),true,a.reference);
 });

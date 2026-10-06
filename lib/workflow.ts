@@ -1,4 +1,4 @@
-import type { Application, ApplicationEdits, ApplicationInput, ApplicationStatus, CorrectionRequest, DocumentRequirement, FeeSchedule, InspectionReport, PortalState, SimulatedPayment, TransactionReversion, UploadedDocument, User } from '@/types';
+import type { Application, ApplicationEdits, ApplicationInput, ApplicationStatus, Clearance, CorrectionRequest, DocumentRequirement, FeeSchedule, InspectionReport, PortalState, SimulatedPayment, TransactionReversion, UploadedDocument, User } from '@/types';
 import { clearanceTypes, businessSubcategories } from '@/data/clearanceTypes';
 import { fullName } from '@/data/mockUsers';
 export const today = () => new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' });
@@ -24,6 +24,10 @@ export function requirements(a: Pick<Application, 'clearanceType' | 'ownership' 
   if (a.clearanceType !== 'Business Clearance') return [{ name: 'Valid ID', required: true }, { name: 'Supporting Property / Clearance Document', required: true }];
   return [{ name: 'Valid ID of Owner', required: true }, { name: 'Picture of Establishment / Business', required: true }, { name: 'DTI / SEC Document', required: true }, ...(a.ownership === 'Renter' ? [{ name: 'Contract of Lease', required: true }] : []), ...(a.applicationType === 'Renewal' ? [{ name: 'Old Business Clearance', required: true }] : [])];
 }
+// Payment evidence is a typed receipt, an uploaded receipt photo (the OR number is then kept in paymentVerification, not in
+// receipt), or a simulated payment. The download rule and the public verification page both use this, so they cannot drift apart.
+export const hasPaymentEvidence = (a: Pick<Application, 'receipt' | 'receiptPhoto' | 'simulatedPayment'>) => !!(a.receipt || a.receiptPhoto || a.simulatedPayment);
+export const verifiableClearance = (a: Application): a is Application & { clearance: Clearance } => !!a.clearance && hasPaymentEvidence(a);
 export function validFile(file: Pick<UploadedDocument, 'name' | 'size' | 'type'>) {
   return /\.(jpe?g|png|pdf)$/i.test(file.name) && ['image/jpeg', 'image/png', 'application/pdf'].includes(file.type) && file.size > 0 && file.size <= 5 * 1024 * 1024;
 }
@@ -268,7 +272,7 @@ export function transition(state: PortalState, command: Command, now = new Date(
     }
   }
   if (command.type === 'download') {
-    requireThat(actor.role === 'resident' && (a.receipt || a.receiptPhoto || a.simulatedPayment) && a.clearance && (a.status === 'Ready for Download' || a.status === 'Closed - Cleared'), 'Clearance is not available for download.');
+    requireThat(actor.role === 'resident' && verifiableClearance(a) && (a.status === 'Ready for Download' || a.status === 'Closed - Cleared'), 'Clearance is not available for download.');
     a.clearance = { ...a.clearance, downloadedAt: now }; log('Clearance downloaded', reference);
   }
   if (command.type === 'confirm') {
