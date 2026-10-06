@@ -293,3 +293,86 @@ test('a replaced document must be verified again before assessment can be confir
  s=transition(role(s,'staff-maria'),{type:'review',reference:ref,documents:app(s).documents.map(d=>({...d,status:'Verified'}))},at);
  assert.equal(app(transition(role(s,'staff-maria'),assessCmd,at)).status,'Awaiting OR');
 });
+// Correction requests (agreed 2026-09-23, built 2026-10-06): the Applicant describes the mistake in a text box, Staff
+// change the entry for them and mark it resolved. A rejected request is returned to the Applicant and reopened by resolving.
+const askFix=(s,id='resident-maria',message='My last name is misspelled. It should be Clarita.')=>transition(role(s,id),{type:'requestCorrection',reference:ref,message},at);
+const staffEdit=(s,changes,id='staff-maria')=>transition(role(s,id),{type:'editApplication',reference:ref,changes},at);
+const rejectIt=s=>transition(role(s,'staff-maria'),{type:'reject',reference:ref,reason:'The name does not match the ID.'},at);
+test('the Applicant sends a free-text correction request: one open at a time, only while it can still be corrected',()=>{
+ const s=askFix(state());const [c]=app(s).corrections;
+ assert.equal(c.status,'Open');assert.match(c.message,/misspelled/);assert.equal(c.requestedAt,at);assert.equal(s.audits[0].action,'Correction requested');
+ assert.throws(()=>askFix(s),/already waiting/);
+ assert.throws(()=>askFix(state(),'resident-maria','   '),/Describe what/);
+ assert.throws(()=>askFix(state(),'resident-maria','x'.repeat(501)),/500 characters/);
+ assert.throws(()=>askFix(state(),'resident-juan'),/belongs to another resident/);
+ for(const id of ['staff-maria','admin'])assert.throws(()=>askFix(state(),id),/Only the Applicant/);
+ for(const status of ['Ready for Download','Closed - Cleared','Void','Draft']){const s2=state();app(s2).status=status;assert.throws(()=>askFix(s2),/can no longer be sent/,status);}
+ for(const status of ['Pending Assessment','Under Review','Rejected','Awaiting OR','For Checking']){const s2=state();app(s2).status=status;assert.equal(app(askFix(s2)).corrections.length,1,status);}
+});
+test('Staff correct the Applicant\'s entries for them; only the changed entries are logged, old and new',()=>{
+ const before=app(state());const s=staffEdit(state(),{applicant:'  Maria Clarita ',contact:before.contact,purpose:'Renewal of business permit'});
+ assert.equal(app(s).applicant,'Maria Clarita');assert.equal(app(s).purpose,'Renewal of business permit');assert.equal(app(s).clearanceType,before.clearanceType);assert.equal(app(s).status,before.status);
+ const entry=s.audits[0];assert.equal(entry.action,'Application edited by Staff for the Applicant');
+ assert.deepEqual(JSON.parse(entry.oldValue),{applicant:before.applicant,purpose:before.purpose});assert.deepEqual(JSON.parse(entry.newValue),{applicant:'Maria Clarita',purpose:'Renewal of business permit'});
+ assert.equal(entry.user,'Maria Staff');
+ const asked=staffEdit(askFix(state()),{address:'Purok 3, San Jose'});assert.match(asked.audits[0].reason,/misspelled/);
+});
+test('Staff edits keep the submit rules and cannot touch anything but the Applicant\'s entries',()=>{
+ assert.throws(()=>staffEdit(state(),{contact:'123456789'}),/valid Philippine mobile/);
+ assert.throws(()=>staffEdit(state(),{applicant:'  '}),/Complete applicant details/);
+ assert.throws(()=>staffEdit(state(),{businessName:''}),/Complete the business information/);
+ assert.throws(()=>staffEdit(state(),{initialOperation:'2999-01-01'}),/valid operation date/);
+ assert.throws(()=>staffEdit(state(),{ownership:'Renter'}),/Property owner name is required/);
+ assert.throws(()=>staffEdit(state(),{businessSubcategory:'Fishing'}),/supported business subcategory/);
+ assert.throws(()=>staffEdit(state(),{hasEmployees:true,employeeCount:-2}),/valid number of employees/);
+ assert.throws(()=>staffEdit(state(),{}),/Nothing was changed/);
+ assert.throws(()=>staffEdit(state(),{applicant:app(state()).applicant}),/Nothing was changed/);
+ for(const key of ['clearanceType','status','residentId','reference','documents','assessment','receipt','clearance'])assert.throws(()=>staffEdit(state(),{[key]:app(state())[key]}),/cannot be edited here/,key);
+ for(const id of ['resident-maria','admin'])assert.throws(()=>staffEdit(state(),{purpose:'Changed'},id),/Only Staff/);
+ for(const status of ['Ready for Download','Closed - Cleared','Void','Draft']){const s2=state();app(s2).status=status;assert.throws(()=>staffEdit(s2,{purpose:'Changed'}),/Admin transaction reversion/,status);}
+ assert.equal(app(staffEdit(assess(state()),{purpose:'Changed'})).purpose,'Changed');
+ const set=staffEdit(state(),{businessSubcategory:'Lessor (Paupahan)'});assert.equal(app(set).businessSubcategory,'Lessor (Paupahan)');
+ assert.equal(app(staffEdit(set,{businessSubcategory:undefined})).businessSubcategory,undefined);
+});
+test('a rejection is returned to the Applicant, and resolving their correction request reopens it for assessment',()=>{
+ let s=rejectIt(state());assert.equal(app(s).status,'Rejected');assert.ok(app(s).rejection);
+ s=askFix(s);assert.equal(app(s).status,'Rejected');
+ s=staffEdit(s,{applicant:'Maria Clarita'});assert.equal(app(s).status,'Rejected');
+ s=transition(role(s,'staff-maria'),{type:'resolveCorrection',reference:ref,note:'  Fixed the spelling.  '},at);
+ const a=app(s),[c]=a.corrections;
+ assert.equal(a.status,'Pending Assessment');assert.equal(a.rejection,undefined);
+ assert.deepEqual([c.status,c.resolvedBy,c.resolvedAt,c.resolutionNote],['Resolved','Maria Staff',at,'Fixed the spelling.']);
+ assert.equal(s.audits[0].action,'Correction request resolved');assert.match(s.audits[0].newValue,/Rejected -> Pending Assessment/);assert.equal(s.audits[0].reason,'Fixed the spelling.');
+ const again=askFix(s,'resident-maria','The business name has a typo too.');assert.deepEqual(app(again).corrections.map(x=>x.status),['Resolved','Open']);
+});
+test('resolving a correction request does not change the status of a request that was not rejected',()=>{
+ const s=transition(role(askFix(state()),'staff-maria'),{type:'resolveCorrection',reference:ref},at);
+ assert.equal(app(s).status,'Pending Assessment');assert.equal(app(s).corrections[0].status,'Resolved');assert.equal(app(s).corrections[0].resolutionNote,undefined);
+ assert.throws(()=>transition(role(state(),'staff-maria'),{type:'resolveCorrection',reference:ref},at),/no open correction request/);
+ assert.throws(()=>transition(role(s,'staff-maria'),{type:'resolveCorrection',reference:ref},at),/no open correction request/);
+ for(const id of ['resident-maria','admin'])assert.throws(()=>transition(role(askFix(state()),id),{type:'resolveCorrection',reference:ref},at),/Only Staff/);
+});
+test('Staff can leave a short reason on a flagged document; it is dropped once the document is verified or replaced',()=>{
+ const first=app(state()).documents[0].requirement,doc=s=>app(s).documents.find(d=>d.requirement===first);
+ const flag=(s,status,note)=>transition(role(s,'staff-maria'),{type:'review',reference:ref,documents:app(s).documents.map(d=>d.requirement===first?{...d,status,note}:d)},at);
+ let s=flag(state(),'Needs Replacement','  The photo is too blurry to read.  ');
+ assert.equal(doc(s).note,'The photo is too blurry to read.');
+ assert.equal(doc(flag(state(),'Missing','x'.repeat(300))).note.length,200);
+ assert.equal(doc(flag(state(),'Needs Replacement','   ')).note,undefined);
+ assert.equal(doc(flag(state(),'Verified','left over text')).note,undefined);
+ assert.equal(doc(flag(s,'Verified','left over text')).note,undefined);
+ const replaced=transition(role(s,'resident-maria'),{type:'replaceDocument',reference:ref,document:newCopy(first)},at);
+ assert.equal(doc(replaced).note,undefined);assert.equal(doc(replaced).status,'Pending Review');
+});
+
+test('a correction that makes another document required adds it as Missing, to be uploaded like any flagged document',()=>{
+ let s=staffEdit(state(),{ownership:'Renter',propertyOwner:'Pedro Santos'});
+ const lease=app(s).documents.find(d=>d.requirement==='Contract of Lease');
+ assert.equal(lease.status,'Missing');assert.equal(lease.size,0);assert.deepEqual(JSON.parse(s.audits[0].newValue).documentsRequired,['Contract of Lease']);
+ assert.throws(()=>transition(role(s,'staff-maria'),{type:'assess',reference:ref,category:'Sari-Sari Store',classification:'Medium'},at),/Verify every required document/);
+ s=transition(role(s,'resident-maria'),{type:'replaceDocument',reference:ref,document:newCopy('Contract of Lease')},at);
+ assert.equal(app(s).documents.find(d=>d.requirement==='Contract of Lease').status,'Pending Review');
+ assert.equal(app(staffEdit(state(),{purpose:'Changed'})).documents.length,app(state()).documents.length);
+ assert.equal(app(staffEdit(rejectIt(state()),{applicationType:'Renewal'})).documents.some(d=>d.requirement==='Old Business Clearance'),true);
+ assert.throws(()=>staffEdit(assess(state()),{ownership:'Renter',propertyOwner:'Pedro Santos'}),/another document required after assessment/);
+});

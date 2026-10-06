@@ -1,4 +1,4 @@
-import type { Application, ApplicationInput, DocumentRequirement, FeeSchedule, InspectionReport, PortalState, SimulatedPayment, TransactionReversion, UploadedDocument, User } from '@/types';
+import type { Application, ApplicationEdits, ApplicationInput, ApplicationStatus, CorrectionRequest, DocumentRequirement, FeeSchedule, InspectionReport, PortalState, SimulatedPayment, TransactionReversion, UploadedDocument, User } from '@/types';
 import { clearanceTypes, businessSubcategories } from '@/data/clearanceTypes';
 import { fullName } from '@/data/mockUsers';
 export const today = () => new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' });
@@ -38,6 +38,9 @@ export function validateOR(number: string, date: string, amount: string | number
   requireThat(/^\d+(\.\d{1,2})?$/.test(String(amount)) && Number.isFinite(Number(amount)) && Number(amount) >= 0, 'Enter a valid currency amount with at most two decimal places.');
   requireThat(Math.round(Number(amount) * 100) === Math.round(total * 100), 'Amount Paid must match the assessed amount.');
 }
+// Before the clearance is generated, an Applicant can ask for a correction and Staff can make it. A rejected request counts as
+// returned to the Applicant. After generation, changes go through the Admin transaction reversion.
+export const correctableStatuses: ApplicationStatus[] = ['Pending Assessment', 'Under Review', 'Rejected', 'Awaiting OR', 'For Checking'];
 export type Command =
   | { type: 'login'; email: string; password: string } | { type: 'logout' }
   | { type: 'register'; user: User }
@@ -47,6 +50,9 @@ export type Command =
   | { type: 'inspection'; reference: string; report: InspectionReport }
   | { type: 'assess'; reference: string; category: string; classification: string; amounts?: number[] }
   | { type: 'reject'; reference: string; reason: string }
+  | { type: 'requestCorrection'; reference: string; message: string }
+  | { type: 'editApplication'; reference: string; changes: ApplicationEdits }
+  | { type: 'resolveCorrection'; reference: string; note?: string }
   | { type: 'or'; reference: string; number: string; date: string; amount: string; receiptPhoto?: UploadedDocument }
   | { type: 'onlinePayment'; reference: string; method: SimulatedPayment['method']; amount: number }
   | { type: 'receiptPhoto'; reference: string; photo: UploadedDocument }
@@ -125,7 +131,7 @@ export function transition(state: PortalState, command: Command, now = new Date(
   requireThat(original, 'Application not found.');
   requireThat(actor.role !== 'resident' || original.residentId === actor.id, 'This request belongs to another resident.');
   const a = { ...original };
-  if (command.type === 'review') { staff(); requireThat(a.status === 'Pending Assessment' || a.status === 'Under Review', 'Requirements can only be reviewed before assessment.'); a.documents = command.documents; log('Requirements reviewed', reference, JSON.stringify(original.documents.map(d => [d.requirement, d.status])), JSON.stringify(a.documents.map(d => [d.requirement, d.status]))); }
+  if (command.type === 'review') { staff(); requireThat(a.status === 'Pending Assessment' || a.status === 'Under Review', 'Requirements can only be reviewed before assessment.'); a.documents = command.documents.map(({ note, ...d }) => { const flagged = d.status === 'Missing' || d.status === 'Needs Replacement', text = note?.trim().slice(0, 200); return flagged && text ? { ...d, note: text } : d; }); log('Requirements reviewed', reference, JSON.stringify(original.documents.map(d => [d.requirement, d.status])), JSON.stringify(a.documents.map(d => [d.requirement, d.status]))); }
   // A document Staff flagged (Missing / Needs Replacement) can be replaced with a new copy, by the Applicant or by Staff
   // on the Applicant's behalf (e.g. at the counter). It goes back to Pending Review so Staff verify it again.
   if (command.type === 'replaceDocument') {
@@ -160,6 +166,48 @@ export function transition(state: PortalState, command: Command, now = new Date(
     a.status = 'Rejected';
     a.rejection = { reason: command.reason.trim(), rejectedBy: fullName(actor), timestamp: now };
     log('Application rejected', reference, original.status, 'Rejected', command.reason);
+  }
+  // Correction requests. A rejected application is returned to the Applicant (it stays Rejected until Staff reopen it by
+  // resolving the request). The Applicant never edits entries directly: they describe the mistake, Staff change it.
+  // Once a clearance is generated, changes go through the Admin reversion instead.
+  const editableEntries = ['applicant', 'address', 'contact', 'purpose', 'applicationType', 'businessLocation', 'businessName', 'initialOperation', 'businessContact', 'ownership', 'propertyOwner', 'hasEmployees', 'employeeCount', 'businessSubcategory'];
+  const openRequest = a.corrections?.find(c => c.status === 'Open');
+  if (command.type === 'requestCorrection') {
+    requireThat(actor.role === 'resident', 'Only the Applicant can send a correction request.');
+    requireThat(correctableStatuses.includes(a.status), 'A correction request can no longer be sent for this request.');
+    requireThat(command.message.trim(), 'Describe what needs to be corrected.');
+    requireThat(command.message.trim().length <= 500, 'Keep the correction request to 500 characters or fewer.');
+    requireThat(!openRequest, 'A correction request is already waiting for Staff.');
+    const request: CorrectionRequest = { id: `corr-${now}-${(a.corrections?.length || 0) + 1}`, message: command.message.trim(), requestedBy: fullName(actor), requestedAt: now, status: 'Open' };
+    a.corrections = [...(a.corrections || []), request]; log('Correction requested', reference, '', command.message.trim());
+  }
+  if (command.type === 'editApplication') {
+    staff(); requireThat(correctableStatuses.includes(a.status), 'This request can no longer be edited here. Use the Admin transaction reversion.');
+    requireThat(Object.keys(command.changes).every(k => editableEntries.includes(k)), 'That entry cannot be edited here.');
+    const business = a.clearanceType === 'Business Clearance', before: Record<string, unknown> = {}, after: Record<string, unknown> = {};
+    const next = { ...a, ...command.changes, contact: (command.changes.contact ?? a.contact).trim(), applicant: (command.changes.applicant ?? a.applicant).trim(), address: (command.changes.address ?? a.address).trim(), purpose: (command.changes.purpose ?? a.purpose).trim(), businessLocation: (command.changes.businessLocation ?? a.businessLocation).trim(), businessName: (command.changes.businessName ?? a.businessName).trim(), businessContact: (command.changes.businessContact ?? a.businessContact).trim(), propertyOwner: (command.changes.propertyOwner ?? a.propertyOwner).trim(), businessSubcategory: business ? ('businessSubcategory' in command.changes ? command.changes.businessSubcategory : a.businessSubcategory) : undefined };
+    requireThat(next.applicant && next.address && next.purpose && /^(09\d{9}|\+639\d{9})$/.test(next.contact), 'Complete applicant details and enter a valid Philippine mobile number.');
+    requireThat(next.businessLocation, 'Business / property location is required.');
+    if (business) requireThat(next.businessName && next.initialOperation && !isNaN(Date.parse(next.initialOperation)) && next.initialOperation <= today() && next.businessContact, 'Complete the business information and use a valid operation date.');
+    requireThat(next.ownership === 'Owner' || next.propertyOwner, 'Property owner name is required for renters and occupants.');
+    requireThat(!next.businessSubcategory || businessSubcategories.includes(next.businessSubcategory), 'Choose a supported business subcategory.');
+    requireThat(!next.hasEmployees || next.employeeCount === undefined || (Number.isInteger(next.employeeCount) && next.employeeCount > 0), 'Enter a valid number of employees.');
+    for (const key of Object.keys(command.changes) as (keyof ApplicationEdits)[]) if (JSON.stringify(a[key]) !== JSON.stringify(next[key])) { before[key] = a[key]; after[key] = next[key]; }
+    requireThat(Object.keys(after).length, 'Nothing was changed.');
+    // A change such as Renter or Renewal makes another document required. Add it as Missing so it can be uploaded through
+    // the normal replace step; once the assessment is confirmed that is no longer possible, so the Admin reversion applies.
+    const added = requirements(next).filter(r => !a.documents.some(d => d.requirement === r.name));
+    requireThat(!added.length || a.status === 'Pending Assessment' || a.status === 'Under Review' || a.status === 'Rejected', 'This change makes another document required after assessment. Use the Admin transaction reversion.');
+    Object.assign(a, Object.fromEntries(Object.keys(after).map(k => [k, next[k as keyof typeof next]])));
+    if (added.length) { a.documents = [...a.documents, ...added.map(r => ({ requirement: r.name, name: 'Not uploaded yet', size: 0, type: '', status: 'Missing' as const, note: 'Needed because the application was corrected.' }))]; after.documentsRequired = added.map(r => r.name); }
+    log('Application edited by Staff for the Applicant', reference, JSON.stringify(before), JSON.stringify(after), openRequest?.message || '');
+  }
+  if (command.type === 'resolveCorrection') {
+    staff(); requireThat(openRequest, 'There is no open correction request to resolve.');
+    const note = command.note?.trim().slice(0, 300) || undefined;
+    a.corrections = a.corrections!.map(c => c.id === openRequest.id ? { ...c, status: 'Resolved' as const, resolvedBy: fullName(actor), resolvedAt: now, resolutionNote: note } : c);
+    if (a.status === 'Rejected') { a.status = 'Pending Assessment'; a.rejection = undefined; }
+    log('Correction request resolved', reference, openRequest.message, a.status === original.status ? 'Resolved' : `Resolved; ${original.status} -> ${a.status}`, note || '');
   }
   if (command.type === 'or') {
     requireThat(actor.role === 'resident' || actor.role === 'staff', 'Only Residents or Staff can record OR details.');

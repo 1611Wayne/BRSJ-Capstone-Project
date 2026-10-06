@@ -36,6 +36,7 @@ export function ReplaceDocuments({ application: a, onReplaced }: { application: 
       <div className="grid sm:grid-cols-2 gap-4 mt-5">
         {flagged.map(d => <div key={d.requirement + d.name}>
           <p className="text-xs font-semibold text-red-700 mb-1">{d.status}: {d.name}</p>
+          {d.note && <p className="text-xs text-slate-700 mb-2">Staff note: {d.note}</p>}
           <FileUpload label={d.requirement} helper={staff ? 'Upload for the Applicant • JPG, PNG, PDF • Max 5 MB' : 'JPG, PNG, PDF • Max 5 MB'} persist onChange={replace} />
         </div>)}
       </div>

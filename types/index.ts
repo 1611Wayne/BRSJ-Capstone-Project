@@ -7,7 +7,7 @@ export interface Admin extends User { role: 'admin' }
 export interface ClearanceType { id: string; name: string; shortName: string; description: string; icon: string }
 export type Ownership = 'Owner' | 'Renter' | 'Occupant';
 export interface DocumentRequirement { name: string; required: boolean }
-export interface UploadedDocument { requirement: string; name: string; size: number; type: string; status: 'Pending Review' | 'Verified' | 'Missing' | 'Needs Replacement'; url?: string }
+export interface UploadedDocument { requirement: string; name: string; size: number; type: string; status: 'Pending Review' | 'Verified' | 'Missing' | 'Needs Replacement'; url?: string; note?: string }
 export interface BusinessClassification { name: string; businessClearance: number }
 export interface BusinessCategory { name: string; classifications?: BusinessClassification[]; businessClearance?: number }
 export type RevenueCategory = BusinessCategory;
@@ -33,7 +33,12 @@ export interface Application {
   receiptPhoto?: UploadedDocument;
   paymentVerification?: { status: 'Pending' | 'Verified' | 'Needs Correction'; submittedAt: string; checkedBy?: string; checkedAt?: string; orNumber?: string; notes?: string };
   rejection?: { reason: string; rejectedBy: string; timestamp: string };
+  corrections?: CorrectionRequest[];
 }
+// The Applicant says in plain words what is wrong; Staff make the change for them and mark it Resolved.
+export interface CorrectionRequest { id: string; message: string; requestedBy: string; requestedAt: string; status: 'Open' | 'Resolved'; resolvedBy?: string; resolvedAt?: string; resolutionNote?: string }
+// The entries Staff may correct for an Applicant. Clearance type is not one of them: it changes the requirements and fees.
+export type ApplicationEdits = Partial<Pick<Application, 'applicant' | 'address' | 'contact' | 'purpose' | 'applicationType' | 'businessLocation' | 'businessName' | 'initialOperation' | 'businessContact' | 'ownership' | 'propertyOwner' | 'hasEmployees' | 'employeeCount' | 'businessSubcategory'>>;
 export type ApplicationInput = Omit<Application, 'reference' | 'dateRequested' | 'status'>;
 export type ReversionAction = 'Edit Fields' | 'Void Transaction' | 'Mark Under Review';
 export interface TransactionReversion { reference: string; action: ReversionAction; reason: string; applicant?: string; businessName?: string; orNumber?: string }
