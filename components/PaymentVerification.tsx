@@ -10,7 +10,7 @@ import { formatPeso } from '@/data/revenueCodeData';
 export function PaymentVerification({application:a}:{application:Application}) {
  const {user,act}=usePortal();
  const [error,setError]=useState(''),[preview,setPreview]=useState<UploadedDocument>();
- const [orNumber,setOrNumber]=useState(''),[orDate,setOrDate]=useState(''),[amountPaid,setAmountPaid]=useState('');
+ const [orNumber,setOrNumber]=useState(''),[orDate,setOrDate]=useState(''),[amountPaid,setAmountPaid]=useState(''),[reason,setReason]=useState('');
  const photo=a.receiptPhoto||a.receipt?.receiptPhoto;
  if(!a.paymentVerification)return null;
  return <div className="content-card p-6 mt-6">
@@ -26,6 +26,10 @@ export function PaymentVerification({application:a}:{application:Application}) {
     {!a.simulatedPayment&&!a.receipt&&<Field label="OR Date *"><input type="date" className="text-field" required max={today()} value={orDate} onChange={e=>setOrDate(e.target.value)}/><p className="text-xs text-slate-500 mt-2">The date printed on the receipt.</p></Field>}
     {!a.simulatedPayment&&!a.receipt&&<Field label="Amount Paid (PHP) *"><input type="number" min="0" step="0.01" className="text-field" required value={amountPaid} onChange={e=>setAmountPaid(e.target.value)} placeholder="Enter the amount printed on the receipt"/><p className="text-xs text-slate-500 mt-2">It must match the assessed amount. If the receipt shows a different amount, return the payment with a reason instead.</p></Field>}
     <button type="submit" className="primary-btn mt-4" disabled={!a.simulatedPayment&&(!orNumber.trim()||(!a.receipt&&(!orDate||!amountPaid.trim())))}>Verify Payment</button>
+   </form>
+   <form className="mt-6 border-t pt-4" onSubmit={e=>{e.preventDefault();try{act({type:'returnPayment',reference:a.reference,reason:reason.trim()});setError('');setReason('');}catch(e){setError((e as Error).message);}}}>
+    <Field label="Unreadable receipt, or an amount that does not match? Return it to the Applicant"><textarea className="textarea-field min-h-[70px]" required value={reason} onChange={e=>setReason(e.target.value)} placeholder="Tell the Applicant what to fix. Example: the OR number is cut off, please upload a clearer photo."/></Field>
+    <button type="submit" className="secondary-btn mt-3" disabled={!reason.trim()}>Return to Applicant</button>
    </form>
 
   </>}

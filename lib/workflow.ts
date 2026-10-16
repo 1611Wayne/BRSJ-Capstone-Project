@@ -73,7 +73,7 @@ export type Command =
   | { type: 'receiptPhoto'; reference: string; photo: UploadedDocument }
   | { type: 'verifyPayment'; reference: string; orNumber?: string; orDate?: string; amountPaid?: string | number }
   | { type: 'returnPayment'; reference: string; reason: string }
-  | { type: 'download' | 'confirm'; reference: string }
+  | { type: 'download' | 'confirm' | 'printClearance'; reference: string }
   | { type: 'feedback'; reference: string; rating: number; comment: string }
   | { type: 'revert'; data: TransactionReversion }
   | { type: 'fees'; schedule: FeeSchedule }
@@ -289,13 +289,24 @@ export function transition(state: PortalState, command: Command, now = new Date(
       log('Payment verified by staff', reference, original.status, a.status); log('Clearance generated', reference, original.status, a.status);
     }
   }
+  // The printed original needs the barangay's official stamp, so Staff print the clearance from the system. Printing changes nothing on
+  // the record; it is logged so the audit trail shows who printed it and when (a replacement copy can be printed after release).
+  if (command.type === 'printClearance') {
+    staff(); requireThat(verifiableClearance(a) && (a.status === 'Ready for Download' || a.status === 'Closed - Cleared'), 'This clearance is not available for printing.');
+    log('Clearance printed by Staff for the official stamp', reference);
+  }
   if (command.type === 'download') {
     requireThat(actor.role === 'resident' && verifiableClearance(a) && (a.status === 'Ready for Download' || a.status === 'Closed - Cleared'), 'Clearance is not available for download.');
     a.clearance = { ...a.clearance, downloadedAt: now }; log('Clearance downloaded', reference);
   }
   if (command.type === 'confirm') {
-    requireThat(actor.role === 'resident' && a.status === 'Ready for Download' && a.clearance?.downloadedAt, 'Download your clearance before confirming receipt.');
-    a.confirmation = { timestamp: now, completionTime: now, ipPlaceholder: 'Not collected (prototype)' }; a.status = 'Closed - Cleared'; log('Receipt confirmed', reference, original.status, a.status);
+    // The printed original is handed over at the monitoring office, so Staff can record the release for the Applicant (manuscript 3.3.1,
+    // pp. 67 and 71). An Applicant confirming online must still have downloaded the clearance first.
+    requireThat(actor.role === 'staff' || actor.role === 'resident', 'Only the Applicant or Staff can confirm receipt.');
+    requireThat(a.status === 'Ready for Download', 'Only a clearance that is ready can be confirmed as received.');
+    requireThat(actor.role === 'staff' || a.clearance?.downloadedAt, 'Download your clearance before confirming receipt.');
+    a.confirmation = { timestamp: now, completionTime: now, ipPlaceholder: 'Not collected (prototype)', ...(actor.role === 'staff' ? { confirmedBy: fullName(actor) } : {}) }; a.status = 'Closed - Cleared';
+    log(actor.role === 'staff' ? 'Release confirmed by Staff for the Applicant' : 'Receipt confirmed', reference, original.status, a.status);
   }
   if (command.type === 'feedback') {
     requireThat(actor.role === 'resident' && a.confirmation && !a.feedback && Number.isInteger(command.rating) && command.rating >= 1 && command.rating <= 5, 'Feedback requires confirmed receipt and a rating from 1 to 5.');

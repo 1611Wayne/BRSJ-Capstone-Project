@@ -19,7 +19,8 @@ export interface BusinessAssessment extends Assessment {}
 export interface OfficialReceipt { orNumber: string; orDate: string; amountPaid: number; recordedAt: string; encodedBy: string; receiptPhoto?: UploadedDocument }
 export interface SimulatedPayment { method: 'GCash' | 'Bank Transfer' | 'Maya' | 'Other'; referenceNumber: string; amount: number; paidAt: string; note: string }
 export interface Clearance { issueDate: string; generatedAt: string; revisedFrom?: string; downloadedAt?: string }
-export interface ReceiptConfirmation { timestamp: string; ipPlaceholder: string; completionTime: string }
+// confirmedBy is set only when Staff recorded the release at the counter (the Applicant's own confirmation leaves it empty).
+export interface ReceiptConfirmation { timestamp: string; ipPlaceholder: string; completionTime: string; confirmedBy?: string }
 export interface Feedback { rating: number; comment: string; submittedAt: string }
 export interface InspectionReport { status: 'Pending' | 'Completed'; inspector: string; date: string; remarks: string; savedAt?: string }
 export interface Application {

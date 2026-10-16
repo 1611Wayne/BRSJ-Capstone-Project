@@ -57,7 +57,7 @@ export function applicationPDF(a:Application,kind:'assessment'|'clearance'){
   if(a.simulatedPayment){lines.push('Payment Method: '+a.simulatedPayment.method+' (Simulated)','Sim. Reference: '+a.simulatedPayment.referenceNumber,'Amount: PHP '+a.simulatedPayment.amount.toFixed(2),'SIMULATION – not an official Treasury payment');}
   else if(a.receipt){lines.push('OR Number: '+a.receipt.orNumber,'OR Date: '+a.receipt.orDate,'Amount Paid: PHP '+a.receipt.amountPaid.toFixed(2));}
   else{lines.push('OR Number: '+(a.paymentVerification?.orNumber||''),'Payment: Receipt photo verified by Staff','Verified By: '+a.paymentVerification?.checkedBy);}
-  lines.push('Issue Date: '+a.clearance!.issueDate,...(a.clearance!.revisedFrom?['REVISED - Original on '+a.clearance!.revisedFrom]:[]),'','This sample demonstrates fulfillment of a clearance request.','It is not a legally valid clearance.','','Verification: '+window.location.origin+'/verify/'+a.reference);
+  lines.push('Issue Date: '+a.clearance!.issueDate,...(a.clearance!.revisedFrom?['REVISED - Original on '+a.clearance!.revisedFrom]:[]),'','DIGITAL COPY: the stamped original is released at the monitoring office.','This sample demonstrates fulfillment of a clearance request.','It is not a legally valid clearance.','','Verification: '+window.location.origin+'/verify/'+a.reference);
   downloadBlob(a.reference+'-clearance.pdf',makePDF(a.clearanceType,lines,window.location.origin+'/verify/'+a.reference));
  }
 }

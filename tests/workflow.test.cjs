@@ -447,3 +447,24 @@ test('Staff transcribe the Amount Paid, and it must equal the assessed total (ma
  const sent=transition(role(transition(role(assess(state()),'resident-maria'),{type:'receiptPhoto',reference:ref,photo:photoFile},at),'staff-maria'),{type:'returnPayment',reference:ref,reason:'The receipt shows 500.00, not 600.00'},at);
  assert.equal(app(sent).status,'Awaiting OR');assert.equal(app(sent).receipt,undefined);
 });
+
+// Release at the counter (D6 answered 2026-10-16): the printed, stamped original is handed over at the monitoring office, so Staff print the
+// clearance (logged) and confirm the release for the Applicant. An Applicant confirming online must still download first.
+test('Staff print the clearance and confirm its release for the Applicant; the Applicant still downloads first',()=>{
+ const ready=releasedByPhoto();
+ assert.throws(()=>transition(role(ready,'resident-maria'),{type:'confirm',reference:ref},at),/Download your clearance/);
+ assert.throws(()=>transition(role(ready,'admin'),{type:'confirm',reference:ref},at),/Only the Applicant or Staff/);
+ const printed=transition(role(ready,'staff-maria'),{type:'printClearance',reference:ref},at);
+ assert.equal(printed.audits[0].action,'Clearance printed by Staff for the official stamp');assert.equal(app(printed).status,'Ready for Download');
+ const closed=transition(role(printed,'staff-maria'),{type:'confirm',reference:ref},at);
+ assert.equal(app(closed).status,'Closed - Cleared');assert.equal(app(closed).confirmation.confirmedBy,'Maria Staff');assert.equal(closed.audits[0].action,'Release confirmed by Staff for the Applicant');
+ assert.equal(processingSeconds(app(closed)),(Date.parse(at)-Date.parse(app(closed).dateRequested))/1000);
+ const own=transition(role(transition(role(ready,'resident-maria'),{type:'download',reference:ref},at),'resident-maria'),{type:'confirm',reference:ref},at);
+ assert.equal(app(own).confirmation.confirmedBy,undefined);assert.equal(own.audits[0].action,'Receipt confirmed');
+ const early=or(assess(state()));
+ assert.throws(()=>transition(role(early,'staff-maria'),{type:'confirm',reference:ref},at),/ready can be confirmed/);
+ assert.throws(()=>transition(role(early,'staff-maria'),{type:'printClearance',reference:ref},at),/not available for printing/);
+ assert.throws(()=>transition(closed,{type:'confirm',reference:ref},at),/ready can be confirmed/);
+ for(const id of ['resident-maria','admin'])assert.throws(()=>transition(role(ready,id),{type:'printClearance',reference:ref},at),/Only Staff/);
+ assert.equal(transition(role(closed,'staff-maria'),{type:'printClearance',reference:ref},at).audits[0].action,'Clearance printed by Staff for the official stamp');
+});
