@@ -6,7 +6,7 @@ import { StatCard } from './StatCard';
 import { ApplicationTable } from './ApplicationTable';
 import { ReportTable } from './ReportTable';
 import { dateLabel } from '@/lib/workflow';
-import { processingSeconds, SLA_SECONDS } from '@/data/mockReports';
+import { processingSeconds, paymentCheckSeconds, mmss, SLA_SECONDS } from '@/data/mockReports';
 import type { UserRole } from '@/types';
 
 /* ── helpers ─────────────────────────────────────────────── */
@@ -106,6 +106,7 @@ export function Dashboard({ role }: { role: UserRole }) {
   const { state, user } = usePortal();
   const apps = state.applications.filter(a => (role !== 'resident' || a.residentId === user?.id) && a.status !== 'Draft');
   const times = apps.map(processingSeconds).filter((n): n is number => n !== null);
+  const checks = apps.map(paymentCheckSeconds).filter((n): n is number => n !== null);
   const ratings = apps.flatMap(a => a.feedback ? [a.feedback.rating] : []);
 
   const metrics = [
@@ -121,15 +122,15 @@ export function Dashboard({ role }: { role: UserRole }) {
   const anchorTime = apps.reduce((latest, a) => Math.max(latest, new Date(a.dateRequested).getTime()), 0);
   const days = last14Days(anchorTime ? new Date(anchorTime) : new Date());
   const txByDay = days.map(d => apps.filter(a => a.dateRequested.slice(0, 10) === d).length);
-  const avgSecByDay = days.map(d => {
+  const avgMinByDay = days.map(d => {
     const dayTimes = apps
-      .filter(a => a.clearance?.generatedAt?.slice(0, 10) === d)
+      .filter(a => a.confirmation?.timestamp?.slice(0, 10) === d)
       .map(processingSeconds)
       .filter((n): n is number => n !== null);
-    return dayTimes.length ? dayTimes.reduce((a, b) => a + b, 0) / dayTimes.length : null;
+    return dayTimes.length ? dayTimes.reduce((a, b) => a + b, 0) / dayTimes.length / 60 : null;
   });
   const withinSlaByDay = days.map(d => {
-    const dayTimes = apps.filter(a => a.clearance?.generatedAt?.slice(0, 10) === d).map(processingSeconds).filter((n): n is number => n !== null);
+    const dayTimes = apps.filter(a => a.paymentVerification?.checkedAt?.slice(0, 10) === d).map(paymentCheckSeconds).filter((n): n is number => n !== null);
     return dayTimes.length ? Math.round(dayTimes.filter(t => t <= SLA_SECONDS).length / dayTimes.length * 100) : null;
   });
 
@@ -146,12 +147,12 @@ export function Dashboard({ role }: { role: UserRole }) {
       <div className="grid sm:grid-cols-2 md:grid-cols-4 gap-4 mt-9">
         {metrics.map(m => <StatCard key={m.label} {...m} />)}
         {role === 'admin' && <>
-          <StatCard label="Requests Within SLA" value={times.length ? Math.round(times.filter(t => t <= SLA_SECONDS).length / times.length * 100) + '%' : '—'} icon={Gauge} />
-          <StatCard label="Average Processing Time" value={times.length ? (times.reduce((a, b) => a + b, 0) / times.length).toFixed(1) + 's' : '—'} icon={Clock3} />
+          <StatCard label="Requests Within SLA" value={checks.length ? Math.round(checks.filter(t => t <= SLA_SECONDS).length / checks.length * 100) + '%' : '—'} icon={Gauge} />
+          <StatCard label="Average Processing Time" value={times.length ? mmss(times.reduce((a, b) => a + b, 0) / times.length) : '—'} icon={Clock3} />
           <StatCard label="Average Satisfaction Rating" value={ratings.length ? (ratings.reduce((a, b) => a + b, 0) / ratings.length).toFixed(1) + '/5' : '—'} icon={Star} />
         </>}
       </div>
-      {role === 'admin' && <p className="text-xs text-slate-500 mt-3">Processing duration measures OR entry to clearance generation. Sample SLA target: {SLA_SECONDS} seconds.</p>}
+      {role === 'admin' && <p className="text-xs text-slate-500 mt-3">Average processing time runs from application submission to the Applicant’s receipt confirmation (MM:SS). Requests Within SLA measures the Staff payment check, from receipt upload to verification, against a demo target of {SLA_SECONDS} seconds; no SLA has been approved.</p>}
 
       {/* Analytics charts – Admin only (Revision 1) */}
       {role === 'admin' && (
@@ -175,10 +176,10 @@ export function Dashboard({ role }: { role: UserRole }) {
             <div className="content-card p-6">
               <div className="flex items-center gap-2 mb-4">
                 <Clock3 size={16} className="text-brand-primary" aria-hidden="true" />
-                <h3 className="text-sm font-bold text-brand-ink">Avg. Processing Time (seconds)</h3>
+                <h3 className="text-sm font-bold text-brand-ink">Avg. Processing Time (minutes)</h3>
               </div>
-              <LineChart days={days} data={avgSecByDay} label="Average processing time in seconds — last 14 days" unit="s" />
-              <p className="text-xs text-slate-500 mt-3">Average time from OR entry to clearance generation. Missing dots = no clearances issued that day.</p>
+              <LineChart days={days} data={avgMinByDay} label="Average processing time in minutes — last 14 days" unit=" min" />
+              <p className="text-xs text-slate-500 mt-3">Average time from application submission to receipt confirmation, by the day the Applicant confirmed receipt. Missing dots = no confirmed clearances that day.</p>
             </div>
             {/* Line chart – SLA compliance % */}
             <div className="content-card p-6">
@@ -186,8 +187,8 @@ export function Dashboard({ role }: { role: UserRole }) {
                 <Gauge size={16} className="text-brand-primary" aria-hidden="true" />
                 <h3 className="text-sm font-bold text-brand-ink">Daily SLA Compliance (%)</h3>
               </div>
-              <LineChart days={days} data={withinSlaByDay} label="Percentage of clearances processed within SLA — last 14 days" unit="%" />
-              <p className="text-xs text-slate-500 mt-3">Percentage of clearances issued within the {SLA_SECONDS}s SLA target per day.</p>
+              <LineChart days={days} data={withinSlaByDay} label="Percentage of payment checks within the demo SLA target — last 14 days" unit="%" />
+              <p className="text-xs text-slate-500 mt-3">Percentage of payment checks (receipt upload to Staff verification) completed within the {SLA_SECONDS}s demo target, by the day Staff verified.</p>
             </div>
             {/* Bar chart – daily satisfaction ratings average */}
             <div className="content-card p-6">

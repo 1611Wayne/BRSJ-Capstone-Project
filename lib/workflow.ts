@@ -2,6 +2,9 @@ import type { Application, ApplicationEdits, ApplicationInput, ApplicationStatus
 import { clearanceTypes, businessSubcategories } from '@/data/clearanceTypes';
 import { fullName } from '@/data/mockUsers';
 export const today = () => new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' });
+// The calendar day (YYYY-MM-DD) an ISO timestamp falls on in Manila. A plain slice(0, 10) gives the UTC day, which is the
+// day before for anything between 00:00 and 08:00 Manila time.
+export const manilaDate = (iso: string) => new Date(iso).toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' });
 export const dateLabel = (value?: string) => value ? new Date(value).toLocaleString('en-PH', { timeZone: 'Asia/Manila', dateStyle: 'medium', ...(value.includes('T') ? { timeStyle: 'short' as const } : {}) }) : '—';
 export type DateRangePreset = 'annual' | 'quarterly' | 'weekly' | 'daily';
 const iso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -42,6 +45,9 @@ export function validateOR(number: string, date: string, amount: string | number
   requireThat(/^\d+(\.\d{1,2})?$/.test(String(amount)) && Number.isFinite(Number(amount)) && Number(amount) >= 0, 'Enter a valid currency amount with at most two decimal places.');
   requireThat(Math.round(Number(amount) * 100) === Math.round(total * 100), 'Amount Paid must match the assessed amount.');
 }
+// The OR date Staff type from a receipt image: a real calendar date, not in the future. (validateOR also ties the OR number's year
+// to the date, which only fits the typed TR-YYYY-##### format; a number read off an image is not held to that pattern.)
+export const validOrDate = (date?: string, currentDate = today()) => !!date && /^\d{4}-\d{2}-\d{2}$/.test(date) && !isNaN(Date.parse(date)) && new Date(date).toISOString().slice(0, 10) === date && date <= currentDate;
 // Before the clearance is generated, an Applicant can ask for a correction and Staff can make it. A rejected request counts as
 // returned to the Applicant. After generation, changes go through the Admin transaction reversion.
 export const correctableStatuses: ApplicationStatus[] = ['Pending Assessment', 'Under Review', 'Rejected', 'Awaiting OR', 'For Checking'];
@@ -60,7 +66,7 @@ export type Command =
   | { type: 'or'; reference: string; number: string; date: string; amount: string; receiptPhoto?: UploadedDocument }
   | { type: 'onlinePayment'; reference: string; method: SimulatedPayment['method']; amount: number }
   | { type: 'receiptPhoto'; reference: string; photo: UploadedDocument }
-  | { type: 'verifyPayment'; reference: string; orNumber?: string }
+  | { type: 'verifyPayment'; reference: string; orNumber?: string; orDate?: string }
   | { type: 'returnPayment'; reference: string; reason: string }
   | { type: 'download' | 'confirm'; reference: string }
   | { type: 'feedback'; reference: string; rating: number; comment: string }
@@ -264,9 +270,15 @@ export function transition(state: PortalState, command: Command, now = new Date(
         requireThat(orNumber, 'Enter the OR number from the receipt before verifying payment.');
         requireThat(!s.applications.some(x => x.reference !== reference && (x.receipt?.orNumber === orNumber || x.paymentVerification?.orNumber === orNumber)), 'This OR number is already recorded for another request.');
         if (a.receipt) a.receipt = { ...a.receipt, orNumber };
+        else {
+          // Receipt-photo flow (D1): Staff type the OR number and the OR date shown on the image. The amount is the assessed total, which a
+          // payment had to match, so it is not typed. Recording the full receipt lets the reports, the clearance and the verification page read it.
+          requireThat(validOrDate(command.orDate), 'Enter the OR date shown on the receipt. It cannot be a future date.');
+          a.receipt = { orNumber, orDate: command.orDate!, amountPaid: a.assessment.total, recordedAt: now, encodedBy: fullName(actor), ...(a.receiptPhoto ? { receiptPhoto: a.receiptPhoto } : {}) };
+        }
       }
       a.paymentVerification = { ...a.paymentVerification, status: 'Verified', checkedBy: fullName(actor), checkedAt: now, ...(orNumber && !a.simulatedPayment ? { orNumber } : {}) };
-      if (orNumber && !a.simulatedPayment) log('OR number recorded by staff', reference, JSON.stringify({ orNumber: original.paymentVerification?.orNumber || original.receipt?.orNumber || '' }), JSON.stringify({ orNumber }));
+      if (orNumber && !a.simulatedPayment) log('OR number recorded by staff', reference, JSON.stringify({ orNumber: original.paymentVerification?.orNumber || original.receipt?.orNumber || '' }), JSON.stringify({ orNumber, ...(!original.receipt && a.receipt ? { orDate: a.receipt.orDate } : {}) }));
       a.clearance = { issueDate: today(), generatedAt: now }; a.status = 'Ready for Download';
       log('Payment verified by staff', reference, original.status, a.status); log('Clearance generated', reference, original.status, a.status);
     }

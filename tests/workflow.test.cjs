@@ -1,11 +1,11 @@
 require('./register-ts.cjs');
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { transition, requirements, validateOR, validFile, activeSchedule, hasPaymentEvidence, verifiableClearance } = require('../lib/workflow.ts');
+const { transition, requirements, validateOR, validFile, activeSchedule, hasPaymentEvidence, verifiableClearance, manilaDate, validOrDate } = require('../lib/workflow.ts');
 const { mockApplications } = require('../data/mockApplications.ts');
 const { mockUsers } = require('../data/mockUsers.ts');
 const { mockFeeSchedules } = require('../data/mockFeeSchedules.ts');
-const { monthlyRows, processingSeconds } = require('../data/mockReports.ts');
+const { monthlyRows, processingSeconds, paymentCheckSeconds, mmss, dailyOrApplications } = require('../data/mockReports.ts');
 const { clearanceTypes } = require('../data/clearanceTypes.ts');
 const { makePDF } = require('../lib/downloads.ts');
 const state = (id = 'resident-maria') => structuredClone({users:mockUsers,applications:mockApplications,schedules:mockFeeSchedules,audits:[],currentUserId:id});
@@ -96,7 +96,7 @@ test('download precedes confirmation; closure timestamps and feedback are record
  let s=or(assess(state()));assert.equal(app(s).status,'For Checking');
  assert.throws(()=>transition(s,{type:'download',reference:ref}),/not available/);
  s=role(transition(role(s,'staff-maria'),{type:'verifyPayment',reference:ref,orNumber:'TR-2026-54321'},at),'resident-maria');assert.equal(app(s).status,'Ready for Download');
- assert.equal(app(s).receipt.amountPaid,app(s).assessment.total);assert.equal(processingSeconds(app(s)),0);
+ assert.equal(app(s).receipt.amountPaid,app(s).assessment.total);assert.equal(processingSeconds(app(s)),null);assert.equal(paymentCheckSeconds(app(s)),0);
  assert.throws(()=>transition(s,{type:'confirm',reference:ref}),/Download your clearance/);
  assert.throws(()=>transition(s,{type:'feedback',reference:ref,rating:5,comment:''}),/confirmed receipt/);
  s=transition(s,{type:'download',reference:ref},at);s=transition(s,{type:'confirm',reference:ref},at);
@@ -167,7 +167,7 @@ test('all payment methods require staff verification and block release beforehan
   assert.throws(()=>transition(s,{type:'download',reference:ref}),/not available/);
   assert.throws(()=>transition(s,{type:'verifyPayment',reference:ref,orNumber:'TR-2026-54321'}),/Only Staff/);
   assert.throws(()=>transition(role(s,'admin'),{type:'verifyPayment',reference:ref,orNumber:'TR-2026-54321'}),/Only Staff/);
-  const verify={type:'verifyPayment',reference:ref,orNumber:'TR-2026-54321'};
+  const verify={type:'verifyPayment',reference:ref,orNumber:'TR-2026-54321',orDate:'2026-09-06'};
   s=transition(role(s,'staff-maria'),verify,at);
   assert.equal(app(s).status,'Ready for Download');assert.equal(app(s).paymentVerification.status,'Verified');
   assert.ok(app(s).paymentVerification.checkedBy);assert.ok(app(s).clearance);
@@ -224,11 +224,15 @@ test('receipt photo verification requires a unique staff-entered OR number',()=>
  for(const orNumber of [undefined,'','   '])assert.throws(()=>transition(s,{type:'verifyPayment',reference:ref,orNumber},at),/OR number/);
  const duplicate=s.applications.find(a=>a.reference!==ref);duplicate.paymentVerification={status:'Verified',submittedAt:at,orNumber:'TR-2026-77777'};
  assert.throws(()=>transition(s,{type:'verifyPayment',reference:ref,orNumber:'TR-2026-77777'},at),/already recorded/);
- s=transition(s,{type:'verifyPayment',reference:ref,orNumber:' 123456 '},at);
+ for(const orDate of [undefined,'','2026-13-40','06/09/2026','2999-01-01'])assert.throws(()=>transition(s,{type:'verifyPayment',reference:ref,orNumber:'TR-2026-88888',orDate},at),/OR date/);
+ s=transition(s,{type:'verifyPayment',reference:ref,orNumber:' 123456 ',orDate:'2026-09-06'},at);
  assert.equal(app(s).paymentVerification.orNumber,'123456');
  const entry=s.audits.find(log=>log.action==='OR number recorded by staff');
  assert.equal(JSON.parse(entry.newValue).orNumber,'123456');assert.equal(entry.reference,ref);assert.equal(entry.role,'staff');assert.equal(entry.timestamp,at);
  assert.equal(app(s).status,'Ready for Download');assert.deepEqual(app(s).receiptPhoto,photo);
+ // Staff verification records the full receipt: the number and date they typed, and the assessed total as the amount.
+ assert.deepEqual([app(s).receipt.orNumber,app(s).receipt.orDate,app(s).receipt.amountPaid,app(s).receipt.encodedBy,app(s).receipt.recordedAt],['123456','2026-09-06',app(s).assessment.total,'Maria Staff',at]);
+ assert.deepEqual(app(s).receipt.receiptPhoto,photo);assert.equal(JSON.parse(entry.newValue).orDate,'2026-09-06');
 });
 
 test('staff can adjust assessment fees per application with validation and audit history',()=>{
@@ -378,9 +382,10 @@ test('a correction that makes another document required adds it as Missing, to b
 });
 
 // The public verification page (the QR code on the clearance) looks a clearance up with verifiableClearance. It used to
-// require application.receipt, which the receipt-photo (D1) and simulation flows never set, so those clearances showed as not found.
+// require application.receipt, which the receipt-photo (D1) and simulation flows did not set, so those clearances showed as not found.
+// (Staff verification now records the receipt for the photo flow; a simulation still has none and is found through hasPaymentEvidence.)
 test('a released clearance can be verified whichever way payment was shown: typed OR, receipt photo, or simulation',()=>{
- const verify=(s,orNumber)=>transition(role(s,'staff-maria'),{type:'verifyPayment',reference:ref,orNumber},at);
+ const verify=(s,orNumber)=>transition(role(s,'staff-maria'),{type:'verifyPayment',reference:ref,orNumber,orDate:'2026-09-06'},at);
  const total=app(assess(state())).assessment.total;
  const typed=verify(or(assess(state())),'TR-2026-54321');
  const photo=verify(transition(role(assess(state()),'resident-maria'),{type:'receiptPhoto',reference:ref,photo:{requirement:'Official Receipt',name:'or.jpg',size:1000,type:'image/jpeg',status:'Pending Review'}},at),'TR-2026-77777');
@@ -389,7 +394,7 @@ test('a released clearance can be verified whichever way payment was shown: type
   assert.equal(app(s).status,'Ready for Download',name);assert.ok(app(s).clearance,name);
   assert.equal(verifiableClearance(app(s)),true,name+' must be verifiable');
  }
- assert.equal(app(photo).receipt,undefined);assert.equal(app(photo).paymentVerification.orNumber,'TR-2026-77777');
+ assert.equal(app(photo).receipt.orNumber,'TR-2026-77777');assert.equal(app(photo).paymentVerification.orNumber,'TR-2026-77777');
 });
 test('a request with no released clearance, or no payment evidence, cannot be verified',()=>{
  assert.equal(verifiableClearance(app(state())),false);
@@ -399,4 +404,35 @@ test('a request with no released clearance, or no payment evidence, cannot be ve
  assert.equal(verifiableClearance({...app(state()),clearance:{issueDate:'2026-09-06',generatedAt:at}}),false);
  assert.equal(hasPaymentEvidence({}),false);
  for(const a of state().applications.filter(a=>a.status==='Ready for Download'||a.status==='Closed - Cleared'))assert.equal(verifiableClearance(a),true,a.reference);
+});
+
+// Reports and timer for the D1 flow (2026-10-16, following the manuscript): Monthly Collection counts released, non-simulated
+// payments at the assessed total; the Daily OR Summary groups by the Manila day Staff verified; the timer runs submission -> receipt
+// confirmation; the SLA indicators measure the Staff payment check.
+const photoFile={requirement:'Official Receipt',name:'or.jpg',size:1000,type:'image/jpeg',status:'Pending Review'};
+const releasedByPhoto=(orNumber='TR-2026-77777',orDate='2026-09-06')=>transition(role(transition(role(assess(state()),'resident-maria'),{type:'receiptPhoto',reference:ref,photo:photoFile},at),'staff-maria'),{type:'verifyPayment',reference:ref,orNumber,orDate},at);
+test('Monthly Collection counts released payments at the assessed total, and never unverified or simulated ones',()=>{
+ const recorded=s=>monthlyRows(s.applications).filter(r=>r.clearanceType===app(s).clearanceType).reduce((n,r)=>n+r.recorded,0),base=recorded(state()),total=app(assess(state())).assessment.total;
+ assert.equal(recorded(releasedByPhoto())-base,total);
+ assert.equal(recorded(or(assess(state())))-base,0);
+ const sim=transition(role(transition(role(assess(state()),'resident-maria'),{type:'onlinePayment',reference:ref,method:'GCash',amount:total},at),'staff-maria'),{type:'verifyPayment',reference:ref},at);
+ assert.equal(app(sim).status,'Ready for Download');assert.equal(recorded(sim)-base,0);
+});
+test('the Daily OR Summary lists a payment on the Manila day Staff verified it, with its OR date and amount',()=>{
+ const s=releasedByPhoto('TR-2026-77777','2026-09-06');
+ assert.deepEqual(dailyOrApplications(s.applications,'2026-09-07').map(a=>a.reference).filter(r=>r===ref),[ref]);
+ assert.equal(dailyOrApplications(s.applications,'2026-09-06').some(a=>a.reference===ref),false);
+ assert.equal(dailyOrApplications(s.applications,'2026-09-07','Business Clearance').some(a=>a.reference===ref),true);
+ assert.equal(dailyOrApplications(s.applications,'2026-09-07','Building Clearance').some(a=>a.reference===ref),false);
+ assert.equal(dailyOrApplications(or(assess(state())).applications,'2026-09-07').some(a=>a.reference===ref),false);
+ assert.equal(manilaDate('2026-10-05T17:00:00.000Z'),'2026-10-06');assert.equal(manilaDate('2026-10-05T15:59:00.000Z'),'2026-10-05');
+ assert.equal(validOrDate('2026-09-06'),true);assert.equal(validOrDate('2026-09-31'),false);assert.equal(validOrDate('2999-01-01'),false);assert.equal(validOrDate(),false);
+});
+test('total processing time runs from submission to receipt confirmation (MM:SS); the payment check is timed separately',()=>{
+ const closed=state().applications.find(a=>a.status==='Closed - Cleared');
+ assert.equal(processingSeconds(closed),9300);assert.equal(mmss(processingSeconds(closed)),'155:00');
+ assert.equal(paymentCheckSeconds(closed),3);
+ assert.equal(processingSeconds(app(state())),null);assert.equal(paymentCheckSeconds(app(state())),null);
+ assert.equal(processingSeconds(app(releasedByPhoto())),null);
+ assert.equal(mmss(59.9),'00:59');assert.equal(mmss(61),'01:01');assert.equal(mmss(0),'00:00');
 });

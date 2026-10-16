@@ -19,6 +19,7 @@ export const mockApplications: Application[] = seeds.map(([number, type, status,
     assessment: assessed ? { items: schedule.items, total: schedule.items.reduce((sum, item) => sum + item.amount, 0), category: schedule.category, classification: schedule.classification, assessedBy: 'Maria Staff', assessedAt: '2026-09-06T09:00:00+08:00', scheduleId: schedule.id } : undefined,
     receipt: issued ? { orNumber: `TR-2026-${12340 + index}`, orDate: '2026-09-06', amountPaid: schedule.items.reduce((sum, item) => sum + item.amount, 0), recordedAt: '2026-09-06T10:30:12+08:00', encodedBy: 'Maria Staff' } : undefined,
     clearance: issued ? { issueDate: '2026-09-06', generatedAt: '2026-09-06T10:30:15+08:00' } : undefined,
+    paymentVerification: issued ? { status: 'Verified' as const, submittedAt: '2026-09-06T10:30:12+08:00', checkedBy: 'Maria Staff', checkedAt: '2026-09-06T10:30:15+08:00' } : undefined,
     confirmation: status === 'Closed - Cleared' ? { timestamp: '2026-09-06T10:35:00+08:00', completionTime: '2026-09-06T10:35:00+08:00', ipPlaceholder: 'Not collected (prototype)' } : undefined,
     feedback: status === 'Closed - Cleared' ? { rating: 5, comment: 'Clear instructions and convenient service.', submittedAt: '2026-09-06T10:36:00+08:00' } : undefined,
   };
