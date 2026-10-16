@@ -1,7 +1,7 @@
 require('./register-ts.cjs');
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { transition, requirements, validateOR, validFile, activeSchedule, hasPaymentEvidence, verifiableClearance, manilaDate, validOrDate } = require('../lib/workflow.ts');
+const { transition, requirements, validateOR, validFile, activeSchedule, hasPaymentEvidence, verifiableClearance, manilaDate, validOrDate, validateAmountPaid } = require('../lib/workflow.ts');
 const { mockApplications } = require('../data/mockApplications.ts');
 const { mockUsers } = require('../data/mockUsers.ts');
 const { mockFeeSchedules } = require('../data/mockFeeSchedules.ts');
@@ -167,7 +167,7 @@ test('all payment methods require staff verification and block release beforehan
   assert.throws(()=>transition(s,{type:'download',reference:ref}),/not available/);
   assert.throws(()=>transition(s,{type:'verifyPayment',reference:ref,orNumber:'TR-2026-54321'}),/Only Staff/);
   assert.throws(()=>transition(role(s,'admin'),{type:'verifyPayment',reference:ref,orNumber:'TR-2026-54321'}),/Only Staff/);
-  const verify={type:'verifyPayment',reference:ref,orNumber:'TR-2026-54321',orDate:'2026-09-06'};
+  const verify={type:'verifyPayment',reference:ref,orNumber:'TR-2026-54321',orDate:'2026-09-06',amountPaid:600};
   s=transition(role(s,'staff-maria'),verify,at);
   assert.equal(app(s).status,'Ready for Download');assert.equal(app(s).paymentVerification.status,'Verified');
   assert.ok(app(s).paymentVerification.checkedBy);assert.ok(app(s).clearance);
@@ -225,7 +225,9 @@ test('receipt photo verification requires a unique staff-entered OR number',()=>
  const duplicate=s.applications.find(a=>a.reference!==ref);duplicate.paymentVerification={status:'Verified',submittedAt:at,orNumber:'TR-2026-77777'};
  assert.throws(()=>transition(s,{type:'verifyPayment',reference:ref,orNumber:'TR-2026-77777'},at),/already recorded/);
  for(const orDate of [undefined,'','2026-13-40','06/09/2026','2999-01-01'])assert.throws(()=>transition(s,{type:'verifyPayment',reference:ref,orNumber:'TR-2026-88888',orDate},at),/OR date/);
- s=transition(s,{type:'verifyPayment',reference:ref,orNumber:' 123456 ',orDate:'2026-09-06'},at);
+ for(const amountPaid of [undefined,'','abc','-5','0','599.99','600.001','1e3'])assert.throws(()=>transition(s,{type:'verifyPayment',reference:ref,orNumber:'TR-2026-88888',orDate:'2026-09-06',amountPaid},at),/amount/i,String(amountPaid));
+ assert.throws(()=>transition(s,{type:'verifyPayment',reference:ref,orNumber:'TR-2026-88888',orDate:'2026-09-06',amountPaid:'599.99'},at),/must match the assessed amount/);
+ s=transition(s,{type:'verifyPayment',reference:ref,orNumber:' 123456 ',orDate:'2026-09-06',amountPaid:'600.00'},at);
  assert.equal(app(s).paymentVerification.orNumber,'123456');
  const entry=s.audits.find(log=>log.action==='OR number recorded by staff');
  assert.equal(JSON.parse(entry.newValue).orNumber,'123456');assert.equal(entry.reference,ref);assert.equal(entry.role,'staff');assert.equal(entry.timestamp,at);
@@ -385,7 +387,7 @@ test('a correction that makes another document required adds it as Missing, to b
 // require application.receipt, which the receipt-photo (D1) and simulation flows did not set, so those clearances showed as not found.
 // (Staff verification now records the receipt for the photo flow; a simulation still has none and is found through hasPaymentEvidence.)
 test('a released clearance can be verified whichever way payment was shown: typed OR, receipt photo, or simulation',()=>{
- const verify=(s,orNumber)=>transition(role(s,'staff-maria'),{type:'verifyPayment',reference:ref,orNumber,orDate:'2026-09-06'},at);
+ const verify=(s,orNumber)=>transition(role(s,'staff-maria'),{type:'verifyPayment',reference:ref,orNumber,orDate:'2026-09-06',amountPaid:600},at);
  const total=app(assess(state())).assessment.total;
  const typed=verify(or(assess(state())),'TR-2026-54321');
  const photo=verify(transition(role(assess(state()),'resident-maria'),{type:'receiptPhoto',reference:ref,photo:{requirement:'Official Receipt',name:'or.jpg',size:1000,type:'image/jpeg',status:'Pending Review'}},at),'TR-2026-77777');
@@ -410,7 +412,7 @@ test('a request with no released clearance, or no payment evidence, cannot be ve
 // payments at the assessed total; the Daily OR Summary groups by the Manila day Staff verified; the timer runs submission -> receipt
 // confirmation; the SLA indicators measure the Staff payment check.
 const photoFile={requirement:'Official Receipt',name:'or.jpg',size:1000,type:'image/jpeg',status:'Pending Review'};
-const releasedByPhoto=(orNumber='TR-2026-77777',orDate='2026-09-06')=>transition(role(transition(role(assess(state()),'resident-maria'),{type:'receiptPhoto',reference:ref,photo:photoFile},at),'staff-maria'),{type:'verifyPayment',reference:ref,orNumber,orDate},at);
+const releasedByPhoto=(orNumber='TR-2026-77777',orDate='2026-09-06')=>transition(role(transition(role(assess(state()),'resident-maria'),{type:'receiptPhoto',reference:ref,photo:photoFile},at),'staff-maria'),{type:'verifyPayment',reference:ref,orNumber,orDate,amountPaid:600},at);
 test('Monthly Collection counts released payments at the assessed total, and never unverified or simulated ones',()=>{
  const recorded=s=>monthlyRows(s.applications).filter(r=>r.clearanceType===app(s).clearanceType).reduce((n,r)=>n+r.recorded,0),base=recorded(state()),total=app(assess(state())).assessment.total;
  assert.equal(recorded(releasedByPhoto())-base,total);
@@ -435,4 +437,13 @@ test('total processing time runs from submission to receipt confirmation (MM:SS)
  assert.equal(processingSeconds(app(state())),null);assert.equal(paymentCheckSeconds(app(state())),null);
  assert.equal(processingSeconds(app(releasedByPhoto())),null);
  assert.equal(mmss(59.9),'00:59');assert.equal(mmss(61),'01:01');assert.equal(mmss(0),'00:00');
+});
+test('Staff transcribe the Amount Paid, and it must equal the assessed total (manuscript 3.3.1)',()=>{
+ assert.doesNotThrow(()=>validateAmountPaid('600',600));assert.doesNotThrow(()=>validateAmountPaid(600.5,600.5));assert.doesNotThrow(()=>validateAmountPaid('600.00',600));
+ assert.throws(()=>validateAmountPaid('599.99',600),/must match/);assert.throws(()=>validateAmountPaid('6e2',600),/valid currency/);assert.throws(()=>validateAmountPaid('',600),/valid currency/);
+ const s=releasedByPhoto('TR-2026-12121');
+ assert.equal(app(s).receipt.amountPaid,600);assert.equal(JSON.parse(s.audits.find(l=>l.action==='OR number recorded by staff').newValue).amountPaid,600);
+ // a receipt that shows another amount is not verified: Staff return it with a reason, and the Applicant uploads it again
+ const sent=transition(role(transition(role(assess(state()),'resident-maria'),{type:'receiptPhoto',reference:ref,photo:photoFile},at),'staff-maria'),{type:'returnPayment',reference:ref,reason:'The receipt shows 500.00, not 600.00'},at);
+ assert.equal(app(sent).status,'Awaiting OR');assert.equal(app(sent).receipt,undefined);
 });

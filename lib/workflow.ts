@@ -42,6 +42,11 @@ export function validateOR(number: string, date: string, amount: string | number
   requireThat(/^TR-\d{4}-\d{5}$/.test(number), 'Use the OR format TR-YYYY-#####.');
   requireThat(/^\d{4}-\d{2}-\d{2}$/.test(date) && !isNaN(Date.parse(date)) && new Date(date).toISOString().slice(0,10) === date && date <= currentDate, 'Enter a valid OR date that is not in the future.');
   requireThat(number.slice(3,7) === date.slice(0,4), 'The OR year must match the OR date.');
+  validateAmountPaid(amount, total);
+}
+// The Amount Paid read off a receipt: a currency amount with at most two decimals that equals the assessed total. A receipt that
+// shows a different amount cannot be verified; Staff return it to the Applicant with a reason.
+export function validateAmountPaid(amount: string | number, total: number) {
   requireThat(/^\d+(\.\d{1,2})?$/.test(String(amount)) && Number.isFinite(Number(amount)) && Number(amount) >= 0, 'Enter a valid currency amount with at most two decimal places.');
   requireThat(Math.round(Number(amount) * 100) === Math.round(total * 100), 'Amount Paid must match the assessed amount.');
 }
@@ -66,7 +71,7 @@ export type Command =
   | { type: 'or'; reference: string; number: string; date: string; amount: string; receiptPhoto?: UploadedDocument }
   | { type: 'onlinePayment'; reference: string; method: SimulatedPayment['method']; amount: number }
   | { type: 'receiptPhoto'; reference: string; photo: UploadedDocument }
-  | { type: 'verifyPayment'; reference: string; orNumber?: string; orDate?: string }
+  | { type: 'verifyPayment'; reference: string; orNumber?: string; orDate?: string; amountPaid?: string | number }
   | { type: 'returnPayment'; reference: string; reason: string }
   | { type: 'download' | 'confirm'; reference: string }
   | { type: 'feedback'; reference: string; rating: number; comment: string }
@@ -271,14 +276,15 @@ export function transition(state: PortalState, command: Command, now = new Date(
         requireThat(!s.applications.some(x => x.reference !== reference && (x.receipt?.orNumber === orNumber || x.paymentVerification?.orNumber === orNumber)), 'This OR number is already recorded for another request.');
         if (a.receipt) a.receipt = { ...a.receipt, orNumber };
         else {
-          // Receipt-photo flow (D1): Staff type the OR number and the OR date shown on the image. The amount is the assessed total, which a
-          // payment had to match, so it is not typed. Recording the full receipt lets the reports, the clearance and the verification page read it.
+          // Receipt-photo flow (D1): Staff type the OR number, the OR date and the Amount Paid shown on the image (manuscript 3.3.1). The amount
+          // has to equal the assessed total. Recording the full receipt lets the reports, the clearance and the verification page read it.
           requireThat(validOrDate(command.orDate), 'Enter the OR date shown on the receipt. It cannot be a future date.');
-          a.receipt = { orNumber, orDate: command.orDate!, amountPaid: a.assessment.total, recordedAt: now, encodedBy: fullName(actor), ...(a.receiptPhoto ? { receiptPhoto: a.receiptPhoto } : {}) };
+          validateAmountPaid(command.amountPaid ?? '', a.assessment.total);
+          a.receipt = { orNumber, orDate: command.orDate!, amountPaid: Number(command.amountPaid), recordedAt: now, encodedBy: fullName(actor), ...(a.receiptPhoto ? { receiptPhoto: a.receiptPhoto } : {}) };
         }
       }
       a.paymentVerification = { ...a.paymentVerification, status: 'Verified', checkedBy: fullName(actor), checkedAt: now, ...(orNumber && !a.simulatedPayment ? { orNumber } : {}) };
-      if (orNumber && !a.simulatedPayment) log('OR number recorded by staff', reference, JSON.stringify({ orNumber: original.paymentVerification?.orNumber || original.receipt?.orNumber || '' }), JSON.stringify({ orNumber, ...(!original.receipt && a.receipt ? { orDate: a.receipt.orDate } : {}) }));
+      if (orNumber && !a.simulatedPayment) log('OR number recorded by staff', reference, JSON.stringify({ orNumber: original.paymentVerification?.orNumber || original.receipt?.orNumber || '' }), JSON.stringify({ orNumber, ...(!original.receipt && a.receipt ? { orDate: a.receipt.orDate, amountPaid: a.receipt.amountPaid } : {}) }));
       a.clearance = { issueDate: today(), generatedAt: now }; a.status = 'Ready for Download';
       log('Payment verified by staff', reference, original.status, a.status); log('Clearance generated', reference, original.status, a.status);
     }
