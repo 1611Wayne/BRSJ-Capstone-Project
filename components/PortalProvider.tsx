@@ -6,12 +6,12 @@ import { mockApplications } from '@/data/mockApplications';
 import { mockFeeSchedules } from '@/data/mockFeeSchedules';
 import { mockAuditLogs } from '@/data/mockAuditLogs';
 import { Command, transition } from '@/lib/workflow';
-const initial: PortalState = { users: mockUsers, applications: mockApplications, schedules: mockFeeSchedules, audits: mockAuditLogs, currentUserId: null };
+const initial: PortalState = { users: mockUsers, applications: mockApplications, schedules: mockFeeSchedules, audits: mockAuditLogs, notifications: [], currentUserId: null };
 const Context = createContext<{ state: PortalState; user?: User; ready: boolean; act: (command: Command) => PortalState } | null>(null);
 export function PortalProvider({children}:{children:React.ReactNode}) {
   const [state,setState] = useState<PortalState>(initial); const [ready,setReady] = useState(false); const latest = useRef(state);
   useEffect(() => {
-    try { const saved = sessionStorage.getItem('san-jose-prototype-v2'); if (saved) { const parsed = JSON.parse(saved); if (parsed.users && parsed.applications && parsed.schedules && parsed.audits) { latest.current = parsed; setState(parsed); } } } catch { /* Start with sample records when storage is unavailable. */ }
+    try { const saved = sessionStorage.getItem('san-jose-prototype-v2'); if (saved) { const parsed = JSON.parse(saved); if (parsed.users && parsed.applications && parsed.schedules && parsed.audits) { const loaded = { ...parsed, notifications: parsed.notifications ?? [] }; latest.current = loaded; setState(loaded); } } } catch { /* Start with sample records when storage is unavailable. */ }
     setReady(true);
   },[]);
   function act(command: Command) {

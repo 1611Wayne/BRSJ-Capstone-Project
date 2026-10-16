@@ -7,6 +7,7 @@ import { ApplicationTable } from './ApplicationTable';
 import { ReportTable } from './ReportTable';
 import { dateLabel } from '@/lib/workflow';
 import { processingSeconds, paymentCheckSeconds, mmss, SLA_SECONDS } from '@/data/mockReports';
+import { WhatsNew } from './NotificationInbox';
 import type { UserRole } from '@/types';
 
 /* ── helpers ─────────────────────────────────────────────── */
@@ -142,6 +143,8 @@ export function Dashboard({ role }: { role: UserRole }) {
       <p className="text-sm mt-2 text-slate-700">
         {role === 'resident' ? 'Track and manage your clearance applications here.' : 'Service requests and processing overview.'}
       </p>
+
+      {role === 'resident' && <WhatsNew />}
 
       {/* Stat cards */}
       <div className="grid sm:grid-cols-2 md:grid-cols-4 gap-4 mt-9">

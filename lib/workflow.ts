@@ -1,6 +1,10 @@
 import type { Application, ApplicationEdits, ApplicationInput, ApplicationStatus, Clearance, CorrectionRequest, DocumentRequirement, FeeSchedule, InspectionReport, PortalState, SimulatedPayment, TransactionReversion, UploadedDocument, User } from '@/types';
 import { clearanceTypes, businessSubcategories } from '@/data/clearanceTypes';
 import { fullName } from '@/data/mockUsers';
+import type { AppNotification, NotificationEvent } from '@/types';
+// An Applicant's notifications, newest first.
+export const notificationsFor = (state: PortalState, userId?: string): AppNotification[] =>
+  (state.notifications ?? []).filter(n => n.userId === userId).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 export const today = () => new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Manila' });
 // The calendar day (YYYY-MM-DD) an ISO timestamp falls on in Manila. A plain slice(0, 10) gives the UTC day, which is the
 // day before for anything between 00:00 and 08:00 Manila time.
@@ -74,14 +78,22 @@ export type Command =
   | { type: 'verifyPayment'; reference: string; orNumber?: string; orDate?: string; amountPaid?: string | number }
   | { type: 'returnPayment'; reference: string; reason: string }
   | { type: 'download' | 'confirm' | 'printClearance'; reference: string }
+  | { type: 'readNotifications' }
   | { type: 'feedback'; reference: string; rating: number; comment: string }
   | { type: 'revert'; data: TransactionReversion }
   | { type: 'fees'; schedule: FeeSchedule }
   | { type: 'user'; user: User; reason: string };
 export function transition(state: PortalState, command: Command, now = new Date().toISOString()): PortalState {
-  const s: PortalState = { ...state, users: [...state.users], applications: [...state.applications], schedules: [...state.schedules], audits: [...state.audits] };
+  const s: PortalState = { ...state, users: [...state.users], applications: [...state.applications], schedules: [...state.schedules], audits: [...state.audits], notifications: [...(state.notifications ?? [])] };
   const actor = state.users.find(u => u.id === state.currentUserId && u.status === 'Active');
   const log = (action: string, reference: string, oldValue = '', newValue = '', reason = '', reversion = false) => s.audits.unshift({ id: `audit-${now}-${s.audits.length}`, timestamp: now, user: actor ? fullName(actor) : 'Resident registration', role: actor?.role || 'resident', action, reference, oldValue, newValue, reason, reversion });
+  // Notify the Applicant who owns a request. An unread notice with the same key is updated instead of repeated.
+  const notify = (userId: string, reference: string, event: NotificationEvent, message: string, key?: string) => {
+    const existing = key ? s.notifications.find(n => n.userId === userId && n.key === key && !n.readAt) : undefined;
+    if (existing) { s.notifications = s.notifications.map(n => n === existing ? { ...n, message, createdAt: now } : n); return; }
+    s.notifications = [{ id: `note-${now}-${s.notifications.length}`, userId, reference, event, message, createdAt: now, ...(key ? { key } : {}) }, ...s.notifications];
+  };
+  const dropUnread = (userId: string, key: string) => { s.notifications = s.notifications.filter(n => !(n.userId === userId && n.key === key && !n.readAt)); };
   if (command.type === 'logout') { s.currentUserId = null; return s; }
   if (command.type === 'login') {
     const user = s.users.find(u => u.email.toLowerCase() === command.email.trim().toLowerCase() && u.password === command.password && u.status === 'Active');
@@ -101,6 +113,8 @@ export function transition(state: PortalState, command: Command, now = new Date(
   requireThat(actor, 'Please log in to continue.');
   const staff = () => requireThat(actor.role === 'staff', 'Only Staff can perform this action.');
   const admin = () => requireThat(actor.role === 'admin', 'Only Admin can perform this action.');
+  // Anyone logged in can mark their own notifications as read; nobody else's.
+  if (command.type === 'readNotifications') { s.notifications = s.notifications.map(n => n.userId === actor.id && !n.readAt ? { ...n, readAt: now } : n); return s; }
   if (command.type === 'user') {
     const previous = s.users.find(u => u.id === command.user.id);
     const self = actor.role === 'resident' && actor.id === command.user.id;
@@ -147,6 +161,14 @@ export function transition(state: PortalState, command: Command, now = new Date(
   requireThat(actor.role !== 'resident' || original.residentId === actor.id, 'This request belongs to another resident.');
   const a = { ...original };
   if (command.type === 'review') { staff(); requireThat(a.status === 'Pending Assessment' || a.status === 'Under Review', 'Requirements can only be reviewed before assessment.'); a.documents = command.documents.map(({ note, ...d }) => { const flagged = d.status === 'Missing' || d.status === 'Needs Replacement', text = note?.trim().slice(0, 200); return flagged && text ? { ...d, note: text } : d; }); log('Requirements reviewed', reference, JSON.stringify(original.documents.map(d => [d.requirement, d.status])), JSON.stringify(a.documents.map(d => [d.requirement, d.status]))); }
+  if (command.type === 'review') {
+    const isFlagged = (d: UploadedDocument) => d.status === 'Missing' || d.status === 'Needs Replacement';
+    for (const d of a.documents) {
+      const before = original.documents.find(x => x.requirement === d.requirement);
+      if (isFlagged(d) && (!before || before.status !== d.status || (before.note || '') !== (d.note || ''))) notify(a.residentId, reference, 'documents_flagged', `Please upload a new copy of ${d.requirement}.${d.note ? ' Staff note: ' + d.note : ''}`, `docs:${d.requirement}`);
+      else if (!isFlagged(d) && before && isFlagged(before)) dropUnread(a.residentId, `docs:${d.requirement}`);
+    }
+  }
   // A document Staff flagged (Missing / Needs Replacement) can be replaced with a new copy, by the Applicant or by Staff
   // on the Applicant's behalf (e.g. at the counter). It goes back to Pending Review so Staff verify it again.
   if (command.type === 'replaceDocument') {
@@ -173,6 +195,7 @@ export function transition(state: PortalState, command: Command, now = new Date(
     if (items.some((item, index) => item.amount !== schedule.items[index].amount)) log('Assessment fee amounts adjusted', reference, JSON.stringify(schedule.items), JSON.stringify(items));
     a.assessment = { items, total: totalCents/100, category: schedule.category, classification: schedule.classification, scheduleId: schedule.id, assessedBy: fullName(actor), assessedAt: now };
     a.status = 'Awaiting OR'; a.staffEncoder = fullName(actor); log('Assessment confirmed', reference, original.status, JSON.stringify(a.assessment));
+    notify(a.residentId, reference, 'assessment_ready', `Your assessment is ready: ₱${a.assessment.total.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}. Pay at the Municipal Treasury, then upload a photo of your receipt here, or bring the receipt to the barangay. Your reference number is ${reference}.`);
   }
   if (command.type === 'reject') {
     requireThat(actor.role === 'staff' || actor.role === 'admin', 'Only Staff or Admin can reject an application.');
@@ -181,6 +204,7 @@ export function transition(state: PortalState, command: Command, now = new Date(
     a.status = 'Rejected';
     a.rejection = { reason: command.reason.trim(), rejectedBy: fullName(actor), timestamp: now };
     log('Application rejected', reference, original.status, 'Rejected', command.reason);
+    notify(a.residentId, reference, 'application_returned', `Your application was returned: ${command.reason.trim().replace(/[.!?\s]+$/, '')}. Tell us what to correct using the box on your application page.`);
   }
   // Correction requests. A rejected application is returned to the Applicant (it stays Rejected until Staff reopen it by
   // resolving the request). The Applicant never edits entries directly: they describe the mistake, Staff change it.
@@ -222,6 +246,7 @@ export function transition(state: PortalState, command: Command, now = new Date(
     const note = command.note?.trim().slice(0, 300) || undefined;
     a.corrections = a.corrections!.map(c => c.id === openRequest.id ? { ...c, status: 'Resolved' as const, resolvedBy: fullName(actor), resolvedAt: now, resolutionNote: note } : c);
     if (a.status === 'Rejected') { a.status = 'Pending Assessment'; a.rejection = undefined; }
+    notify(a.residentId, reference, 'correction_resolved', (original.status === 'Rejected' ? 'Staff made the correction you asked for, and your application is back in review.' : 'Staff made the correction you asked for.') + (note ? ` Note: ${note}` : ''));
     log('Correction request resolved', reference, openRequest.message, a.status === original.status ? 'Resolved' : `Resolved; ${original.status} -> ${a.status}`, note || '');
   }
   if (command.type === 'or') {
@@ -263,6 +288,7 @@ export function transition(state: PortalState, command: Command, now = new Date(
       a.paymentVerification = { ...a.paymentVerification, status: 'Needs Correction', checkedBy: fullName(actor), checkedAt: now, notes: command.reason.trim() };
       a.status = 'Awaiting OR'; a.clearance = undefined; a.simulatedPayment = undefined;
       log('Payment returned for correction', reference, original.status, a.status, command.reason.trim());
+      notify(a.residentId, reference, 'payment_returned', `Please upload your receipt again. Reason: ${command.reason.trim()}`);
     } else {
       requireThat(a.receipt || a.receiptPhoto || a.simulatedPayment, 'Payment evidence is required.');
       if (a.receipt) {
@@ -287,6 +313,7 @@ export function transition(state: PortalState, command: Command, now = new Date(
       if (orNumber && !a.simulatedPayment) log('OR number recorded by staff', reference, JSON.stringify({ orNumber: original.paymentVerification?.orNumber || original.receipt?.orNumber || '' }), JSON.stringify({ orNumber, ...(!original.receipt && a.receipt ? { orDate: a.receipt.orDate, amountPaid: a.receipt.amountPaid } : {}) }));
       a.clearance = { issueDate: today(), generatedAt: now }; a.status = 'Ready for Download';
       log('Payment verified by staff', reference, original.status, a.status); log('Clearance generated', reference, original.status, a.status);
+      notify(a.residentId, reference, 'clearance_ready', `Your clearance is ready. Claim the printed original, with the barangay’s official stamp, at the monitoring office. Bring your reference number (${reference}). Your digital copy is available as a backup.`);
     }
   }
   // The printed original needs the barangay's official stamp, so Staff print the clearance from the system. Printing changes nothing on

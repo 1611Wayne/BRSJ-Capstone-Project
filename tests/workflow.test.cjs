@@ -1,7 +1,7 @@
 require('./register-ts.cjs');
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { transition, requirements, validateOR, validFile, activeSchedule, hasPaymentEvidence, verifiableClearance, manilaDate, validOrDate, validateAmountPaid } = require('../lib/workflow.ts');
+const { transition, requirements, validateOR, validFile, activeSchedule, hasPaymentEvidence, verifiableClearance, manilaDate, validOrDate, validateAmountPaid, notificationsFor } = require('../lib/workflow.ts');
 const { mockApplications } = require('../data/mockApplications.ts');
 const { mockUsers } = require('../data/mockUsers.ts');
 const { mockFeeSchedules } = require('../data/mockFeeSchedules.ts');
@@ -467,4 +467,56 @@ test('Staff print the clearance and confirm its release for the Applicant; the A
  assert.throws(()=>transition(closed,{type:'confirm',reference:ref},at),/ready can be confirmed/);
  for(const id of ['resident-maria','admin'])assert.throws(()=>transition(role(ready,id),{type:'printClearance',reference:ref},at),/Only Staff/);
  assert.equal(transition(role(closed,'staff-maria'),{type:'printClearance',reference:ref},at).audits[0].action,'Clearance printed by Staff for the official stamp');
+});
+
+// In-app notifications for Applicants (2026-10-16): six events, no SMS.
+const notes=(s,id='resident-maria')=>notificationsFor(s,id);
+const flagDocNote=(s,status,note)=>{const first=app(s).documents[0].requirement;return transition(role(s,'staff-maria'),{type:'review',reference:ref,documents:app(s).documents.map(d=>d.requirement===first?{...d,status,note}:d)},at);};
+test('the Applicant is told when a document needs replacing; the Staff note joins the same notice; a verified document clears it',()=>{
+ const first=app(state()).documents[0].requirement;
+ let s=flagDocNote(state(),'Needs Replacement');
+ assert.equal(notes(s).length,1);assert.equal(notes(s)[0].event,'documents_flagged');assert.match(notes(s)[0].message,new RegExp('upload a new copy of '+first));assert.equal(notes(s)[0].readAt,undefined);
+ s=flagDocNote(s,'Needs Replacement','The photo is too blurry to read.');
+ assert.equal(notes(s).length,1);assert.match(notes(s)[0].message,/Staff note: The photo is too blurry/);
+ assert.equal(notes(s,'resident-juan').length,0);assert.equal(notes(s,'staff-maria').length,0);
+ s=flagDocNote(s,'Verified');assert.equal(notes(s).length,0);
+ // once the Applicant has read it, a new flag is a new notice
+ s=flagDocNote(state(),'Missing');s=transition(role(s,'resident-maria'),{type:'readNotifications'},at);s=flagDocNote(s,'Needs Replacement','Try again');
+ assert.equal(notes(s).length,2);assert.equal(notes(s).filter(n=>!n.readAt).length,1);
+ // flagging that changes nothing does not repeat the notice
+ const same=flagDocNote(flagDocNote(state(),'Needs Replacement','x'),'Needs Replacement','x');assert.equal(notes(same).length,1);
+});
+test('the Applicant is told when the application is returned, and when the correction is made',()=>{
+ let s=transition(role(state(),'staff-maria'),{type:'reject',reference:ref,reason:'The name does not match the ID.'},at);
+ assert.equal(notes(s).length,1);assert.equal(notes(s)[0].event,'application_returned');assert.match(notes(s)[0].message,/The name does not match the ID\./);assert.match(notes(s)[0].message,/what to correct/);
+ s=transition(role(s,'resident-maria'),{type:'requestCorrection',reference:ref,message:'Please fix my name.'},at);
+ assert.equal(notes(s).length,1);
+ s=transition(role(s,'staff-maria'),{type:'resolveCorrection',reference:ref,note:'Fixed.'},at);
+ assert.equal(notes(s)[0].event,'correction_resolved');assert.match(notes(s)[0].message,/back in review/);assert.match(notes(s)[0].message,/Note: Fixed\./);
+ const plain=transition(role(transition(role(state(),'resident-maria'),{type:'requestCorrection',reference:ref,message:'Typo.'},at),'staff-maria'),{type:'resolveCorrection',reference:ref},at);
+ assert.equal(notes(plain)[0].message,'Staff made the correction you asked for.');
+});
+test('the Applicant is told the fee and what to do next when the assessment is confirmed',()=>{
+ const s=assess(state());
+ assert.equal(notes(s).length,1);assert.equal(notes(s)[0].event,'assessment_ready');assert.match(notes(s)[0].message,/₱600\.00/);assert.match(notes(s)[0].message,/Municipal Treasury/);assert.match(notes(s)[0].message,new RegExp(ref));
+ assert.equal(notes(s,'resident-juan').length,0);
+});
+test('the Applicant is told when a payment is returned, and when the clearance is ready (receipt photo or simulation)',()=>{
+ const sent=transition(role(assess(state()),'resident-maria'),{type:'receiptPhoto',reference:ref,photo:photoFile},at);
+ const returned=transition(role(sent,'staff-maria'),{type:'returnPayment',reference:ref,reason:'The OR number is cut off.'},at);
+ assert.equal(notes(returned)[0].event,'payment_returned');assert.match(notes(returned)[0].message,/upload your receipt again\. Reason: The OR number is cut off\./);
+ const ready=releasedByPhoto();
+ assert.equal(notes(ready)[0].event,'clearance_ready');assert.match(notes(ready)[0].message,/monitoring office/);assert.match(notes(ready)[0].message,/backup/);
+ const total=app(assess(state())).assessment.total;
+ const sim=transition(role(transition(role(assess(state()),'resident-maria'),{type:'onlinePayment',reference:ref,method:'GCash',amount:total},at),'staff-maria'),{type:'verifyPayment',reference:ref},at);
+ assert.equal(notes(sim)[0].event,'clearance_ready');
+ assert.deepEqual(notes(ready).map(n=>n.event),['clearance_ready','assessment_ready']);
+});
+test('reading notifications only marks your own, and the newest come first',()=>{
+ let t=flagDocNote(state(),'Missing');t=transition(role(t,'staff-maria'),{type:'reject',reference:ref,reason:'Later.'},'2026-09-07T03:30:12.000Z');
+ assert.deepEqual(notes(t).map(n=>n.event),['application_returned','documents_flagged']);
+ const read=transition(role(t,'resident-juan'),{type:'readNotifications'},at);assert.equal(notes(read).filter(n=>!n.readAt).length,2);
+ const staffRead=transition(role(t,'staff-maria'),{type:'readNotifications'},at);assert.equal(notes(staffRead).filter(n=>!n.readAt).length,2);
+ const mine=transition(role(t,'resident-maria'),{type:'readNotifications'},at);assert.equal(notes(mine).filter(n=>!n.readAt).length,0);assert.ok(notes(mine).every(n=>n.readAt===at));
+ assert.equal(notificationsFor({users:[],applications:[],schedules:[],audits:[],currentUserId:null},'x').length,0);
 });

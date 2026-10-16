@@ -45,4 +45,8 @@ export type ReversionAction = 'Edit Fields' | 'Void Transaction' | 'Mark Under R
 export interface TransactionReversion { reference: string; action: ReversionAction; reason: string; applicant?: string; businessName?: string; orNumber?: string }
 export interface AuditLog { id: string; timestamp: string; user: string; role: UserRole; action: string; reference: string; oldValue?: string; newValue?: string; reason?: string; reversion?: boolean }
 export interface ReportRecord { clearanceType: string; count: number; assessed: number; recorded: number }
-export interface PortalState { users: User[]; applications: Application[]; schedules: FeeSchedule[]; audits: AuditLog[]; currentUserId: string | null }
+// In-app notifications for Applicants. The event names are the same as the notifications.event values in the database. key de-duplicates an
+// unread notice about the same thing (a flagged document gets its Staff note added to the same notice instead of a second one).
+export type NotificationEvent = 'documents_flagged' | 'application_returned' | 'correction_resolved' | 'assessment_ready' | 'payment_returned' | 'clearance_ready';
+export interface AppNotification { id: string; userId: string; reference: string; event: NotificationEvent; message: string; createdAt: string; readAt?: string; key?: string }
+export interface PortalState { users: User[]; applications: Application[]; schedules: FeeSchedule[]; audits: AuditLog[]; notifications: AppNotification[]; currentUserId: string | null }
