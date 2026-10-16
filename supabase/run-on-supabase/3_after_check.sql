@@ -22,6 +22,8 @@ with c as (
     (select (pg_get_constraintdef(oid) like '%Pending Review%')::text from pg_constraint where conname = 'application_documents_verification_status_check' and conrelid = 'public.application_documents'::regclass), 'true'
   union all select 13, 'one document per requirement per application', (select count(*) from pg_constraint where conname = 'application_documents_one_per_requirement')::text, '1'
   union all select 14, 'tables WITHOUT row level security (must be 0)', (select count(*) from pg_tables where schemaname = 'public' and not rowsecurity)::text, '0'
+  union all select 15, 'receipt_confirmations.confirmed_by exists (who confirmed a release)', (select count(*) from information_schema.columns where table_schema = 'public' and table_name = 'receipt_confirmations' and column_name = 'confirmed_by')::text, '1'
+  union all select 16, 'new table notifications (in-app notices for Applicants)', (select count(*) from information_schema.tables where table_schema = 'public' and table_name = 'notifications')::text, '1'
 )
 select n, item, expected, actual, (expected = actual) as ok from c
 union all

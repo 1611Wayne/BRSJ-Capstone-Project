@@ -1,5 +1,6 @@
 -- STEP 2 of 3. THE MIGRATIONS. Paste ALL of this into the Supabase SQL Editor and click Run.
--- Generated 2026-10-16 from the three migration files below, unchanged except that migration 6 was made re-runnable.
+-- Generated 2026-10-16 from the five migration files below, unchanged except that migration 6 was made re-runnable.
+-- If you already ran parts 1 to 3 of an earlier version of this script, run this one again: it is safe, and part 4 is new.
 -- Run it as the default role (postgres). The editor may warn about "destructive operations" because the script drops and
 -- re-creates some CHECK rules: that is expected, confirm it.
 --
@@ -8,11 +9,12 @@
 --
 -- WHAT IT DOES: 13 -> 9 clearance types (the 4 wrong ones are deactivated, not deleted); the Ambulant / Lessor column;
 -- then the sync with the frontend (statuses Rejected and For Checking, employees, rejection, receipt photo, payment
--- check, demo simulation, and more). See SCHEMA_MAP.md for the full list.
+-- check, demo simulation, and more); then one column recording which Staff member confirmed a release at the counter.
+-- See SCHEMA_MAP.md for the full list.
 -- Afterwards, run STEP 3 (3_after_check.sql).
 
 -- ==========================================================================
--- PART 1 OF 3: 20261005000000_correct_clearance_types.sql
+-- PART 1 OF 5: 20261005000000_correct_clearance_types.sql
 -- ==========================================================================
 -- Correct the clearance_types catalog: 13 -> 9, confirmed with the real client
 -- Generated 2026-10-05. Depends on 20260923010000_seed_clearance_types.sql.
@@ -59,7 +61,7 @@ where name in (
 );
 
 -- ==========================================================================
--- PART 2 OF 3: 20261006000000_add_business_subcategory.sql
+-- PART 2 OF 5: 20261006000000_add_business_subcategory.sql
 -- ==========================================================================
 -- Add the Applicant's optional Ambulant / Lessor indication to applications
 -- Generated 2026-10-06. Depends on 20260922000000_init_schema.sql.
@@ -96,7 +98,7 @@ comment on column public.applications.business_subcategory is
   'Optional. What the Applicant indicated at intake for a Business Clearance: Ambulant or Lessor (Paupahan); NULL = Business Clearance only. A hint for Staff, not the final classification — that is decided at assessment.';
 
 -- ==========================================================================
--- PART 3 OF 3: 20261006010000_sync_schema_with_frontend.sql
+-- PART 3 OF 5: 20261006010000_sync_schema_with_frontend.sql
 -- ==========================================================================
 -- Sync the database with everything the frontend prototype has built since 2026-09-23
 -- Generated 2026-10-06. Depends on ALL of the earlier migrations, in particular
@@ -347,3 +349,70 @@ alter table public.correction_requests add constraint correction_requests_resolu
   check (resolution_note is null or char_length(resolution_note) <= 300);
 comment on column public.correction_requests.resident_id is
   'The Applicant who sent the request (the frontend''s requestedBy). The Staff who resolved it is resolved_by.';
+
+-- ==========================================================================
+-- PART 4 OF 5: 20261016000000_receipt_confirmed_by.sql
+-- ==========================================================================
+-- Record WHO confirmed a release at the counter
+-- Generated 2026-10-16. Depends on 20260922000000_init_schema.sql (receipt_confirmations, profiles).
+-- Context: ../../../CHANGES.md ("D6 answered by the user" entry) and ../../SCHEMA_MAP.md.
+--
+-- WHY: the printed, stamped original of a clearance is released at the monitoring office (the digital
+-- copy is only a backup). So Staff confirm the release for the Applicant at the counter, and the
+-- frontend now records which Staff member did it (ReceiptConfirmation.confirmedBy). NULL means the
+-- Applicant confirmed receipt themselves online.
+--
+-- RE-RUNNABLE ON PURPOSE (add column if not exists). Not yet run on the live project: it is part 4 of
+-- run-on-supabase/2_run_migrations.sql, which can safely be run again after parts 1-3.
+
+alter table public.receipt_confirmations
+  add column if not exists confirmed_by uuid references public.profiles(id) on delete restrict;
+
+comment on column public.receipt_confirmations.confirmed_by is
+  'The Staff member who recorded the release of the printed original at the counter. NULL = the Applicant confirmed receipt themselves.';
+
+-- ==========================================================================
+-- PART 5 OF 5: 20261016010000_notifications.sql
+-- ==========================================================================
+-- In-app notifications for Applicants
+-- Generated 2026-10-16. Depends on 20260922000000_init_schema.sql (profiles, applications).
+-- Context: ../../../CHANGES.md ("In-app notifications" entry) and ../../SCHEMA_MAP.md.
+--
+-- WHAT: one row per notice shown to an Applicant in the portal: documents that need replacing, an application
+-- returned, a correction made, the assessment ready (the fee and what to do next), a payment returned, the
+-- clearance ready. The event names are the six values below and are the same ones the frontend uses
+-- (AppNotification.event). SMS is not part of this: if text messages are added later, they can send the same events.
+--
+-- dedupe_key: while a notice is still UNREAD, a second notice with the same key replaces it instead of adding another
+-- (for example a flagged document gets Staff's note added to the same notice). The partial unique index below is that
+-- rule. Once the Applicant has read it (read_at is set), a new notice with the same key is allowed.
+--
+-- NOT DONE HERE: row level security POLICIES. RLS is on, so the table is deny-all through the API until policies exist:
+-- an Applicant must read and mark read only their own rows (user_id = auth.uid()); only the server writes them.
+--
+-- RE-RUNNABLE ON PURPOSE: create ... if not exists. Not yet run on the live project: part 5 of
+-- run-on-supabase/2_run_migrations.sql.
+
+create table if not exists public.notifications (
+  id bigserial primary key,
+  user_id uuid not null references public.profiles(id) on delete cascade,
+  application_id bigint references public.applications(id) on delete cascade,
+  event text not null check (event in (
+    'documents_flagged', 'application_returned', 'correction_resolved',
+    'assessment_ready', 'payment_returned', 'clearance_ready'
+  )),
+  message text not null check (btrim(message) <> ''),
+  dedupe_key text,
+  created_at timestamptz not null default now(),
+  read_at timestamptz
+);
+
+create index if not exists notifications_user_created_idx on public.notifications (user_id, created_at desc);
+create index if not exists notifications_user_unread_idx on public.notifications (user_id) where read_at is null;
+create unique index if not exists notifications_one_unread_per_key
+  on public.notifications (user_id, dedupe_key) where read_at is null and dedupe_key is not null;
+
+alter table public.notifications enable row level security;
+
+comment on table public.notifications is
+  'In-app notices for an Applicant (not SMS). Written by the server when Staff act on the Applicant''s application; the Applicant reads them and marks them read. An unread notice with the same dedupe_key is updated instead of repeated.';
