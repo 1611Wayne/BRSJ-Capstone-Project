@@ -14,7 +14,7 @@ pages, click the buttons and read what is on screen. They are the checks that we
 ## How to run
 
 1. Build and start the app (leave it running): `npm run build` then `npx next start -p 3100`.
-2. Make sure Playwright is installed: `npm i --no-save playwright` (so your package.json does not change).
+2. Make sure the dependencies are installed: `npm install`. The project already lists `@playwright/test`, which brings the `playwright` package these scripts use. The scripts open the Edge that comes with Windows (see E2E_CHANNEL below), so no browser download is needed.
 3. In another terminal: `node e2e/run-all.cjs` (all of them) or `node e2e/notifications.cjs` (one).
 
 Settings (environment variables): `E2E_BASE` is the app address (default `http://localhost:3100`); `E2E_CHANNEL` is the browser (default `msedge`, the Edge that comes with Windows; use `chrome` for Chrome, or an empty value to use Playwright's own Chromium after `npx playwright install chromium`).
