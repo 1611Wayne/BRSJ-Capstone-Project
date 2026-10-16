@@ -67,6 +67,10 @@ You'll need: your Semaphore API key (with some credit on the account), and the S
 
 Once the project has more than one function, deploying from the command line is the better habit (same idea as moving migrations to the Supabase CLI eventually). On Windows, Supabase's docs list **Scoop** as the supported global install; using `npx supabase ...` from inside a project also works with Node 20+. The deploy command must include the flag: `npx supabase functions deploy send-sms-hook --no-verify-jwt`.
 
+## Run kit (the easy way to apply the pending migrations)
+
+`run-on-supabase/` has three files for the Supabase SQL Editor, to be pasted one at a time: **`1_before_check.sql`** (read-only; shows the state before), **`2_run_migrations.sql`** (the three pending migrations, `20261005000000`, `20261006000000` and `20261006010000`, in one script; safe to run twice), **`3_after_check.sql`** (read-only; its last row says ALL CHECKS PASSED). Built and tested 2026-10-16 on a real Postgres engine (PGlite) starting from the live-like state, migrations 1–4 only. **Not yet run on the live project.** Each file's top comment says what to expect.
+
 ## How to apply it
 
 No Supabase CLI is required for this step.

@@ -19,7 +19,7 @@
 | 6 | `20261006000000_add_business_subcategory.sql` | 2026-10-06 | **No** |
 | 7 | `20261006010000_sync_schema_with_frontend.sql` | 2026-10-06 | **No** |
 
-Run 5, 6 and 7 in that order in the Supabase SQL Editor. Files 1–7 were executed in order on a real Postgres engine (PGlite, Postgres 18) with 96 checks on the new constraints; file 7 was also run twice to prove it can be re-run. That is not the same as running it on Supabase, so report any error.
+**Easiest way (2026-10-16): the run kit in `run-on-supabase/`** — three files, three pastes: `1_before_check.sql` (read-only), `2_run_migrations.sql` (files 5, 6 and 7 in one script, safe to run twice), `3_after_check.sql` (read-only; the last row says ALL CHECKS PASSED). Tested on a real Postgres engine in the live-like state (files 1–4 only), including a second run, the one-file-at-a-time path, and a check that the after-check fails on the old schema. File 6 was made re-runnable (`add column if not exists`) before it was ever run. Otherwise, run 5, 6 and 7 in that order in the Supabase SQL Editor. Files 1–7 were executed in order on a real Postgres engine (PGlite, Postgres 18) with 96 checks on the new constraints; file 7 was also run twice to prove it can be re-run. That is not the same as running it on Supabase, so report any error.
 
 ## 2. Field map
 
@@ -83,7 +83,7 @@ A **Missing placeholder with no file** is a real row: when Staff correct an entr
 | `assessment.items[]` (name, amount, ordinance) | `assessment_items` (`fee_component_name`, `amount`, `ordinance_reference`) | a snapshot, so a later fee change never rewrites history |
 | (Staff fee adjustment) | `assessment_items.scheduled_amount` | the schedule's own figure; NULL = not recorded (decision D9 open) |
 | `receipt.orNumber`, `paymentVerification.orNumber` | `official_receipts.or_number` | **one place only**, unique across all applications; NULL until Staff type it |
-| `receipt.orDate`, `.amountPaid` | `or_date`, `amount_paid` | both or neither; empty on the photo-only path |
+| `receipt.orDate`, `.amountPaid` | `or_date`, `amount_paid` | both or neither; empty until Staff verify. **From 2026-10-16 the frontend fills both at verification:** `orDate` is typed by Staff from the receipt image, `amountPaid` is the assessed total (not typed) |
 | `receipt.recordedAt`, `.encodedBy` | `recorded_at`, `encoded_by` | whoever created the row |
 | `receiptPhoto` (and `receipt.receiptPhoto`) | `receipt_photo_path`, `_filename`, `_mime_type`, `_size` | all four or none; max 5 MB |
 | `paymentVerification.status` | `payment_verifications.status` | `Pending`, `Verified`, `Needs Correction` |
@@ -118,7 +118,7 @@ A **Missing placeholder with no file** is a real row: when Staff correct an entr
 
 1. **Audit values.** The frontend puts plain text (`'Rejected'`, a correction message) and JSON text into the old/new value of an audit entry. `audit_logs.old_value` and `new_value` are `jsonb`. Plain text must be stored as a JSON string (`to_jsonb('Rejected'::text)`), and JSON text must be parsed first, or it ends up double-encoded.
 2. **`source` and `staffEncoder`.** The frontend sets `staffEncoder` on every assessment, even for an online application. The database does **not** derive "walk-in" from it any more. `staff_encoder_id` is the Staff member who encoded a **walk-in**; the Staff member who assessed is `assessments.assessed_by`.
-3. **One OR number, one place.** `official_receipts.or_number`. The frontend keeps a copy in `paymentVerification.orNumber`; do not store that copy. A verified, non-simulated payment must have an OR number: the database cannot check that across tables, so the application must.
+3. **One OR number, one place.** `official_receipts.or_number`. The frontend keeps a copy in `paymentVerification.orNumber`; do not store that copy. From 2026-10-16 Staff verification in the frontend also records the receipt itself (the OR number and OR date Staff typed, and the assessed total as the amount), so a verified, non-simulated payment has all three. A verified, non-simulated payment must have an OR number: the database cannot check that across tables, so the application must.
 4. **Evidence is either a receipt or a simulation, never both.** The frontend clears the other one on every submit. Do the same: delete the `simulated_payments` row when a receipt is submitted, and the other way round; delete it when Staff return the payment.
 5. **Rejected requests.** A `Rejected` application must have a rejection (`rejection_reason`, `rejected_by`, `rejected_at`). Resolving the Applicant's correction request reopens it: set the status to `Pending Assessment` and clear all three. An Admin "Mark Under Review" reversion leaves them in place.
 6. **Corrections cut-off.** The frontend accepts correction requests and Staff edits only while the status is `Pending Assessment`, `Under Review`, `Rejected`, `Awaiting OR` or `For Checking`. The database does not check this (it needs the application's status). After the clearance is generated, changes go through the Admin reversion.

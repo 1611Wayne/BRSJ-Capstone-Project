@@ -22,10 +22,11 @@
 -- database-level guarantee is ever wanted, it needs a trigger, not a CHECK.
 --
 -- NOT RUN YET: like 20261005000000_correct_clearance_types.sql, this has to be
--- pasted into the Supabase SQL Editor and confirmed.
+-- pasted into the Supabase SQL Editor and confirmed. Re-runnable (add column if not exists),
+-- changed 2026-10-16 before it was ever run, so that the combined run kit is safe to repeat.
 
 alter table public.applications
-  add column business_subcategory text
+  add column if not exists business_subcategory text
   check (business_subcategory in ('Ambulant', 'Lessor (Paupahan)'));
 
 comment on column public.applications.business_subcategory is
