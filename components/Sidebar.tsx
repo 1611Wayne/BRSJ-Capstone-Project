@@ -8,7 +8,7 @@ import { usePortal } from './PortalProvider';
 import { BarangayLogo } from './BarangayLogo';
 const menus={
  resident:[['dashboard','Dashboard',LayoutDashboard],['apply','Apply for Clearance',FileText],['applications','My Applications',FolderOpen],['notifications','Notifications',Bell],['profile','Profile',User]],
- staff:[['dashboard','Dashboard',LayoutDashboard],['applications','Applications Queue',ClipboardList],['assessment','Assessment & Evaluation',FileText],['walk-in','New Walk-in Application',UserPlus],['or-entry','Assist OR Entry',ReceiptText],['transactions','Processed Transactions',History],['or-logs','OR Logs',ReceiptText]],
+ staff:[['dashboard','Dashboard',LayoutDashboard],['applications','Applications Queue',ClipboardList],['assessment','Assessment & Evaluation',FileText],['walk-in','New Walk-in Application',UserPlus],['or-entry','Upload Receipt for Applicant',ReceiptText],['transactions','Processed Transactions',History],['or-logs','OR Logs',ReceiptText]],
  admin:[['dashboard','Dashboard',LayoutDashboard],['transactions','Transactions',ClipboardList],['fee-configuration','Fee Configuration',Settings],['transaction-reversion','Transaction Reversion',Undo2],['reports','Reports',BarChart3],['users','User Management',Users],['audit-trail','Audit Trail',History]]
 } as const;
 export function Sidebar({role}:{role:UserRole}) {

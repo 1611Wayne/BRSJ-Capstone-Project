@@ -6,3 +6,4 @@ out/
 !.env.example
 coverage/
 .test-build/
+e2e/shots/

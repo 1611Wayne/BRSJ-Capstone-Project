@@ -1,6 +1,6 @@
 'use client';
 import Link from 'next/link';
-import { ClipboardCheck, ReceiptText, Archive, CircleCheck, ClipboardList, Gauge, Star, Clock3, TrendingUp, BarChart2 } from 'lucide-react';
+import { MessageSquare, ClipboardCheck, ReceiptText, Archive, CircleCheck, ClipboardList, Gauge, Star, Clock3, TrendingUp, BarChart2 } from 'lucide-react';
 import { usePortal } from './PortalProvider';
 import { StatCard } from './StatCard';
 import { ApplicationTable } from './ApplicationTable';
@@ -118,6 +118,8 @@ export function Dashboard({ role }: { role: UserRole }) {
     { label: 'Closed - Cleared', value: apps.filter(a => a.status === 'Closed - Cleared').length, icon: CircleCheck },
   ];
   if (role === 'admin') metrics.unshift({ label: 'Total Applications', value: apps.length, icon: ClipboardList });
+  // Staff and Admin: requests where the Applicant asked for a correction and nobody has resolved it yet.
+  if (role !== 'resident') metrics.push({ label: 'Open Correction Requests', value: apps.filter(a => a.corrections?.some(c => c.status === 'Open')).length, icon: MessageSquare });
 
   /* ── Admin-only chart data ─────────────────────────────── */
   const anchorTime = apps.reduce((latest, a) => Math.max(latest, new Date(a.dateRequested).getTime()), 0);
