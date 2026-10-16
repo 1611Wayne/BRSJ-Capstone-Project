@@ -24,6 +24,9 @@ with c as (
   union all select 14, 'tables WITHOUT row level security (must be 0)', (select count(*) from pg_tables where schemaname = 'public' and not rowsecurity)::text, '0'
   union all select 15, 'receipt_confirmations.confirmed_by exists (who confirmed a release)', (select count(*) from information_schema.columns where table_schema = 'public' and table_name = 'receipt_confirmations' and column_name = 'confirmed_by')::text, '1'
   union all select 16, 'new table notifications (in-app notices for Applicants)', (select count(*) from information_schema.tables where table_schema = 'public' and table_name = 'notifications')::text, '1'
+  union all select 17, 'tables with row level security but NO policy (must be 0)', (select count(*) from pg_tables t where t.schemaname = 'public' and t.rowsecurity and not exists (select 1 from pg_policies p where p.schemaname = 'public' and p.tablename = t.tablename))::text, '0'
+  union all select 18, 'storage: 3 PRIVATE buckets (valid-ids, application-documents, receipt-photos)', (select count(*) from storage.buckets where id in ('valid-ids', 'application-documents', 'receipt-photos') and not public)::text, '3'
+  union all select 19, 'storage: 6 rules on uploaded files (read and upload for each bucket)', (select count(*) from pg_policies where schemaname = 'storage' and tablename = 'objects' and policyname like 'storage: %')::text, '6'
 )
 select n, item, expected, actual, (expected = actual) as ok from c
 union all

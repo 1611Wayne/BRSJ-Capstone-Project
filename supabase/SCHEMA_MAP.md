@@ -19,7 +19,9 @@
 | 6 | `20261006000000_add_business_subcategory.sql` | 2026-10-06 | Yes (2026-10-16) |
 | 7 | `20261006010000_sync_schema_with_frontend.sql` | 2026-10-06 | Yes (2026-10-16) |
 | 8 | `20261016000000_receipt_confirmed_by.sql` (who confirmed a release at the counter) | 2026-10-16 | Yes (2026-10-16) |
-| 9 | `20261016010000_notifications.sql` (in-app notices for Applicants) | 2026-10-16 | **No**: re-run `2_run_migrations.sql` (safe) and `3_after_check.sql` (now 16 checks) |
+| 9 | `20261016010000_notifications.sql` (in-app notices for Applicants) | 2026-10-16 | Yes (2026-10-17; confirmed by the after-check table the user pasted: 19 checks, ALL CHECKS PASSED) |
+| 10 | `20261017000000_rls_policies_remaining_tables.sql` (who may read each table; three helper functions) | 2026-10-17 | Yes (2026-10-17; after-check table pasted by the user: all 19 checks true, ALL CHECKS PASSED) |
+| 11 | `20261017010000_storage_buckets_and_policies.sql` (three private buckets and their read and upload rules) | 2026-10-17 | Yes (2026-10-17, same run) |
 
 **Files 5 to 8 were run on the live project on 2026-10-16** with the run kit below. The before-check matched (all row counts 0, 13 / 13 clearance types, three `false`) and the after-check returned all 15 checks `true` and **ALL CHECKS PASSED**, as reported by the user from the SQL Editor. **From now on do not edit files 1 to 8: add a new, later-numbered migration for any further change.** The run kit: **Easiest way (2026-10-16): the run kit in `run-on-supabase/`** — three files, three pastes: `1_before_check.sql` (read-only), `2_run_migrations.sql` (files 5 to 9 in one script, safe to run twice, also after an earlier version of the kit), `3_after_check.sql` (read-only; the last row says ALL CHECKS PASSED). Tested on a real Postgres engine in the live-like state (files 1–4 only), including a second run, the one-file-at-a-time path, and a check that the after-check fails on the old schema. File 6 was made re-runnable (`add column if not exists`) before it was ever run. Otherwise, run 5, 6, 7, 8 and 9 in that order in the Supabase SQL Editor. Files 1–7 were executed in order on a real Postgres engine (PGlite, Postgres 18) with 96 checks on the new constraints; file 7 was also run twice to prove it can be re-run. That is not the same as running it on Supabase, so report any error.
 
@@ -122,6 +124,18 @@ A **Missing placeholder with no file** is a real row: when Staff correct an entr
 
 Wiring notes: the server writes these when Staff act (review, reject, resolve, assess, return payment, verify payment); an Applicant reads their own rows and marks them read (RLS policies are still to be written: `user_id = auth.uid()`). SMS is not stored here; if it is added, it should send the same events.
 
+### Files → Storage (three PRIVATE buckets, migration 11)
+| Bucket | Path | Database column | Who may read | Who may upload |
+|---|---|---|---|---|
+| `valid-ids` | `<profile uuid>/<file>` | `profiles.valid_id_path` | the owner of the folder; Staff; Admin | the owner into their own folder; Staff; Admin (a walk-in Applicant) |
+| `application-documents` | `<application id>/<file>` | `application_documents.storage_path` | the owner of the application; Staff; Admin | the owner while the request is Draft, Pending Assessment or Under Review; Staff; Admin |
+| `receipt-photos` | `<application id>/<file>` | `official_receipts.receipt_photo_path` | the owner of the application; Staff; Admin | the owner while Awaiting OR; Staff; Admin (at the counter) |
+
+All three: 5 MB per file; PDF, JPG or PNG only; no public URL (open a file with a short-lived signed link). Objects are **write-once** from a user session (no update or delete rule): use a NEW file name for every upload (for example a timestamp prefix), so a replaced document or receipt keeps its earlier file. Uploading a file changes no record: the server still writes the table row, the status and the audit log.
+
+### Who may read and write each table (migration 10)
+Reading is scoped: an Applicant sees only rows of their own application (and their own notices); Staff and Admin see what their screens need; signed-out users see nothing. **Writing through a user session is closed on every table** except two things the Applicant needs: the files of their OWN DRAFT (`application_documents`: add, replace, remove; never Verified, no reviewer, no Staff note) and marking their OWN notices read (`notifications`; a trigger lets only `read_at` change, and only from empty). Everything else (assessment, payment check, clearance, confirmation, history, audit, notices, fee schedule) is written by the Next.js server routes with the service-role key, which bypasses these rules, so that the status rules and the audit log cannot be skipped. Exceptions in migration 4 (already run, not edited): Staff and Admin can update any application directly; review that when the frontend is connected.
+
 ### Other
 | Frontend | Database | Note |
 |---|---|---|
@@ -147,8 +161,8 @@ Wiring notes: the server writes these when Staff act (review, reject, resolve, a
 
 ## 5. Still not done (not schema drift, but not finished)
 
-- Row Level Security **policies**: only `profiles` and `applications` have them. The other 19 tables, including the two new ones, are deny-all through the API.
-- Storage buckets for documents and receipt photos (the table only stores the path).
+- Row Level Security **policies**: written for every table (migrations 4 and 10), tested on a real Postgres engine with real roles (96 checks, and four deliberately broken copies were each caught); **migrations 10 and 11 were run on the live project 2026-10-17** (after-check: no table with RLS but no policy, 3 private buckets, 6 storage rules).
+- Storage buckets: created on the live project (migration 11, 2026-10-17); nothing uploads to them yet. Not covered: a bucket for generated clearance PDFs (`clearances.pdf_storage_path` exists; the app builds PDFs in the browser today); an immutable audit log (a trigger blocking update and delete; `audit_logs.application_id` uses ON DELETE SET NULL, so it needs care); clean-up of replaced files (a server job).
 - Seed data for categories, classifications and fees.
 - Decisions that could still change the tables: D5 (what a simulation may release; `simulated_payments`), D9 (may Staff adjust fees; `assessment_items.scheduled_amount`).
 - Judgment calls in file 7 that the team has not confirmed yet are listed in the comment block at the top of that file.
