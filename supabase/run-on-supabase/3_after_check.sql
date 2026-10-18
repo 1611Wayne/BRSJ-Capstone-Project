@@ -28,6 +28,7 @@ with c as (
   union all select 18, 'storage: 3 PRIVATE buckets (valid-ids, application-documents, receipt-photos)', (select count(*) from storage.buckets where id in ('valid-ids', 'application-documents', 'receipt-photos') and not public)::text, '3'
   union all select 19, 'storage: 6 rules on uploaded files (read and upload for each bucket)', (select count(*) from pg_policies where schemaname = 'storage' and tablename = 'objects' and policyname like 'storage: %')::text, '6'
   union all select 20, 'new applications get their reference number from the database', (select (pg_get_expr(d.adbin, d.adrelid) like '%next_reference_no()%')::text from pg_attrdef d join pg_attribute a on a.attrelid = d.adrelid and a.attnum = d.adnum where d.adrelid = 'public.applications'::regclass and a.attname = 'reference_no'), 'true'
+  union all select 21, 'SAMPLE fee schedules loaded (23 schedules, 138 fee lines)', (select (count(distinct f.id) || ' / ' || count(i.id)) from public.fee_schedules f join public.fee_schedule_items i on i.fee_schedule_id = f.id where f.ordinance_reference like 'SAMPLE%'), '23 / 138'
 )
 select n, item, expected, actual, (expected = actual) as ok from c
 union all

@@ -1,6 +1,6 @@
 -- STEP 2 of 3. THE MIGRATIONS. Paste ALL of this into the Supabase SQL Editor and click Run.
--- Generated 2026-10-18 from the eight migration files below, unchanged except that migration 6 was made re-runnable.
--- If you already ran an earlier version of this script, run this one again: it is safe. Part 8 (reference numbers) is new.
+-- Generated 2026-10-18 from the nine migration files below, unchanged except that migration 6 was made re-runnable.
+-- If you already ran an earlier version of this script, run this one again: it is safe. Part 9 (SAMPLE fee schedules) is new.
 -- Parts 6 and 7 are the security rules: who may read each table, and three private file buckets (IDs, documents, receipts).
 -- Run it as the default role (postgres). The editor may warn about "destructive operations" because the script drops and
 -- re-creates some CHECK rules: that is expected, confirm it.
@@ -12,12 +12,13 @@
 -- then the sync with the frontend (statuses Rejected and For Checking, employees, rejection, receipt photo, payment
 -- check, demo simulation, and more); then one column recording which Staff member confirmed a release at the counter;
 -- then the in-app notices table; then the row-level security rules for every remaining table; then the three private
--- Storage buckets with their upload and read rules; then the request reference numbers (SJ-YYYY-######) made by the database.
+-- Storage buckets with their upload and read rules; then the request reference numbers (SJ-YYYY-######) made by the database; then SAMPLE fee schedules
+-- (the prototype's illustrative fees, clearly marked, NOT the approved Revenue Code) so Staff can test assessments.
 -- See SCHEMA_MAP.md for the full list.
 -- Afterwards, run STEP 3 (3_after_check.sql).
 
 -- ==========================================================================
--- PART 1 OF 8: 20261005000000_correct_clearance_types.sql
+-- PART 1 OF 9: 20261005000000_correct_clearance_types.sql
 -- ==========================================================================
 -- Correct the clearance_types catalog: 13 -> 9, confirmed with the real client
 -- Generated 2026-10-05. Depends on 20260923010000_seed_clearance_types.sql.
@@ -64,7 +65,7 @@ where name in (
 );
 
 -- ==========================================================================
--- PART 2 OF 8: 20261006000000_add_business_subcategory.sql
+-- PART 2 OF 9: 20261006000000_add_business_subcategory.sql
 -- ==========================================================================
 -- Add the Applicant's optional Ambulant / Lessor indication to applications
 -- Generated 2026-10-06. Depends on 20260922000000_init_schema.sql.
@@ -101,7 +102,7 @@ comment on column public.applications.business_subcategory is
   'Optional. What the Applicant indicated at intake for a Business Clearance: Ambulant or Lessor (Paupahan); NULL = Business Clearance only. A hint for Staff, not the final classification — that is decided at assessment.';
 
 -- ==========================================================================
--- PART 3 OF 8: 20261006010000_sync_schema_with_frontend.sql
+-- PART 3 OF 9: 20261006010000_sync_schema_with_frontend.sql
 -- ==========================================================================
 -- Sync the database with everything the frontend prototype has built since 2026-09-23
 -- Generated 2026-10-06. Depends on ALL of the earlier migrations, in particular
@@ -354,7 +355,7 @@ comment on column public.correction_requests.resident_id is
   'The Applicant who sent the request (the frontend''s requestedBy). The Staff who resolved it is resolved_by.';
 
 -- ==========================================================================
--- PART 4 OF 8: 20261016000000_receipt_confirmed_by.sql
+-- PART 4 OF 9: 20261016000000_receipt_confirmed_by.sql
 -- ==========================================================================
 -- Record WHO confirmed a release at the counter
 -- Generated 2026-10-16. Depends on 20260922000000_init_schema.sql (receipt_confirmations, profiles).
@@ -375,7 +376,7 @@ comment on column public.receipt_confirmations.confirmed_by is
   'The Staff member who recorded the release of the printed original at the counter. NULL = the Applicant confirmed receipt themselves.';
 
 -- ==========================================================================
--- PART 5 OF 8: 20261016010000_notifications.sql
+-- PART 5 OF 9: 20261016010000_notifications.sql
 -- ==========================================================================
 -- In-app notifications for Applicants
 -- Generated 2026-10-16. Depends on 20260922000000_init_schema.sql (profiles, applications).
@@ -421,7 +422,7 @@ comment on table public.notifications is
   'In-app notices for an Applicant (not SMS). Written by the server when Staff act on the Applicant''s application; the Applicant reads them and marks them read. An unread notice with the same dedupe_key is updated instead of repeated.';
 
 -- ==========================================================================
--- PART 6 OF 8: 20261017000000_rls_policies_remaining_tables.sql
+-- PART 6 OF 9: 20261017000000_rls_policies_remaining_tables.sql
 -- ==========================================================================
 -- RLS policies for the remaining tables (everything except profiles and applications, which have their own
 -- policies in 20260923020000). Generated 2026-10-17. Depends on all earlier migrations.
@@ -645,7 +646,7 @@ create trigger notifications_owner_only_marks_read
   for each row execute function public.notifications_owner_only_marks_read();
 
 -- ==========================================================================
--- PART 7 OF 8: 20261017010000_storage_buckets_and_policies.sql
+-- PART 7 OF 9: 20261017010000_storage_buckets_and_policies.sql
 -- ==========================================================================
 -- Storage: three PRIVATE buckets and who may read and upload into each. Generated 2026-10-17.
 -- Depends on 20261017000000_rls_policies_remaining_tables.sql (the helper functions).
@@ -782,7 +783,7 @@ with check (
 );
 
 -- ==========================================================================
--- PART 8 OF 8: 20261018000000_reference_numbers.sql
+-- PART 8 OF 9: 20261018000000_reference_numbers.sql
 -- ==========================================================================
 -- Request reference numbers made by the database: SJ-YYYY-######, one counter per year (Manila time), starting at 1.
 -- Generated 2026-10-18. Depends on 20261017000000_rls_policies_remaining_tables.sql.
@@ -833,3 +834,127 @@ revoke all on function public.next_reference_no() from public, anon;
 grant execute on function public.next_reference_no() to authenticated, service_role;
 
 alter table public.applications alter column reference_no set default public.next_reference_no();
+
+-- ==========================================================================
+-- PART 9 OF 9: 20261018010000_sample_fee_schedules.sql
+-- ==========================================================================
+-- SAMPLE fee data so Staff can test the assessment end to end. Generated 2026-10-18 from the prototype's own data
+-- (data/revenueCodeData.ts and data/mockFeeSchedules.ts), so the numbers are exactly the ones the prototype shows.
+-- Depends on 20261018000000_reference_numbers.sql.
+--
+-- *** THESE ARE NOT THE APPROVED REVENUE CODE AMOUNTS. *** Every schedule says so in ordinance_reference and
+-- reason_notes. When the barangay gives the approved Revenue Code, add the real schedules as NEW rows with a later
+-- effective_date (the newest effective schedule wins, older rows stay as history), or remove these sample rows before
+-- any real request is assessed with them. This is on the "remove or replace before handover" list in CHANGES.md.
+--
+-- WHAT IT ADDS: 7 business categories, 13 classifications, 23 fee schedules (one per clearance type,
+-- category and classification, effective 2026-01-01) with 6 fee lines each, in the prototype's order:
+-- <clearance type> fee, Plate, Inspection Fee, Sticker, Penalty, No. of Employee.
+-- Non-business clearance types have no category or classification (both NULL), as in the prototype.
+--
+-- ALSO: fee_schedules.created_by may now be NULL, meaning "loaded by the system" (no person made this schedule);
+-- every schedule made by an Admin still records who made it.
+--
+-- RE-RUNNABLE ON PURPOSE: categories, classifications and schedules are inserted only if missing, and a schedule's
+-- lines only when that schedule has none.
+
+alter table public.fee_schedules alter column created_by drop not null;
+comment on column public.fee_schedules.created_by is 'The Admin who made this schedule; NULL = loaded by the system (sample or imported data).';
+
+insert into public.business_categories (name) values
+  ('Sari-Sari Store'),
+  ('Bakery'),
+  ('Beauty Parlor / Salon'),
+  ('Carinderia'),
+  ('Lessor'),
+  ('Ambulant / Mobile Vendor'),
+  ('Bank')
+on conflict (name) do nothing;
+
+insert into public.business_classifications (category_id, name)
+select c.id, v.name
+from (values
+  ('Sari-Sari Store', 'Small'),
+  ('Sari-Sari Store', 'Medium'),
+  ('Sari-Sari Store', 'Large'),
+  ('Bakery', 'Small'),
+  ('Bakery', 'Medium'),
+  ('Bakery', 'Large'),
+  ('Beauty Parlor / Salon', 'Small'),
+  ('Beauty Parlor / Salon', 'Large'),
+  ('Carinderia', 'Small'),
+  ('Carinderia', 'Large'),
+  ('Lessor', '1–4 Units'),
+  ('Lessor', '5–8 Units'),
+  ('Lessor', '9+ Units')
+) as v(category, name)
+join public.business_categories c on c.name = v.category
+on conflict (category_id, name) do nothing;
+
+do $$
+declare
+  r record;
+  sched_id integer;
+  i integer;
+begin
+  for r in
+    select * from (values
+  ('Business Clearance', 'Sari-Sari Store', 'Small', '2026-01-01', array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[100.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[]),
+  ('Business Clearance', 'Sari-Sari Store', 'Medium', '2026-01-01', array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[300.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[]),
+  ('Business Clearance', 'Sari-Sari Store', 'Large', '2026-01-01', array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[500.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[]),
+  ('Business Clearance', 'Bakery', 'Small', '2026-01-01', array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[500.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[]),
+  ('Business Clearance', 'Bakery', 'Medium', '2026-01-01', array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[750.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[]),
+  ('Business Clearance', 'Bakery', 'Large', '2026-01-01', array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[1000.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[]),
+  ('Business Clearance', 'Beauty Parlor / Salon', 'Small', '2026-01-01', array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[500.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[]),
+  ('Business Clearance', 'Beauty Parlor / Salon', 'Large', '2026-01-01', array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[1000.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[]),
+  ('Business Clearance', 'Carinderia', 'Small', '2026-01-01', array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[500.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[]),
+  ('Business Clearance', 'Carinderia', 'Large', '2026-01-01', array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[1000.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[]),
+  ('Business Clearance', 'Lessor', '1–4 Units', '2026-01-01', array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[1000.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[]),
+  ('Business Clearance', 'Lessor', '5–8 Units', '2026-01-01', array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[1500.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[]),
+  ('Business Clearance', 'Lessor', '9+ Units', '2026-01-01', array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[2500.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[]),
+  ('Business Clearance', 'Ambulant / Mobile Vendor', null, '2026-01-01', array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[250.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[]),
+  ('Business Clearance', 'Bank', null, '2026-01-01', array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[2500.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[]),
+  ('Building Clearance', null, null, '2026-01-01', array['Building Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[500.00, 0.00, 50.00, 0.00, 0.00, 0.00]::numeric[]),
+  ('Electrical Clearance', null, null, '2026-01-01', array['Electrical Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[350.00, 0.00, 50.00, 0.00, 0.00, 0.00]::numeric[]),
+  ('Fencing Clearance', null, null, '2026-01-01', array['Fencing Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[500.00, 0.00, 50.00, 0.00, 0.00, 0.00]::numeric[]),
+  ('Excavation Clearance', null, null, '2026-01-01', array['Excavation Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[500.00, 0.00, 50.00, 0.00, 0.00, 0.00]::numeric[]),
+  ('Lot Survey Clearance', null, null, '2026-01-01', array['Lot Survey Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[500.00, 0.00, 50.00, 0.00, 0.00, 0.00]::numeric[]),
+  ('Water/MWSS Clearance', null, null, '2026-01-01', array['Water/MWSS Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[500.00, 0.00, 50.00, 0.00, 0.00, 0.00]::numeric[]),
+  ('PODA Clearance', null, null, '2026-01-01', array['PODA Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[500.00, 0.00, 50.00, 0.00, 0.00, 0.00]::numeric[]),
+  ('TODA Clearance', null, null, '2026-01-01', array['TODA Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[500.00, 0.00, 50.00, 0.00, 0.00, 0.00]::numeric[])
+    ) as v(clearance_type, category, classification, effective_date, names, amounts)
+  loop
+    select s.id into sched_id
+    from public.fee_schedules s
+    join public.clearance_types t on t.id = s.clearance_type_id and t.name = r.clearance_type
+    left join public.business_categories c on c.id = s.business_category_id
+    left join public.business_classifications k on k.id = s.classification_id
+    where s.effective_date = r.effective_date::date
+      and c.name is not distinct from r.category
+      and k.name is not distinct from r.classification;
+
+    if sched_id is null then
+      insert into public.fee_schedules (clearance_type_id, business_category_id, classification_id, effective_date, ordinance_reference, reason_notes, created_by)
+      select t.id, c.id, k.id, r.effective_date::date,
+             'SAMPLE Revenue Code schedule (illustrative, NOT the approved Revenue Code)',
+             'SAMPLE fees copied from the prototype for testing; replace with the approved Revenue Code before real use.',
+             null
+      from public.clearance_types t
+      left join public.business_categories c on c.name = r.category
+      left join public.business_classifications k on k.category_id = c.id and k.name = r.classification
+      where t.name = r.clearance_type
+      returning id into sched_id;
+    end if;
+
+    if sched_id is null then
+      raise exception 'Sample fee schedule could not be created for % / % / %', r.clearance_type, r.category, r.classification;
+    end if;
+
+    if not exists (select 1 from public.fee_schedule_items where fee_schedule_id = sched_id) then
+      for i in 1 .. array_length(r.names, 1) loop
+        insert into public.fee_schedule_items (fee_schedule_id, component_name, amount)
+        values (sched_id, r.names[i], r.amounts[i]);
+      end loop;
+    end if;
+  end loop;
+end $$;
