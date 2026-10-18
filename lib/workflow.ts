@@ -187,12 +187,14 @@ export function transition(state: PortalState, command: Command, now = new Date(
   requireThat(actor.role !== 'resident' || original.residentId === actor.id, 'This request belongs to another resident.');
   const a = { ...original };
   if (command.type === 'review') { staff(); requireThat(a.status === 'Pending Assessment' || a.status === 'Under Review', 'Requirements can only be reviewed before assessment.'); a.documents = command.documents.map(({ note, ...d }) => { const flagged = d.status === 'Missing' || d.status === 'Needs Replacement', text = note?.trim().slice(0, 200); return flagged && text ? { ...d, note: text } : d; }); log('Requirements reviewed', reference, JSON.stringify(original.documents.map(d => [d.requirement, d.status])), JSON.stringify(a.documents.map(d => [d.requirement, d.status]))); }
+  // The notice key names the request AND the document: the same document type flagged on two requests of one Applicant
+  // gives two notices (one each), and repeating it on one request updates that one notice.
   if (command.type === 'review') {
     const isFlagged = (d: UploadedDocument) => d.status === 'Missing' || d.status === 'Needs Replacement';
     for (const d of a.documents) {
       const before = original.documents.find(x => x.requirement === d.requirement);
-      if (isFlagged(d) && (!before || before.status !== d.status || (before.note || '') !== (d.note || ''))) notify(a.residentId, reference, 'documents_flagged', `Please upload a new copy of ${d.requirement}.${d.note ? ' Staff note: ' + d.note : ''}`, `docs:${d.requirement}`);
-      else if (!isFlagged(d) && before && isFlagged(before)) dropUnread(a.residentId, `docs:${d.requirement}`);
+      if (isFlagged(d) && (!before || before.status !== d.status || (before.note || '') !== (d.note || ''))) notify(a.residentId, reference, 'documents_flagged', `Please upload a new copy of ${d.requirement}.${d.note ? ' Staff note: ' + d.note : ''}`, `docs:${reference}:${d.requirement}`);
+      else if (!isFlagged(d) && before && isFlagged(before)) dropUnread(a.residentId, `docs:${reference}:${d.requirement}`);
     }
   }
   // A document Staff flagged (Missing / Needs Replacement) can be replaced with a new copy, by the Applicant or by Staff

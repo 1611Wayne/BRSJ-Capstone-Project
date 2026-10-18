@@ -2,14 +2,16 @@ import 'server-only';
 import type { Application, ApplicationInput, UploadedDocument } from '@/types';
 
 // Column list for reading an application with its clearance type name and documents (see SCHEMA_MAP.md, section 2).
-export const APPLICATION_SELECT = `id, reference_no, resident_id, applicant_name, address, contact_number, purpose, date_requested, created_at, status,
+export const APPLICATION_SELECT = `id, clearance_type_id, reference_no, resident_id, applicant_name, address, contact_number, purpose, date_requested, created_at, status,
   business_name, business_location, date_initial_operation, application_type, ownership_type, property_owner_name, business_contact,
   source, certified, has_employees, employee_count, business_subcategory, rejection_reason, rejected_at,
   clearance_types ( name ),
   rejecter:profiles!applications_rejected_by_fkey ( first_name, last_name ),
   assessments ( id, total_amount, assessed_at, fee_schedule_id, business_categories ( name ), business_classifications ( name ),
     assessor:profiles!assessments_assessed_by_fkey ( first_name, last_name ), assessment_items ( id, fee_component_name, amount ) ),
-  application_documents ( requirement_name, storage_path, original_filename, mime_type, file_size, verification_status, note )`;
+  application_documents ( requirement_name, storage_path, original_filename, mime_type, file_size, verification_status, note ),
+  correction_requests ( id, message, status, created_at, resolved_at, resolution_note,
+    requester:profiles!correction_requests_resident_id_fkey ( first_name, last_name ), resolver:profiles!correction_requests_resolved_by_fkey ( first_name, last_name ) )`;
 
 type Row = Record<string, any>;
 const one = (x: unknown) => (Array.isArray(x) ? x[0] : x) as Row | undefined;   // a one-to-one join may come back as an object or a list
@@ -17,7 +19,8 @@ const name = (p?: Row) => p ? [p.first_name, p.last_name].filter(Boolean).join('
 
 export function toApplication(r: Row): Application {
   const docs: UploadedDocument[] = (r.application_documents ?? []).map((d: Row) => ({
-    requirement: d.requirement_name, name: d.original_filename ?? '', size: d.file_size ?? 0, type: d.mime_type ?? '',
+    // A Missing placeholder has no file (all file columns NULL); the prototype shows it as 'Not uploaded yet'.
+    requirement: d.requirement_name, name: d.original_filename ?? (d.storage_path ? '' : 'Not uploaded yet'), size: d.file_size ?? 0, type: d.mime_type ?? '',
     status: d.verification_status, ...(d.note ? { note: d.note } : {}), ...(d.storage_path ? { path: d.storage_path } : {}),
   }));
   return {
@@ -31,6 +34,10 @@ export function toApplication(r: Row): Application {
     ...(r.business_subcategory ? { businessSubcategory: r.business_subcategory } : {}),
     ...(r.rejection_reason ? { rejection: { reason: r.rejection_reason, rejectedBy: name(one(r.rejecter)), timestamp: r.rejected_at } } : {}),
     ...(one(r.assessments) ? { assessment: toAssessment(one(r.assessments)!) } : {}),
+    ...((r.correction_requests ?? []).length ? { corrections: [...r.correction_requests].sort((x: Row, y: Row) => x.id - y.id).map((c: Row) => ({
+      id: 'db-' + c.id, message: c.message, requestedBy: name(one(c.requester)), requestedAt: c.created_at, status: c.status,
+      ...(c.status === 'Resolved' ? { resolvedBy: name(one(c.resolver)), resolvedAt: c.resolved_at, ...(c.resolution_note ? { resolutionNote: c.resolution_note } : {}) } : {}),
+    })) } : {}),
   };
 }
 

@@ -552,3 +552,12 @@ test('notifications from the database replace only the signed-in person own noti
  assert.deepEqual(loaded.notifications.map(n=>n.id).sort(),['db-1','x']);
  assert.throws(()=>transition(s,{type:'loadNotifications',notifications:[{...mine,userId:'resident-juan'}]},at),/someone else/);
 });
+test('the same document flagged on two requests of one Applicant gives one notice per request',()=>{
+ let s=state('staff-maria');const original=app(s);const twin={...structuredClone(original),reference:'SJ-2026-000999'};s={...s,applications:[...s.applications,twin]};
+ const flagFirst=docs=>docs.map((d,i)=>i===0?{...d,status:'Needs Replacement',note:'Blurry.'}:d);
+ s=transition(s,{type:'review',reference:ref,documents:flagFirst(original.documents)},at);
+ s=transition(s,{type:'review',reference:'SJ-2026-000999',documents:flagFirst(twin.documents)},at);
+ const notes=s.notifications.filter(n=>n.event==='documents_flagged'&&!n.readAt);
+ assert.equal(notes.length,2);assert.deepEqual(notes.map(n=>n.reference).sort(),[ref,'SJ-2026-000999'].sort());
+ assert.ok(notes.every(n=>n.key==='docs:'+n.reference+':'+original.documents[0].requirement));
+});
