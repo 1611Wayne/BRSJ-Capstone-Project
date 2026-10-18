@@ -520,3 +520,11 @@ test('reading notifications only marks your own, and the newest come first',()=>
  const mine=transition(role(t,'resident-maria'),{type:'readNotifications'},at);assert.equal(notes(mine).filter(n=>!n.readAt).length,0);assert.ok(notes(mine).every(n=>n.readAt===at));
  assert.equal(notificationsFor({users:[],applications:[],schedules:[],audits:[],currentUserId:null},'x').length,0);
 });
+test('real sign-in: the signed-in person (role from the database) is adopted; an empty password never logs in',()=>{
+ const real={id:'0000-real',firstName:'Ana',lastName:'Reyes',email:'ana@example.com',password:'should-not-be-kept',role:'staff',status:'Active',createdAt:at,contact:'',address:''};
+ const s=transition(state(null),{type:'sessionUser',user:real},at);
+ assert.equal(s.currentUserId,'0000-real');assert.equal(s.users.find(u=>u.id==='0000-real').role,'staff');assert.equal(s.users.find(u=>u.id==='0000-real').password,'');
+ const again=transition(s,{type:'sessionUser',user:{...real,firstName:'Ana Maria'}},at);assert.equal(again.users.filter(u=>u.id==='0000-real').length,1);assert.equal(again.users.find(u=>u.id==='0000-real').firstName,'Ana Maria');
+ assert.throws(()=>transition(state(null),{type:'sessionUser',user:{...real,status:'Inactive'}},at),/inactive/);
+ const out=transition(s,{type:'logout'},at);assert.throws(()=>transition(out,{type:'login',email:'ana@example.com',password:''},at),/incorrect/);
+});

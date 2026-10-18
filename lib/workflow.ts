@@ -62,6 +62,7 @@ export const validOrDate = (date?: string, currentDate = today()) => !!date && /
 export const correctableStatuses: ApplicationStatus[] = ['Pending Assessment', 'Under Review', 'Rejected', 'Awaiting OR', 'For Checking'];
 export type Command =
   | { type: 'login'; email: string; password: string } | { type: 'logout' }
+  | { type: 'sessionUser'; user: User }
   | { type: 'register'; user: User }
   | { type: 'saveApplication'; application: ApplicationInput; reference?: string; draft: boolean }
   | { type: 'review'; reference: string; documents: UploadedDocument[] }
@@ -96,9 +97,16 @@ export function transition(state: PortalState, command: Command, now = new Date(
   const dropUnread = (userId: string, key: string) => { s.notifications = s.notifications.filter(n => !(n.userId === userId && n.key === key && !n.readAt)); };
   if (command.type === 'logout') { s.currentUserId = null; return s; }
   if (command.type === 'login') {
-    const user = s.users.find(u => u.email.toLowerCase() === command.email.trim().toLowerCase() && u.password === command.password && u.status === 'Active');
+    const user = s.users.find(u => u.email.toLowerCase() === command.email.trim().toLowerCase() && !!u.password && u.password === command.password && u.status === 'Active');
     requireThat(user, 'The account details are incorrect or the account is inactive.');
     s.currentUserId = user!.id; return s;
+  }
+  // Real sign-in (Supabase Auth): the server already checked the password and read the role from the database
+  // (/api/me). The screens still run on the prototype state, so the signed-in person is added to it.
+  if (command.type === 'sessionUser') {
+    requireThat(command.user.status === 'Active', 'This account is inactive. Ask the barangay office.');
+    s.users = [...s.users.filter(u => u.id !== command.user.id), { ...command.user, password: '' }];
+    s.currentUserId = command.user.id; return s;
   }
   const validateUser = (u: User) => {
     requireThat(u.firstName.trim() && u.lastName.trim() && u.email.trim() && u.password.length >= 8, 'Name, email / username, and a password of at least 8 characters are required.');
