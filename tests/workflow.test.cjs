@@ -528,3 +528,14 @@ test('real sign-in: the signed-in person (role from the database) is adopted; an
  assert.throws(()=>transition(state(null),{type:'sessionUser',user:{...real,status:'Inactive'}},at),/inactive/);
  const out=transition(s,{type:'logout'},at);assert.throws(()=>transition(out,{type:'login',email:'ana@example.com',password:''},at),/incorrect/);
 });
+test('database records load into the screens: own list replaced, single records added or replaced, never another resident\'s',()=>{
+ const s=state('resident-maria');const mine=s.applications.filter(a=>a.residentId==='resident-maria');const others=s.applications.filter(a=>a.residentId!=='resident-maria');
+ const fromDb={...mine[0],reference:'SJ-2026-000001',dbId:7,status:'Draft'};
+ const replaced=transition(s,{type:'loadApplications',applications:[fromDb],replaceOwn:true},at);
+ assert.deepEqual(replaced.applications.filter(a=>a.residentId==='resident-maria').map(a=>a.reference),['SJ-2026-000001']);
+ assert.equal(replaced.applications.filter(a=>a.residentId!=='resident-maria').length,others.length);
+ const updated=transition(replaced,{type:'loadApplications',applications:[{...fromDb,status:'Pending Assessment'}]},at);
+ assert.equal(updated.applications.filter(a=>a.reference==='SJ-2026-000001').length,1);assert.equal(updated.applications.find(a=>a.reference==='SJ-2026-000001').status,'Pending Assessment');
+ assert.throws(()=>transition(s,{type:'loadApplications',applications:[{...fromDb,residentId:'resident-juan'}]},at),/another resident/);
+ assert.throws(()=>transition(state(null),{type:'loadApplications',applications:[]},at),/log in/);
+});

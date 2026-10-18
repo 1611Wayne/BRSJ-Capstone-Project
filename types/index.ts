@@ -7,7 +7,7 @@ export interface Admin extends User { role: 'admin' }
 export interface ClearanceType { id: string; name: string; shortName: string; description: string; icon: string }
 export type Ownership = 'Owner' | 'Renter' | 'Occupant';
 export interface DocumentRequirement { name: string; required: boolean }
-export interface UploadedDocument { requirement: string; name: string; size: number; type: string; status: 'Pending Review' | 'Verified' | 'Missing' | 'Needs Replacement'; url?: string; note?: string }
+export interface UploadedDocument { requirement: string; name: string; size: number; type: string; status: 'Pending Review' | 'Verified' | 'Missing' | 'Needs Replacement'; url?: string; note?: string; path?: string }
 export interface BusinessClassification { name: string; businessClearance: number }
 export interface BusinessCategory { name: string; classifications?: BusinessClassification[]; businessClearance?: number }
 export type RevenueCategory = BusinessCategory;
@@ -24,7 +24,8 @@ export interface ReceiptConfirmation { timestamp: string; ipPlaceholder: string;
 export interface Feedback { rating: number; comment: string; submittedAt: string }
 export interface InspectionReport { status: 'Pending' | 'Completed'; inspector: string; date: string; remarks: string; savedAt?: string }
 export interface Application {
-  reference: string; residentId: string; applicant: string; address: string; contact: string; purpose: string; clearanceType: string; dateRequested: string; status: ApplicationStatus;
+  // dbId: the database row id when the record came from Supabase (file paths use it); undefined in the prototype.
+  reference: string; dbId?: number; residentId: string; applicant: string; address: string; contact: string; purpose: string; clearanceType: string; dateRequested: string; status: ApplicationStatus;
   businessName: string; businessLocation: string; initialOperation: string; applicationType: 'New Application' | 'Renewal'; ownership: Ownership; propertyOwner: string; businessContact: string;
   source: 'Online' | 'Assisted / Walk-in'; staffEncoder?: string; documents: UploadedDocument[]; certified: boolean;
   hasEmployees?: boolean; employeeCount?: number;

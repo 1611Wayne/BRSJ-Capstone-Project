@@ -63,6 +63,7 @@ export const correctableStatuses: ApplicationStatus[] = ['Pending Assessment', '
 export type Command =
   | { type: 'login'; email: string; password: string } | { type: 'logout' }
   | { type: 'sessionUser'; user: User }
+  | { type: 'loadApplications'; applications: Application[]; replaceOwn?: boolean }
   | { type: 'register'; user: User }
   | { type: 'saveApplication'; application: ApplicationInput; reference?: string; draft: boolean }
   | { type: 'review'; reference: string; documents: UploadedDocument[] }
@@ -119,6 +120,14 @@ export function transition(state: PortalState, command: Command, now = new Date(
     s.users.push(command.user); log('Resident registered', command.user.id); return s;
   }
   requireThat(actor, 'Please log in to continue.');
+  // Records read from the database (Supabase mode) are put into the screens' state. replaceOwn swaps in the full list
+  // of the signed-in Applicant's own requests; otherwise each record is added or replaced by its reference.
+  if (command.type === 'loadApplications') {
+    requireThat(command.applications.every(a => actor.role !== 'resident' || a.residentId === actor.id), 'These requests belong to another resident.');
+    const incoming = new Set(command.applications.map(a => a.reference));
+    s.applications = [...command.applications, ...s.applications.filter(a => !incoming.has(a.reference) && !(command.replaceOwn && a.residentId === actor.id))];
+    return s;
+  }
   const staff = () => requireThat(actor.role === 'staff', 'Only Staff can perform this action.');
   const admin = () => requireThat(actor.role === 'admin', 'Only Admin can perform this action.');
   // Anyone logged in can mark their own notifications as read; nobody else's.
