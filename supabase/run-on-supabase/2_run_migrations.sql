@@ -1,6 +1,6 @@
 -- STEP 2 of 3. THE MIGRATIONS. Paste ALL of this into the Supabase SQL Editor and click Run.
--- Generated 2026-10-17 from the seven migration files below, unchanged except that migration 6 was made re-runnable.
--- If you already ran an earlier version of this script (parts 1 to 5), run this one again: it is safe, and parts 6 and 7 are new.
+-- Generated 2026-10-18 from the eight migration files below, unchanged except that migration 6 was made re-runnable.
+-- If you already ran an earlier version of this script, run this one again: it is safe. Part 8 (reference numbers) is new.
 -- Parts 6 and 7 are the security rules: who may read each table, and three private file buckets (IDs, documents, receipts).
 -- Run it as the default role (postgres). The editor may warn about "destructive operations" because the script drops and
 -- re-creates some CHECK rules: that is expected, confirm it.
@@ -12,12 +12,12 @@
 -- then the sync with the frontend (statuses Rejected and For Checking, employees, rejection, receipt photo, payment
 -- check, demo simulation, and more); then one column recording which Staff member confirmed a release at the counter;
 -- then the in-app notices table; then the row-level security rules for every remaining table; then the three private
--- Storage buckets with their upload and read rules.
+-- Storage buckets with their upload and read rules; then the request reference numbers (SJ-YYYY-######) made by the database.
 -- See SCHEMA_MAP.md for the full list.
 -- Afterwards, run STEP 3 (3_after_check.sql).
 
 -- ==========================================================================
--- PART 1 OF 7: 20261005000000_correct_clearance_types.sql
+-- PART 1 OF 8: 20261005000000_correct_clearance_types.sql
 -- ==========================================================================
 -- Correct the clearance_types catalog: 13 -> 9, confirmed with the real client
 -- Generated 2026-10-05. Depends on 20260923010000_seed_clearance_types.sql.
@@ -64,7 +64,7 @@ where name in (
 );
 
 -- ==========================================================================
--- PART 2 OF 7: 20261006000000_add_business_subcategory.sql
+-- PART 2 OF 8: 20261006000000_add_business_subcategory.sql
 -- ==========================================================================
 -- Add the Applicant's optional Ambulant / Lessor indication to applications
 -- Generated 2026-10-06. Depends on 20260922000000_init_schema.sql.
@@ -101,7 +101,7 @@ comment on column public.applications.business_subcategory is
   'Optional. What the Applicant indicated at intake for a Business Clearance: Ambulant or Lessor (Paupahan); NULL = Business Clearance only. A hint for Staff, not the final classification — that is decided at assessment.';
 
 -- ==========================================================================
--- PART 3 OF 7: 20261006010000_sync_schema_with_frontend.sql
+-- PART 3 OF 8: 20261006010000_sync_schema_with_frontend.sql
 -- ==========================================================================
 -- Sync the database with everything the frontend prototype has built since 2026-09-23
 -- Generated 2026-10-06. Depends on ALL of the earlier migrations, in particular
@@ -354,7 +354,7 @@ comment on column public.correction_requests.resident_id is
   'The Applicant who sent the request (the frontend''s requestedBy). The Staff who resolved it is resolved_by.';
 
 -- ==========================================================================
--- PART 4 OF 7: 20261016000000_receipt_confirmed_by.sql
+-- PART 4 OF 8: 20261016000000_receipt_confirmed_by.sql
 -- ==========================================================================
 -- Record WHO confirmed a release at the counter
 -- Generated 2026-10-16. Depends on 20260922000000_init_schema.sql (receipt_confirmations, profiles).
@@ -375,7 +375,7 @@ comment on column public.receipt_confirmations.confirmed_by is
   'The Staff member who recorded the release of the printed original at the counter. NULL = the Applicant confirmed receipt themselves.';
 
 -- ==========================================================================
--- PART 5 OF 7: 20261016010000_notifications.sql
+-- PART 5 OF 8: 20261016010000_notifications.sql
 -- ==========================================================================
 -- In-app notifications for Applicants
 -- Generated 2026-10-16. Depends on 20260922000000_init_schema.sql (profiles, applications).
@@ -421,7 +421,7 @@ comment on table public.notifications is
   'In-app notices for an Applicant (not SMS). Written by the server when Staff act on the Applicant''s application; the Applicant reads them and marks them read. An unread notice with the same dedupe_key is updated instead of repeated.';
 
 -- ==========================================================================
--- PART 6 OF 7: 20261017000000_rls_policies_remaining_tables.sql
+-- PART 6 OF 8: 20261017000000_rls_policies_remaining_tables.sql
 -- ==========================================================================
 -- RLS policies for the remaining tables (everything except profiles and applications, which have their own
 -- policies in 20260923020000). Generated 2026-10-17. Depends on all earlier migrations.
@@ -645,7 +645,7 @@ create trigger notifications_owner_only_marks_read
   for each row execute function public.notifications_owner_only_marks_read();
 
 -- ==========================================================================
--- PART 7 OF 7: 20261017010000_storage_buckets_and_policies.sql
+-- PART 7 OF 8: 20261017010000_storage_buckets_and_policies.sql
 -- ==========================================================================
 -- Storage: three PRIVATE buckets and who may read and upload into each. Generated 2026-10-17.
 -- Depends on 20261017000000_rls_policies_remaining_tables.sql (the helper functions).
@@ -780,3 +780,56 @@ with check (
         and public.application_status_for_caller(public.storage_application_id(name)) = 'Awaiting OR')
   )
 );
+
+-- ==========================================================================
+-- PART 8 OF 8: 20261018000000_reference_numbers.sql
+-- ==========================================================================
+-- Request reference numbers made by the database: SJ-YYYY-######, one counter per year (Manila time), starting at 1.
+-- Generated 2026-10-18. Depends on 20261017000000_rls_policies_remaining_tables.sql.
+--
+-- WHY: the prototype made the next number in the browser ("highest number + 1"). With several people applying at the
+-- same moment, two of them would get the same number. Here every new application takes the next value inside one
+-- INSERT ... ON CONFLICT statement, which Postgres runs one at a time per year row, so numbers never repeat.
+-- A failed or cancelled insert can leave a gap (a number nobody has); that is normal and harmless.
+--
+-- HOW IT IS USED: applications.reference_no now defaults to public.next_reference_no(), so an insert that leaves the
+-- column out gets the next number. The year rolls over by itself (a new row in reference_counters).
+--
+-- RE-RUNNABLE ON PURPOSE: create ... if not exists, create or replace, and an idempotent default.
+
+create table if not exists public.reference_counters (
+  year integer primary key check (year between 2000 and 2999),
+  last_value integer not null check (last_value > 0)
+);
+alter table public.reference_counters enable row level security;
+-- Nobody reads or writes it through the API; only next_reference_no() (SECURITY DEFINER) touches it.
+-- An explicit "nobody" policy says so on purpose (every table has at least one policy; after-check 17).
+drop policy if exists "nobody uses the counters directly" on public.reference_counters;
+create policy "nobody uses the counters directly" on public.reference_counters for select to authenticated using (false);
+comment on table public.reference_counters is 'Last request reference number used per year (Manila time). Written only by next_reference_no().';
+
+create or replace function public.next_reference_no()
+returns text
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  y integer := extract(year from (now() at time zone 'Asia/Manila'))::integer;
+  n integer;
+begin
+  insert into public.reference_counters as c (year, last_value) values (y, 1)
+  on conflict (year) do update set last_value = c.last_value + 1
+  returning c.last_value into n;
+  if n > 999999 then
+    raise exception 'Reference numbers for % are used up (999999).', y;
+  end if;
+  return 'SJ-' || y::text || '-' || lpad(n::text, 6, '0');
+end;
+$$;
+
+-- Callable by signed-in users (an Applicant's own draft insert uses the default) and the server; not by anonymous visitors.
+revoke all on function public.next_reference_no() from public, anon;
+grant execute on function public.next_reference_no() to authenticated, service_role;
+
+alter table public.applications alter column reference_no set default public.next_reference_no();

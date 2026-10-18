@@ -22,6 +22,7 @@
 | 9 | `20261016010000_notifications.sql` (in-app notices for Applicants) | 2026-10-16 | Yes (2026-10-17; confirmed by the after-check table the user pasted: 19 checks, ALL CHECKS PASSED) |
 | 10 | `20261017000000_rls_policies_remaining_tables.sql` (who may read each table; three helper functions) | 2026-10-17 | Yes (2026-10-17; after-check table pasted by the user: all 19 checks true, ALL CHECKS PASSED) |
 | 11 | `20261017010000_storage_buckets_and_policies.sql` (three private buckets and their read and upload rules) | 2026-10-17 | Yes (2026-10-17, same run) |
+| 12 | `20261018000000_reference_numbers.sql` (`SJ-YYYY-######` made by the database: `reference_counters` + `next_reference_no()`, the default of `applications.reference_no`) | 2026-10-18 | Yes (2026-10-18; after-check pasted by the user: 20 checks, ALL CHECKS PASSED) |
 
 **Files 5 to 8 were run on the live project on 2026-10-16** with the run kit below. The before-check matched (all row counts 0, 13 / 13 clearance types, three `false`) and the after-check returned all 15 checks `true` and **ALL CHECKS PASSED**, as reported by the user from the SQL Editor. **From now on do not edit files 1 to 8: add a new, later-numbered migration for any further change.** The run kit: **Easiest way (2026-10-16): the run kit in `run-on-supabase/`** — three files, three pastes: `1_before_check.sql` (read-only), `2_run_migrations.sql` (files 5 to 9 in one script, safe to run twice, also after an earlier version of the kit), `3_after_check.sql` (read-only; the last row says ALL CHECKS PASSED). Tested on a real Postgres engine in the live-like state (files 1–4 only), including a second run, the one-file-at-a-time path, and a check that the after-check fails on the old schema. File 6 was made re-runnable (`add column if not exists`) before it was ever run. Otherwise, run 5, 6, 7, 8 and 9 in that order in the Supabase SQL Editor. Files 1–7 were executed in order on a real Postgres engine (PGlite, Postgres 18) with 96 checks on the new constraints; file 7 was also run twice to prove it can be re-run. That is not the same as running it on Supabase, so report any error.
 
@@ -42,7 +43,7 @@
 ### `Application` → `applications`
 | Frontend | Database | Note |
 |---|---|---|
-| `reference` | `reference_no` | format `SJ-YYYY-######` is not enforced in SQL |
+| `reference` | `reference_no` | made by the database on insert (migration 12: one counter per year, Manila time; never repeats; gaps are possible). Do not send it; the format is not enforced for explicit values (imports) |
 | `residentId` | `resident_id` | |
 | `applicant`, `address`, `purpose` | `applicant_name`, `address`, `purpose` | |
 | `contact` | `contact_number` | |

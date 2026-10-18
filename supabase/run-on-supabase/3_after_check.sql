@@ -27,6 +27,7 @@ with c as (
   union all select 17, 'tables with row level security but NO policy (must be 0)', (select count(*) from pg_tables t where t.schemaname = 'public' and t.rowsecurity and not exists (select 1 from pg_policies p where p.schemaname = 'public' and p.tablename = t.tablename))::text, '0'
   union all select 18, 'storage: 3 PRIVATE buckets (valid-ids, application-documents, receipt-photos)', (select count(*) from storage.buckets where id in ('valid-ids', 'application-documents', 'receipt-photos') and not public)::text, '3'
   union all select 19, 'storage: 6 rules on uploaded files (read and upload for each bucket)', (select count(*) from pg_policies where schemaname = 'storage' and tablename = 'objects' and policyname like 'storage: %')::text, '6'
+  union all select 20, 'new applications get their reference number from the database', (select (pg_get_expr(d.adbin, d.adrelid) like '%next_reference_no()%')::text from pg_attrdef d join pg_attribute a on a.attrelid = d.adrelid and a.attnum = d.adnum where d.adrelid = 'public.applications'::regclass and a.attname = 'reference_no'), 'true'
 )
 select n, item, expected, actual, (expected = actual) as ok from c
 union all
