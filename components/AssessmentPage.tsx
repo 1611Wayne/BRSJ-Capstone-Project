@@ -1,11 +1,13 @@
 'use client';
-import { useState } from 'react';import { useRouter } from 'next/navigation';import Link from 'next/link';import { XCircle, CheckCircle2, FileText, Eye, LockKeyhole } from 'lucide-react';
+import { useEffect, useState } from 'react';import { useRouter } from 'next/navigation';import Link from 'next/link';import { XCircle, CheckCircle2, FileText, Eye, LockKeyhole } from 'lucide-react';
 import { usePortal } from './PortalProvider';import { Field,ErrorMessage,Notice } from './Field';import { FeeTable } from './FeeTable';import { StatusBadge } from './StatusBadge';import { DocumentPreview } from './DocumentPreview';import { ReplaceDocuments } from './ReplaceDocuments';import { revenueCategories } from '@/data/revenueCodeData';import { formatPeso } from '@/data/revenueCodeData';import { activeSchedule,today,requirements } from '@/lib/workflow';import type { UploadedDocument,InspectionReport } from '@/types';
 export function AssessmentPage({reference}:{reference:string}){
  const router=useRouter();const {state,user,act}=usePortal();const a=state.applications.find(a=>a.reference===reference);
  const [category,setCategory]=useState(a?.assessment?.category||(a?.businessSubcategory==='Ambulant'?'Ambulant / Mobile Vendor':a?.businessSubcategory==='Lessor (Paupahan)'?'Lessor':revenueCategories[0].name)),[classification,setClassification]=useState(a?.assessment?.classification||(a?.businessSubcategory==='Ambulant'?'':a?.businessSubcategory==='Lessor (Paupahan)'?revenueCategories.find(c=>c.name==='Lessor')!.classifications![0].name:'Small')),[error,setError]=useState(''),[message,setMessage]=useState(''),[preview,setPreview]=useState<UploadedDocument>();
  const [feeDraft,setFeeDraft]=useState<{scheduleId:string;amounts:string[]}>();
- const [docs,setDocs]=useState(a?.documents||[]);const [inspection,setInspection]=useState<InspectionReport>(a?.inspection||{status:'Pending',inspector:'',date:'',remarks:''});
+ const [docs,setDocs]=useState(a?.documents||[]);
+ // Follow the shared data: records loaded from the database after this page opened, or reloaded after the server refused a change.
+ useEffect(()=>{if(a)setDocs(a.documents);},[a?.documents]);const [inspection,setInspection]=useState<InspectionReport>(a?.inspection||{status:'Pending',inspector:'',date:'',remarks:''});
  // Reject state
  const [showReject,setShowReject]=useState(false),[rejectReason,setRejectReason]=useState('');
  if(!a)return <div className="p-8">Application Not Found</div>;const business=a.clearanceType==='Business Clearance';const current=revenueCategories.find(c=>c.name===category)!;const schedule=activeSchedule(state.schedules,a.clearanceType,business?category:'',business?classification:'');const editable=a.status==='Pending Assessment'||(a.status==='Under Review'&&!a.receipt);

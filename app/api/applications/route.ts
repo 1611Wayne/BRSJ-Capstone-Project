@@ -8,12 +8,13 @@ import { APPLICATION_SELECT, applicantColumns, toApplication } from '@/lib/serve
 export const dynamic = 'force-dynamic';
 const BUCKET = 'application-documents';
 
-// GET /api/applications: the signed-in Applicant's own requests (drafts included), newest first.
+// GET /api/applications: an Applicant gets their own requests (drafts included); Staff and Admin get every submitted
+// request (never other people's drafts). Newest first.
 export async function GET() {
   const me = await currentUser(); if ('error' in me) return me.error;
-  if (me.user.role !== 'resident') return NextResponse.json({ error: 'Staff and Admin lists are not connected yet.' }, { status: 403 });
-  const { data, error } = await supabaseAdmin().from('applications').select(APPLICATION_SELECT)
-    .eq('resident_id', me.user.id).order('created_at', { ascending: false });
+  let query = supabaseAdmin().from('applications').select(APPLICATION_SELECT).order('created_at', { ascending: false });
+  query = me.user.role === 'resident' ? query.eq('resident_id', me.user.id) : query.neq('status', 'Draft');
+  const { data, error } = await query;
   if (error) return NextResponse.json({ error: 'Could not load your requests: ' + error.message }, { status: 500 });
   return NextResponse.json({ applications: (data ?? []).map(toApplication) });
 }

@@ -63,7 +63,7 @@ export const correctableStatuses: ApplicationStatus[] = ['Pending Assessment', '
 export type Command =
   | { type: 'login'; email: string; password: string } | { type: 'logout' }
   | { type: 'sessionUser'; user: User }
-  | { type: 'loadApplications'; applications: Application[]; replaceOwn?: boolean }
+  | { type: 'loadApplications'; applications: Application[]; replaceOwn?: boolean; replaceAll?: boolean }
   | { type: 'register'; user: User }
   | { type: 'saveApplication'; application: ApplicationInput; reference?: string; draft: boolean }
   | { type: 'review'; reference: string; documents: UploadedDocument[] }
@@ -124,6 +124,8 @@ export function transition(state: PortalState, command: Command, now = new Date(
   // of the signed-in Applicant's own requests; otherwise each record is added or replaced by its reference.
   if (command.type === 'loadApplications') {
     requireThat(command.applications.every(a => actor.role !== 'resident' || a.residentId === actor.id), 'These requests belong to another resident.');
+    // Staff and Admin: the database list replaces the whole list (the prototype's sample requests disappear).
+    if (command.replaceAll) { requireThat(actor.role !== 'resident', 'Only Staff and Admin load every request.'); s.applications = [...command.applications]; return s; }
     const incoming = new Set(command.applications.map(a => a.reference));
     s.applications = [...command.applications, ...s.applications.filter(a => !incoming.has(a.reference) && !(command.replaceOwn && a.residentId === actor.id))];
     return s;

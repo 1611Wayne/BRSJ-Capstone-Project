@@ -539,3 +539,9 @@ test('database records load into the screens: own list replaced, single records 
  assert.throws(()=>transition(s,{type:'loadApplications',applications:[{...fromDb,residentId:'resident-juan'}]},at),/another resident/);
  assert.throws(()=>transition(state(null),{type:'loadApplications',applications:[]},at),/log in/);
 });
+test('Staff load every request from the database; an Applicant may not',()=>{
+ const s=state('staff-maria');const db=[{...s.applications[0],reference:'SJ-2026-000009',dbId:9}];
+ const loaded=transition(s,{type:'loadApplications',applications:db,replaceAll:true},at);
+ assert.deepEqual(loaded.applications.map(a=>a.reference),['SJ-2026-000009']);
+ assert.throws(()=>transition(state('resident-maria'),{type:'loadApplications',applications:[],replaceAll:true},at),/Only Staff and Admin/);
+});
