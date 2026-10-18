@@ -1,4 +1,4 @@
-import type { Application, ApplicationInput, UploadedDocument } from '@/types';
+import type { AppNotification, Application, ApplicationInput, UploadedDocument } from '@/types';
 import { supabaseBrowser } from './browser';
 
 const safeFileName = (name: string) => name.replace(/[^A-Za-z0-9._-]+/g, '_').slice(-80);
@@ -49,4 +49,12 @@ export async function loadMyApplications(): Promise<Application[]> {
   const json = await response.json().catch(() => ({}));
   if (!response.ok) throw Object.assign(new Error(json.error || 'Your requests could not be loaded.'), { status: response.status });
   return json.applications as Application[];
+}
+
+// The signed-in person's own notices from the database.
+export async function loadMyNotifications(): Promise<AppNotification[]> {
+  const response = await fetch('/api/notifications', { cache: 'no-store' });
+  const json = await response.json().catch(() => ({}));
+  if (!response.ok) throw Object.assign(new Error(json.error || 'Your notifications could not be loaded.'), { status: response.status });
+  return json.notifications as AppNotification[];
 }

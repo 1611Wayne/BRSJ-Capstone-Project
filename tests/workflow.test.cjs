@@ -545,3 +545,10 @@ test('Staff load every request from the database; an Applicant may not',()=>{
  assert.deepEqual(loaded.applications.map(a=>a.reference),['SJ-2026-000009']);
  assert.throws(()=>transition(state('resident-maria'),{type:'loadApplications',applications:[],replaceAll:true},at),/Only Staff and Admin/);
 });
+test('notifications from the database replace only the signed-in person own notices',()=>{
+ const s={...state('resident-maria'),notifications:[{id:'x',userId:'resident-juan',reference:'R',event:'clearance_ready',message:'other',createdAt:at}]};
+ const mine={id:'db-1',userId:'resident-maria',reference:'SJ-2026-000002',event:'assessment_ready',message:'m',createdAt:at};
+ const loaded=transition(s,{type:'loadNotifications',notifications:[mine]},at);
+ assert.deepEqual(loaded.notifications.map(n=>n.id).sort(),['db-1','x']);
+ assert.throws(()=>transition(s,{type:'loadNotifications',notifications:[{...mine,userId:'resident-juan'}]},at),/someone else/);
+});

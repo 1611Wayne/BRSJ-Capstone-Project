@@ -13,7 +13,7 @@ const Context = createContext<{ state: PortalState; user?: User; ready: boolean;
 // Workflow steps the database can already save (app/api/workflow/route.ts). In real sign-in mode, after the screen
 // updates with the same rules, the step is sent to the server, which checks it again and saves it. If the server
 // refuses, a banner says why and the saved requests are loaded again, so the screen never shows unsaved changes.
-const SAVED_ON_SERVER = new Set<Command['type']>(['review']);
+const SAVED_ON_SERVER = new Set<Command['type']>(['review', 'assess', 'reject', 'readNotifications']);
 
 export function PortalProvider({children}:{children:React.ReactNode}) {
   const [state,setState] = useState<PortalState>(initial); const [ready,setReady] = useState(false); const latest = useRef(state);
@@ -26,19 +26,34 @@ export function PortalProvider({children}:{children:React.ReactNode}) {
     latest.current = next; setState(next);
     try { sessionStorage.setItem('san-jose-prototype-v2', JSON.stringify(next, (key,value) => key === 'url' && !String(value).startsWith('data:') ? undefined : value)); } catch { /* State still works in memory. */ }
   }
+  // Saves go to the server one at a time, in the order of the clicks. A request's saved copy is put back on screen only
+  // when no newer save for that request is still waiting, so a slow answer never undoes a newer click.
+  const queue = useRef<Promise<void>>(Promise.resolve());
+  const waiting = useRef(new Map<string, number>());
   function act(command: Command) {
     const next = transition(latest.current, command); commit(next);
-    if (useSupabaseAuth && SAVED_ON_SERVER.has(command.type) && isRealAccount(latest.current.currentUserId)) void saveOnServer(command);
+    if (useSupabaseAuth && SAVED_ON_SERVER.has(command.type) && isRealAccount(latest.current.currentUserId)) {
+      const key = ('reference' in command && command.reference) || '*';
+      waiting.current.set(key, (waiting.current.get(key) ?? 0) + 1);
+      queue.current = queue.current.then(() => saveOnServer(command, key));
+    }
     return next;
   }
-  async function saveOnServer(command: Command) {
+  async function saveOnServer(command: Command, key: string) {
+    const newest = () => { const left = (waiting.current.get(key) ?? 1) - 1; waiting.current.set(key, left); return left === 0; };
     try {
+      if (command.type === 'readNotifications') {
+        const response = await fetch('/api/notifications', { method: 'POST' });
+        if (!response.ok) throw new Error(((await response.json().catch(() => ({}))) as { error?: string }).error || 'Your notifications could not be marked as read.');
+        newest(); return;
+      }
       const response = await fetch('/api/workflow', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ command }) });
       const body = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(body.error || 'The server did not save this change.');
-      commit(transition(latest.current, { type: 'loadApplications', applications: [body.application as Application] }));
+      if (newest()) commit(transition(latest.current, { type: 'loadApplications', applications: [body.application as Application] }));
       setServerError('');
     } catch (e) {
+      waiting.current.set(key, 0);   // the saved data is reloaded below; later saves still go in order
       setServerError('Not saved: ' + (e as Error).message + ' The page now shows what is saved.');
       try {
         const response = await fetch('/api/applications', { cache: 'no-store' });

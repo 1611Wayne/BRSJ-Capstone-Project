@@ -6,9 +6,14 @@ export const APPLICATION_SELECT = `id, reference_no, resident_id, applicant_name
   business_name, business_location, date_initial_operation, application_type, ownership_type, property_owner_name, business_contact,
   source, certified, has_employees, employee_count, business_subcategory, rejection_reason, rejected_at,
   clearance_types ( name ),
+  rejecter:profiles!applications_rejected_by_fkey ( first_name, last_name ),
+  assessments ( id, total_amount, assessed_at, fee_schedule_id, business_categories ( name ), business_classifications ( name ),
+    assessor:profiles!assessments_assessed_by_fkey ( first_name, last_name ), assessment_items ( id, fee_component_name, amount ) ),
   application_documents ( requirement_name, storage_path, original_filename, mime_type, file_size, verification_status, note )`;
 
 type Row = Record<string, any>;
+const one = (x: unknown) => (Array.isArray(x) ? x[0] : x) as Row | undefined;   // a one-to-one join may come back as an object or a list
+const name = (p?: Row) => p ? [p.first_name, p.last_name].filter(Boolean).join(' ') : 'Staff';
 
 export function toApplication(r: Row): Application {
   const docs: UploadedDocument[] = (r.application_documents ?? []).map((d: Row) => ({
@@ -24,8 +29,15 @@ export function toApplication(r: Row): Application {
     ...(r.has_employees === null || r.has_employees === undefined ? {} : { hasEmployees: r.has_employees }),
     ...(r.employee_count ? { employeeCount: r.employee_count } : {}),
     ...(r.business_subcategory ? { businessSubcategory: r.business_subcategory } : {}),
-    ...(r.rejection_reason ? { rejection: { reason: r.rejection_reason, rejectedBy: 'Staff', timestamp: r.rejected_at } } : {}),
+    ...(r.rejection_reason ? { rejection: { reason: r.rejection_reason, rejectedBy: name(one(r.rejecter)), timestamp: r.rejected_at } } : {}),
+    ...(one(r.assessments) ? { assessment: toAssessment(one(r.assessments)!) } : {}),
   };
+}
+
+function toAssessment(x: Row) {
+  const items = [...(x.assessment_items ?? [])].sort((a: Row, b: Row) => a.id - b.id).map((i: Row) => ({ name: i.fee_component_name, amount: Number(i.amount) }));
+  return { items, total: Number(x.total_amount), category: one(x.business_categories)?.name ?? '', classification: one(x.business_classifications)?.name ?? '',
+    assessedBy: name(one(x.assessor)), assessedAt: x.assessed_at, scheduleId: String(x.fee_schedule_id) };
 }
 
 // The Applicant-entered columns of an application (never status, reference, owner or Staff fields).

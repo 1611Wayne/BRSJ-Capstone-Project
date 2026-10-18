@@ -64,6 +64,7 @@ export type Command =
   | { type: 'login'; email: string; password: string } | { type: 'logout' }
   | { type: 'sessionUser'; user: User }
   | { type: 'loadApplications'; applications: Application[]; replaceOwn?: boolean; replaceAll?: boolean }
+  | { type: 'loadNotifications'; notifications: AppNotification[] }
   | { type: 'register'; user: User }
   | { type: 'saveApplication'; application: ApplicationInput; reference?: string; draft: boolean }
   | { type: 'review'; reference: string; documents: UploadedDocument[] }
@@ -128,6 +129,12 @@ export function transition(state: PortalState, command: Command, now = new Date(
     if (command.replaceAll) { requireThat(actor.role !== 'resident', 'Only Staff and Admin load every request.'); s.applications = [...command.applications]; return s; }
     const incoming = new Set(command.applications.map(a => a.reference));
     s.applications = [...command.applications, ...s.applications.filter(a => !incoming.has(a.reference) && !(command.replaceOwn && a.residentId === actor.id))];
+    return s;
+  }
+  // The signed-in person's own notices from the database replace theirs in the screens' state.
+  if (command.type === 'loadNotifications') {
+    requireThat(command.notifications.every(n => n.userId === actor.id), 'These notifications belong to someone else.');
+    s.notifications = [...command.notifications, ...s.notifications.filter(n => n.userId !== actor.id)];
     return s;
   }
   const staff = () => requireThat(actor.role === 'staff', 'Only Staff can perform this action.');
