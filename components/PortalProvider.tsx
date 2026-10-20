@@ -1,6 +1,6 @@
 'use client';
 import { createContext, useContext, useEffect, useRef, useState } from 'react';
-import type { Application, PortalState, User } from '@/types';
+import type { Application, PortalState, UploadedDocument, User } from '@/types';
 import { mockUsers } from '@/data/mockUsers';
 import { mockApplications } from '@/data/mockApplications';
 import { mockFeeSchedules } from '@/data/mockFeeSchedules';
@@ -14,7 +14,8 @@ const Context = createContext<{ state: PortalState; user?: User; ready: boolean;
 // Workflow steps the database can already save (app/api/workflow/route.ts). In real sign-in mode, after the screen
 // updates with the same rules, the step is sent to the server, which checks it again and saves it. If the server
 // refuses, a banner says why and the saved requests are loaded again, so the screen never shows unsaved changes.
-const SAVED_ON_SERVER = new Set<Command['type']>(['review', 'assess', 'reject', 'readNotifications', 'requestCorrection', 'editApplication', 'resolveCorrection', 'replaceDocument']);
+const SAVED_ON_SERVER = new Set<Command['type']>(['review', 'assess', 'reject', 'readNotifications', 'requestCorrection', 'editApplication', 'resolveCorrection', 'replaceDocument',
+  'receiptPhoto', 'onlinePayment', 'verifyPayment', 'returnPayment', 'printClearance', 'download', 'confirm', 'feedback']);
 
 export function PortalProvider({children}:{children:React.ReactNode}) {
   const [state,setState] = useState<PortalState>(initial); const [ready,setReady] = useState(false); const latest = useRef(state);
@@ -40,6 +41,15 @@ export function PortalProvider({children}:{children:React.ReactNode}) {
     }
     return next;
   }
+  async function uploadFirst(reference: string, file: UploadedDocument, bucket: string): Promise<UploadedDocument> {
+    const dbId = latest.current.applications.find(a => a.reference === reference)?.dbId;
+    if (dbId === undefined || !file.url) throw new Error('Please choose the file again.');
+    const blob = await (await fetch(file.url)).blob();
+    const path = dbId + '/' + Date.now() + '-' + file.name.replace(/[^A-Za-z0-9._-]+/g, '_').slice(-80);
+    const { error } = await supabaseBrowser().storage.from(bucket).upload(path, blob, { contentType: file.type, upsert: false });
+    if (error) throw new Error('The file could not be uploaded: ' + error.message);
+    return { ...file, path, url: undefined };
+  }
   async function saveOnServer(command: Command, key: string) {
     const newest = () => { const left = (waiting.current.get(key) ?? 1) - 1; waiting.current.set(key, left); return left === 0; };
     try {
@@ -48,17 +58,10 @@ export function PortalProvider({children}:{children:React.ReactNode}) {
         if (!response.ok) throw new Error(((await response.json().catch(() => ({}))) as { error?: string }).error || 'Your notifications could not be marked as read.');
         newest(); return;
       }
-      // A replacement file is uploaded into the request's own folder first; the server then checks it is there.
-      if (command.type === 'replaceDocument' && !command.document.path) {
-        const ref = command.reference;
-        const dbId = latest.current.applications.find(a => a.reference === ref)?.dbId;
-        if (dbId === undefined || !command.document.url) throw new Error('Please choose the file again.');
-        const blob = await (await fetch(command.document.url)).blob();
-        const path = dbId + '/' + Date.now() + '-' + command.document.name.replace(/[^A-Za-z0-9._-]+/g, '_').slice(-80);
-        const { error } = await supabaseBrowser().storage.from('application-documents').upload(path, blob, { contentType: command.document.type, upsert: false });
-        if (error) throw new Error('The new file could not be uploaded: ' + error.message);
-        command = { ...command, document: { ...command.document, path, url: undefined } };
-      }
+      // A new file (a replaced document or a receipt photo) is uploaded into the request's own folder first; the server
+      // then checks it is there.
+      if (command.type === 'replaceDocument' && !command.document.path) command = { ...command, document: await uploadFirst(command.reference, command.document, 'application-documents') };
+      if (command.type === 'receiptPhoto' && !command.photo.path) command = { ...command, photo: await uploadFirst(command.reference, command.photo, 'receipt-photos') };
       const response = await fetch('/api/workflow', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ command }) });
       const body = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(body.error || 'The server did not save this change.');

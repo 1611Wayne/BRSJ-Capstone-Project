@@ -14,6 +14,7 @@ pages, click the buttons and read what is on screen. They are the checks that we
 ## How to run
 
 1. Build and start the app (leave it running): `npm run build` then `npx next start -p 3100`.
+   These checks test the **prototype** (sample data in the browser). If your `.env.local` switches on real sign-in (`NEXT_PUBLIC_AUTH_MODE=supabase`), build with it switched off for these checks, because Next.js writes that setting into the build: `NEXT_PUBLIC_AUTH_MODE= npm run build` and `NEXT_PUBLIC_AUTH_MODE= npx next start -p 3100` (in Git Bash; in PowerShell set `$env:NEXT_PUBLIC_AUTH_MODE=""` first). In real mode the public verification page asks the database, so the sample clearance is (correctly) not found.
 2. Make sure the dependencies are installed: `npm install`. The project already lists `@playwright/test`, which brings the `playwright` package these scripts use. The scripts open the Edge that comes with Windows (see E2E_CHANNEL below), so no browser download is needed.
 3. In another terminal: `node e2e/run-all.cjs` (all of them) or `node e2e/notifications.cjs` (one).
 

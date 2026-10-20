@@ -35,6 +35,6 @@ export function PaymentVerification({application:a}:{application:Application}) {
   </>}
   <ErrorMessage message={error}/>
   {a.paymentVerification.orNumber&&<p className="text-sm mt-3">OR Number: <strong>{a.paymentVerification.orNumber}</strong></p>}
-  {preview&&<DocumentPreview document={preview} onClose={()=>setPreview(undefined)}/>}
+  {preview&&<DocumentPreview document={preview} bucket="receipt-photos" onClose={()=>setPreview(undefined)}/>}
  </div>;
 }

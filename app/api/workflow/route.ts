@@ -12,7 +12,21 @@ export const dynamic = 'force-dynamic';
 
 // The workflow steps the database can already save. Each one runs the prototype's own rules (lib/workflow.ts) as the
 // signed-in person, on the request as it is in the database, and then saves exactly what changed.
-const SUPPORTED = new Set<Command['type']>(['review', 'assess', 'reject', 'requestCorrection', 'editApplication', 'resolveCorrection', 'replaceDocument']);
+const SUPPORTED = new Set<Command['type']>(['review', 'assess', 'reject', 'requestCorrection', 'editApplication', 'resolveCorrection', 'replaceDocument',
+  'receiptPhoto', 'onlinePayment', 'verifyPayment', 'returnPayment', 'printClearance', 'download', 'confirm', 'feedback']);
+const RECEIPTS = 'receipt-photos';
+
+// Checks that a file the browser uploaded is in this request's own folder of a bucket; returns its stored size and type.
+async function storedFile(db: ReturnType<typeof supabaseAdmin>, bucket: string, applicationId: number, path?: string) {
+  const [folder, file, ...rest] = (path ?? '').split('/');
+  if (folder !== String(applicationId) || !file || rest.length) return null;
+  const { data: objects } = await db.storage.from(bucket).list(String(applicationId), { limit: 1000 });
+  const object = (objects ?? []).find(o => o.name === file);
+  if (!object) return null;
+  const size = Number(object.metadata?.size ?? 0), mime = String(object.metadata?.mimetype ?? '');
+  if (size <= 0 || size > 5 * 1024 * 1024 || !['image/jpeg', 'image/png', 'application/pdf'].includes(mime)) return null;
+  return { size, mime };
+}
 const BUCKET = 'application-documents';
 const fail = (message: string, status = 500) => NextResponse.json({ error: message }, { status });
 
@@ -110,6 +124,66 @@ export async function POST(request: Request) {
     }).eq('application_id', row.id).eq('requirement_name', d.requirement);
     if (error) return fail('Could not save the new file: ' + error.message);
   }
+
+  // ---- payment evidence: a receipt photo, or the demo online payment (never both; SCHEMA_MAP trap 4)
+  if (command.type === 'receiptPhoto') {
+    const file = await storedFile(db, RECEIPTS, row.id, command.photo.path);
+    if (!file) return fail('The receipt photo was not uploaded. Please choose it again.', 400);
+    const { error } = await db.from('official_receipts').upsert({
+      application_id: row.id, encoded_by: me.user.id, recorded_at: now, or_number: null, or_date: null, amount_paid: null,
+      receipt_photo_path: command.photo.path, receipt_photo_filename: command.photo.name, receipt_photo_mime_type: file.mime, receipt_photo_size: file.size,
+    }, { onConflict: 'application_id' });
+    if (error) return fail('Could not save the receipt photo: ' + error.message);
+    await db.from('simulated_payments').delete().eq('application_id', row.id);
+  }
+  if (command.type === 'onlinePayment') {
+    const sim = after.simulatedPayment!;
+    await db.from('official_receipts').delete().eq('application_id', row.id);
+    const { error } = await db.from('simulated_payments').upsert({ application_id: row.id, method: sim.method, reference_number: sim.referenceNumber, amount: sim.amount, paid_at: now }, { onConflict: 'application_id' });
+    if (error) return fail('Could not save the demo payment: ' + error.message);
+  }
+  if (command.type === 'receiptPhoto' || command.type === 'onlinePayment') {
+    // A new submission (also after a return) resets the Staff check to Pending.
+    const { error } = await db.from('payment_verifications').upsert({ application_id: row.id, status: 'Pending', submitted_at: now, checked_by: null, checked_at: null, notes: null }, { onConflict: 'application_id' });
+    if (error) return fail('Could not save the payment for checking: ' + error.message);
+  }
+
+  // ---- the Staff check
+  if (command.type === 'verifyPayment') {
+    if (after.receipt && !after.simulatedPayment) {
+      // The OR number must be unique across ALL requests; the rules above only saw this one, so the database decides.
+      const { data: taken } = await db.from('official_receipts').select('application_id').eq('or_number', after.receipt.orNumber).neq('application_id', row.id).limit(1);
+      if (taken?.length) return fail('This OR number is already recorded for another request.', 400);
+      const { error } = await db.from('official_receipts').update({ or_number: after.receipt.orNumber, or_date: after.receipt.orDate, amount_paid: after.receipt.amountPaid }).eq('application_id', row.id);
+      if (error) return fail(error.code === '23505' ? 'This OR number is already recorded for another request.' : 'Could not save the OR details: ' + error.message, error.code === '23505' ? 400 : 500);
+    }
+    const { error: vError } = await db.from('payment_verifications').update({ status: 'Verified', checked_by: me.user.id, checked_at: now, notes: null }).eq('application_id', row.id);
+    if (vError) return fail('Could not save the payment check: ' + vError.message);
+    const { error: cError } = await db.from('clearances').upsert({ application_id: row.id, issue_date: after.clearance!.issueDate, generated_at: now, downloaded_at: null }, { onConflict: 'application_id' });
+    if (cError) return fail('Could not create the clearance: ' + cError.message);
+  }
+  if (command.type === 'returnPayment') {
+    const { error } = await db.from('payment_verifications').update({ status: 'Needs Correction', checked_by: me.user.id, checked_at: now, notes: after.paymentVerification!.notes }).eq('application_id', row.id);
+    if (error) return fail('Could not return the payment: ' + error.message);
+    await db.from('simulated_payments').delete().eq('application_id', row.id);
+  }
+
+  // ---- release
+  if (command.type === 'download') {
+    const { error } = await db.from('clearances').update({ downloaded_at: now }).eq('application_id', row.id);
+    if (error) return fail('Could not record the download: ' + error.message);
+  }
+  if (command.type === 'confirm') {
+    // The IP address the confirmation came from (manuscript, Confirm Receipt): the first address Vercel or the proxy reports.
+    const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || request.headers.get('x-real-ip') || null;
+    const { error } = await db.from('receipt_confirmations').insert({ application_id: row.id, confirmed_at: now, ip_address: ip, confirmed_by: me.user.role === 'staff' ? me.user.id : null });
+    if (error) return fail('Could not record the confirmation: ' + error.message);
+  }
+  if (command.type === 'feedback') {
+    const { error } = await db.from('feedback').insert({ application_id: row.id, resident_id: me.user.id, rating: after.feedback!.rating, comment: after.feedback!.comment });
+    if (error) return fail('Could not save your feedback: ' + error.message);
+  }
+  // printClearance changes nothing on the record; its audit entry is written below.
 
   // Status (and, for a rejection, the reason and who rejected), with the status history.
   if (after.status !== before.status) {

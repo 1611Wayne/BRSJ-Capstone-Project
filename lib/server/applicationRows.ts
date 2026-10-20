@@ -11,7 +11,13 @@ export const APPLICATION_SELECT = `id, clearance_type_id, reference_no, resident
     assessor:profiles!assessments_assessed_by_fkey ( first_name, last_name ), assessment_items ( id, fee_component_name, amount ) ),
   application_documents ( requirement_name, storage_path, original_filename, mime_type, file_size, verification_status, note ),
   correction_requests ( id, message, status, created_at, resolved_at, resolution_note,
-    requester:profiles!correction_requests_resident_id_fkey ( first_name, last_name ), resolver:profiles!correction_requests_resolved_by_fkey ( first_name, last_name ) )`;
+    requester:profiles!correction_requests_resident_id_fkey ( first_name, last_name ), resolver:profiles!correction_requests_resolved_by_fkey ( first_name, last_name ) ),
+  official_receipts ( or_number, or_date, amount_paid, recorded_at, receipt_photo_path, receipt_photo_filename, receipt_photo_mime_type, receipt_photo_size ),
+  payment_verifications ( status, submitted_at, checked_at, notes, checker:profiles!payment_verifications_checked_by_fkey ( first_name, last_name ) ),
+  simulated_payments ( method, reference_number, amount, paid_at, note ),
+  clearances ( issue_date, generated_at, downloaded_at, revised_from ),
+  receipt_confirmations ( confirmed_at, ip_address, confirmer:profiles!receipt_confirmations_confirmed_by_fkey ( first_name, last_name ) ),
+  feedback ( rating, comment, submitted_at )`;
 
 type Row = Record<string, any>;
 const one = (x: unknown) => (Array.isArray(x) ? x[0] : x) as Row | undefined;   // a one-to-one join may come back as an object or a list
@@ -34,10 +40,27 @@ export function toApplication(r: Row): Application {
     ...(r.business_subcategory ? { businessSubcategory: r.business_subcategory } : {}),
     ...(r.rejection_reason ? { rejection: { reason: r.rejection_reason, rejectedBy: name(one(r.rejecter)), timestamp: r.rejected_at } } : {}),
     ...(one(r.assessments) ? { assessment: toAssessment(one(r.assessments)!) } : {}),
+    ...paymentAndRelease(r),
     ...((r.correction_requests ?? []).length ? { corrections: [...r.correction_requests].sort((x: Row, y: Row) => x.id - y.id).map((c: Row) => ({
       id: 'db-' + c.id, message: c.message, requestedBy: name(one(c.requester)), requestedAt: c.created_at, status: c.status,
       ...(c.status === 'Resolved' ? { resolvedBy: name(one(c.resolver)), resolvedAt: c.resolved_at, ...(c.resolution_note ? { resolutionNote: c.resolution_note } : {}) } : {}),
     })) } : {}),
+  };
+}
+
+// Payment evidence, the Staff check, the clearance, the confirmation and the feedback, in the prototype's shape.
+function paymentAndRelease(r: Row): Partial<Application> {
+  const o = one(r.official_receipts), v = one(r.payment_verifications), sim = one(r.simulated_payments), c = one(r.clearances), rc = one(r.receipt_confirmations), fb = one(r.feedback);
+  const checker = v?.checked_at ? name(one(v.checker)) : undefined;
+  const photo = o?.receipt_photo_path ? { requirement: 'Official Receipt', name: o.receipt_photo_filename, size: o.receipt_photo_size, type: o.receipt_photo_mime_type, status: 'Pending Review' as const, path: o.receipt_photo_path } : undefined;
+  return {
+    ...(photo ? { receiptPhoto: photo } : {}),
+    ...(o?.or_number ? { receipt: { orNumber: o.or_number, orDate: o.or_date ?? '', amountPaid: Number(o.amount_paid ?? 0), recordedAt: o.recorded_at, encodedBy: checker ?? 'Staff', ...(photo ? { receiptPhoto: photo } : {}) } } : {}),
+    ...(v ? { paymentVerification: { status: v.status, submittedAt: v.submitted_at, ...(checker ? { checkedBy: checker, checkedAt: v.checked_at } : {}), ...(v.status === 'Verified' && o?.or_number ? { orNumber: o.or_number } : {}), ...(v.notes ? { notes: v.notes } : {}) } } : {}),
+    ...(sim ? { simulatedPayment: { method: sim.method, referenceNumber: sim.reference_number, amount: Number(sim.amount), paidAt: sim.paid_at, note: sim.note } } : {}),
+    ...(c ? { clearance: { issueDate: c.issue_date, generatedAt: c.generated_at, ...(c.downloaded_at ? { downloadedAt: c.downloaded_at } : {}), ...(c.revised_from ? { revisedFrom: c.revised_from } : {}) } } : {}),
+    ...(rc ? { confirmation: { timestamp: rc.confirmed_at, completionTime: rc.confirmed_at, ipPlaceholder: rc.ip_address ?? 'Not recorded', ...(one(rc.confirmer) ? { confirmedBy: name(one(rc.confirmer)) } : {}) } } : {}),
+    ...(fb ? { feedback: { rating: fb.rating, comment: fb.comment, submittedAt: fb.submitted_at } } : {}),
   };
 }
 
