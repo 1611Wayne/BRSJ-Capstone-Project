@@ -12,8 +12,8 @@ export function ReleaseClearance({ application: a }: { application: Application 
   const [error, setError] = useState(''), [message, setMessage] = useState('');
   if (user?.role !== 'staff' || !a.clearance || (a.status !== 'Ready for Download' && a.status !== 'Closed - Cleared')) return null;
   const waiting = a.status === 'Ready for Download';
-  function print() {
-    try { act({ type: 'printClearance', reference: a.reference }); applicationPDF(a, 'clearance'); setError(''); setMessage('The clearance PDF was generated for printing. The print is recorded in the audit trail.'); }
+  async function print() {
+    try { act({ type: 'printClearance', reference: a.reference }); await applicationPDF(a, 'clearance'); setError(''); setMessage('The clearance PDF was generated for printing. The print is recorded in the audit trail.'); }
     catch (e) { setError((e as Error).message); }
   }
   function confirmRelease() {
