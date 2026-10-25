@@ -8,13 +8,17 @@ import { applicationPDF } from '@/lib/downloads';
 // The printed original needs the barangay's official stamp, so it is released at the monitoring office. Staff print the clearance from here,
 // stamp it, hand it over, and confirm the release. The Applicant keeps the digital copy as a backup.
 export function ReleaseClearance({ application: a }: { application: Application }) {
-  const { user, act } = usePortal();
+  const { user, act, state } = usePortal();
   const [error, setError] = useState(''), [message, setMessage] = useState('');
   if (user?.role !== 'staff' || !a.clearance || (a.status !== 'Ready for Download' && a.status !== 'Closed - Cleared')) return null;
   const waiting = a.status === 'Ready for Download';
   async function print() {
-    try { act({ type: 'printClearance', reference: a.reference }); await applicationPDF(a, 'clearance'); setError(''); setMessage('The clearance PDF was generated for printing. The print is recorded in the audit trail.'); }
-    catch (e) { setError((e as Error).message); }
+    try {
+      const sched = state.schedules.find(s => s.id === a.assessment?.scheduleId);
+      act({ type: 'printClearance', reference: a.reference });
+      await applicationPDF(a, 'clearance', sched);
+      setError(''); setMessage('The clearance PDF was generated for printing. The print is recorded in the audit trail.');
+    } catch (e) { setError((e as Error).message); }
   }
   function confirmRelease() {
     try { act({ type: 'confirm', reference: a.reference }); setError(''); setMessage(''); }
