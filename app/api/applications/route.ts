@@ -9,9 +9,19 @@ export const dynamic = 'force-dynamic';
 const BUCKET = 'application-documents';
 
 // GET /api/applications: an Applicant gets their own requests (drafts included); Staff and Admin get every submitted
-// request (never other people's drafts). Newest first.
-export async function GET() {
+// request (never other people's drafts). If ?reference=... is given, fetches that specific request for authorized users.
+export async function GET(request: Request) {
   const me = await currentUser(); if ('error' in me) return me.error;
+  const { searchParams } = new URL(request.url);
+  const reference = searchParams.get('reference');
+  if (reference) {
+    let query = supabaseAdmin().from('applications').select(APPLICATION_SELECT).eq('reference_no', reference);
+    if (me.user.role === 'resident') query = query.eq('resident_id', me.user.id);
+    const { data, error } = await query.maybeSingle();
+    if (error) return NextResponse.json({ error: 'Could not load the request: ' + error.message }, { status: 500 });
+    if (!data) return NextResponse.json({ error: 'Request not found.' }, { status: 404 });
+    return NextResponse.json({ application: toApplication(data) });
+  }
   let query = supabaseAdmin().from('applications').select(APPLICATION_SELECT).order('created_at', { ascending: false });
   query = me.user.role === 'resident' ? query.eq('resident_id', me.user.id) : query.neq('status', 'Draft');
   const { data, error } = await query;
@@ -24,26 +34,55 @@ export async function GET() {
 type Body = { reference?: string; draft: boolean; step?: 'create'; application: ApplicationInput; documents: (Pick<UploadedDocument, 'requirement' | 'name' | 'size' | 'type'> & { path: string })[] };
 
 // POST /api/applications: an Applicant creates or updates their own DRAFT, or submits it.
+// Staff can also create or submit a walk-in application on behalf of a resident.
 // The same rules as the prototype run here (lib/workflow.ts), then the server writes the application, its documents,
 // the status history and the audit log. A new request is always created as a Draft first, because its files are
 // uploaded into a folder named after its database id; the browser then uploads them and posts again to submit.
 export async function POST(request: Request) {
   const me = await currentUser(); if ('error' in me) return me.error;
   const actor = me.user;
-  if (actor.role !== 'resident') return NextResponse.json({ error: 'Walk-in applications by Staff are not connected yet.' }, { status: 403 });
+  if (actor.role !== 'resident' && actor.role !== 'staff' && actor.role !== 'admin') {
+    return NextResponse.json({ error: 'You are not authorized to create applications.' }, { status: 403 });
+  }
   let body: Body; try { body = await request.json(); } catch { return NextResponse.json({ error: 'The request could not be read.' }, { status: 400 }); }
   const db = supabaseAdmin(), now = new Date().toISOString();
-  const input: ApplicationInput = { ...body.application, residentId: actor.id, source: 'Online', staffEncoder: undefined };
+
+  const isStaff = actor.role === 'staff' || actor.role === 'admin';
+  let residentId = actor.id;
+  if (isStaff) {
+    if (!body.application?.residentId) {
+      return NextResponse.json({ error: 'A resident must be selected for walk-in applications.' }, { status: 400 });
+    }
+    residentId = body.application.residentId;
+    const { data: resProfile, error: resError } = await db.from('profiles').select('id, role, status').eq('id', residentId).maybeSingle();
+    if (resError || !resProfile) {
+      return NextResponse.json({ error: 'The selected resident profile could not be found.' }, { status: 404 });
+    }
+    if (resProfile.status !== 'Active') {
+      return NextResponse.json({ error: 'The selected resident account is inactive.' }, { status: 400 });
+    }
+  }
+
+  const source = isStaff ? 'Assisted / Walk-in' : 'Online';
+  const staffEncoderName = isStaff ? [actor.firstName, actor.lastName].filter(Boolean).join(' ') || 'Staff' : undefined;
+  const input: ApplicationInput = {
+    ...body.application,
+    residentId,
+    source,
+    staffEncoder: staffEncoderName,
+  };
 
   const { data: type } = await db.from('clearance_types').select('id').eq('name', input.clearanceType).eq('active', true).maybeSingle();
   if (!type) return NextResponse.json({ error: 'Choose a supported clearance type.' }, { status: 400 });
 
-  // The existing request, if any: it must be this Applicant's and still a Draft.
+  // The existing request, if any: it must be for this resident and still a Draft.
   let previous: Row | null = null;
   if (body.step === 'create' && body.reference) return NextResponse.json({ error: 'Only a new request uses the create step.' }, { status: 400 });
   if (body.reference) {
     const { data } = await db.from('applications').select(APPLICATION_SELECT).eq('reference_no', body.reference).maybeSingle();
-    if (!data || data.resident_id !== actor.id) return NextResponse.json({ error: 'This request belongs to another resident.' }, { status: 403 });
+    if (!data) return NextResponse.json({ error: 'This request does not exist.' }, { status: 404 });
+    if (actor.role === 'resident' && data.resident_id !== actor.id) return NextResponse.json({ error: 'This request belongs to another resident.' }, { status: 403 });
+    if (isStaff && data.resident_id !== residentId) return NextResponse.json({ error: 'This request belongs to another resident.' }, { status: 403 });
     if (data.status !== 'Draft') return NextResponse.json({ error: 'Only drafts can be edited.' }, { status: 409 });
     previous = data;
   } else if (body.step !== 'create') {
@@ -64,11 +103,21 @@ export async function POST(request: Request) {
   let appId: number, reference: string;
   if (previous) {
     appId = previous.id; reference = previous.reference_no;
-    const { error } = await db.from('applications').update(applicantColumns(input, type.id)).eq('id', appId);
+    const { error } = await db.from('applications').update({
+      ...applicantColumns(input, type.id),
+      ...(isStaff ? { staff_encoder_id: actor.id, source: 'Assisted / Walk-in' } : {}),
+    }).eq('id', appId);
     if (error) return NextResponse.json({ error: 'Could not save: ' + error.message }, { status: 500 });
   } else {
     const { data, error } = await db.from('applications')
-      .insert({ ...applicantColumns(input, type.id), resident_id: actor.id, source: 'Online', status: 'Draft', date_requested: now })
+      .insert({
+        ...applicantColumns(input, type.id),
+        resident_id: residentId,
+        source,
+        staff_encoder_id: isStaff ? actor.id : null,
+        status: 'Draft',
+        date_requested: now,
+      })
       .select('id, reference_no').single();
     if (error || !data) return NextResponse.json({ error: 'Could not create the request: ' + (error?.message ?? 'no row') }, { status: 500 });
     appId = data.id; reference = data.reference_no;

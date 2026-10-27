@@ -10,20 +10,31 @@ async function post(body: unknown): Promise<Application> {
   return json.application as Application;
 }
 
-// Save or submit the signed-in Applicant's request in the database:
+export async function loadApplicationByReference(reference: string): Promise<Application | undefined> {
+  const response = await fetch(`/api/applications?reference=${encodeURIComponent(reference)}`, { cache: 'no-store' });
+  const json = await response.json().catch(() => ({}));
+  if (!response.ok) return undefined;
+  return json.application as Application;
+}
+
+// Save or submit an Applicant's or Staff-assisted walk-in request in the database:
 // 1. a new request is first saved as a Draft, so it gets its database id and reference number;
 // 2. each newly chosen file is uploaded into the private bucket, in that request's own folder (the access rules allow
-//    the owner to upload while it is a Draft); files already uploaded keep their path;
+//    the owner or staff to upload while it is a Draft); files already uploaded keep their path;
 // 3. the request is saved again with the file paths, as a draft or submitted.
-export async function saveApplicationToSupabase(form: ApplicationInput, reference: string | undefined, draft: boolean): Promise<Application> {
+export async function saveApplicationToSupabase(form: ApplicationInput, reference: string | undefined, draft: boolean, knownDbId?: number): Promise<Application> {
   const fields = { ...form, documents: [] as UploadedDocument[] };
   let record = reference ? undefined : await post({ step: 'create', draft: true, application: fields, documents: [] });
   const ref = reference ?? record!.reference;
-  let dbId = record?.dbId;
+  let dbId = knownDbId ?? record?.dbId;
   const needsUpload = form.documents.some(d => !d.path);
   if (needsUpload && dbId === undefined) {
-    const list = await loadMyApplications();
-    dbId = list.find(a => a.reference === ref)?.dbId;
+    const app = await loadApplicationByReference(ref);
+    dbId = app?.dbId;
+    if (dbId === undefined) {
+      const list = await loadMyApplications().catch(() => []);
+      dbId = list.find(a => a.reference === ref)?.dbId;
+    }
     if (dbId === undefined) throw new Error('This request could not be found. Please reload the page.');
   }
   const supabase = supabaseBrowser();

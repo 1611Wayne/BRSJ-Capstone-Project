@@ -4,15 +4,16 @@ import { CheckCircle2 } from 'lucide-react'; import Link from 'next/link';
 import { clearanceTypes, businessSubcategories } from '@/data/clearanceTypes'; import { fullName } from '@/data/mockUsers';
 import { usePortal } from './PortalProvider'; import { ProgressBar } from './ProgressBar'; import { FileUpload } from './FileUpload'; import { Field, ErrorMessage } from './Field'; import { StatusBadge } from './StatusBadge';
 import { requirements, today, transition } from '@/lib/workflow'; import type { ApplicationInput, UploadedDocument, User } from '@/types';
-import { useSupabaseAuth } from '@/lib/supabase/config'; import { saveApplicationToSupabase } from '@/lib/supabase/applications';
+import { useSupabaseAuth, isRealAccount } from '@/lib/supabase/config'; import { saveApplicationToSupabase } from '@/lib/supabase/applications';
 export function ApplicationForm({resident}:{resident?:User}) {
  const {user,state,act}=usePortal();const query=useSearchParams(),router=useRouter(); const person=resident||user!;
  const draft=state.applications.find(a=>a.reference===query.get('draft')&&a.residentId===person.id&&a.status==='Draft');
  const selected=clearanceTypes.find(c=>c.id===query.get('type'))?.name||'Business Clearance';
- const [form,setForm]=useState<ApplicationInput>(draft||{residentId:person.id,applicant:fullName(person),address:person.address,contact:person.contact,purpose:'',clearanceType:selected,businessName:'',businessLocation:'',initialOperation:'',applicationType:'New Application',ownership:'Owner',propertyOwner:'',businessContact:'',source:resident?'Assisted / Walk-in':'Online',documents:[],certified:false,hasEmployees:undefined,employeeCount:undefined});
+ const initialDocs: UploadedDocument[] = person.validId ? [{ ...person.validId, requirement: selected === 'Business Clearance' ? 'Valid ID of Owner' : 'Valid ID' }] : [];
+ const [form,setForm]=useState<ApplicationInput>(draft||{residentId:person.id,applicant:fullName(person),address:person.address,contact:person.contact,purpose:'',clearanceType:selected,businessName:'',businessLocation:'',initialOperation:'',applicationType:'New Application',ownership:'Owner',propertyOwner:'',businessContact:'',source:resident?'Assisted / Walk-in':'Online',documents:initialDocs,certified:false,hasEmployees:undefined,employeeCount:undefined});
  const [reference,setReference]=useState(draft?.reference),[submitted,setSubmitted]=useState(''),[error,setError]=useState(''),[saved,setSaved]=useState(false),[busy,setBusy]=useState(false);
- // Real sign-in mode, online Applicant: save to the database (walk-ins by Staff still use the prototype until step 4).
- const toDatabase=useSupabaseAuth&&!resident;
+ // Real sign-in mode: save to database for both online residents and staff-assisted walk-in residents with real accounts.
+ const toDatabase=useSupabaseAuth&&(isRealAccount(user?.id)||isRealAccount(person.id));
  function set<K extends keyof ApplicationInput>(key:K,value:ApplicationInput[K]){setForm(f=>({...f,[key]:value,...(key==='clearanceType'&&value!=='Business Clearance'?{businessSubcategory:undefined}:{})}));setSaved(false);}
  async function saveToDatabase(asDraft:boolean){
   const application={...form,documents:form.documents.filter(d=>requirements(form).some(r=>r.name===d.requirement))};
@@ -20,7 +21,7 @@ export function ApplicationForm({resident}:{resident?:User}) {
   try{
    // The same rules as the prototype, checked before anything is uploaded.
    if(!asDraft)transition({...state,applications:state.applications.filter(a=>a.reference===reference)},{type:'saveApplication',application,reference,draft:false});
-   const record=await saveApplicationToSupabase(application,reference,asDraft);
+   const record=await saveApplicationToSupabase(application,reference,asDraft,draft?.dbId);
    act({type:'loadApplications',applications:[record]});setReference(record.reference);setForm(f=>({...f,documents:record.documents}));
    if(asDraft)setSaved(true);else setSubmitted(record.reference);
   }catch(e){setError((e as Error).message);}finally{setBusy(false);}

@@ -568,3 +568,27 @@ test('assessment snapshots ordinance reference onto assessment record',()=>{
  assert.equal(typeof app(s).assessment.ordinance,'string');
  assert.ok(app(s).assessment.ordinance.length > 0);
 });
+test('staff can create and submit walk-in application on behalf of a resident with audit tracking',()=>{
+ let s=state('staff-maria');
+ const resident=mockUsers.find(u=>u.id==='resident-maria');
+ const input={
+  residentId:resident.id,applicant:resident.firstName+' '+resident.lastName,address:resident.address,contact:resident.contact,
+  purpose:'New food stall',clearanceType:'Business Clearance',businessName:'San Jose Kiosk',businessLocation:'Barangay Plaza',
+  initialOperation:'2026-01-01',applicationType:'New Application',ownership:'Owner',propertyOwner:'',businessContact:resident.contact,
+  source:'Assisted / Walk-in',documents:requirements({clearanceType:'Business Clearance',ownership:'Owner',applicationType:'New Application'}).map(r=>({requirement:r.name,name:r.name+'.pdf',size:1024,type:'application/pdf',status:'Pending Review'})),
+  certified:true
+ };
+ // Staff saves draft for walk-in resident
+ s=transition(s,{type:'saveApplication',application:input,draft:true},at);
+ const draft=s.applications[0];
+ assert.equal(draft.status,'Draft');assert.equal(draft.source,'Assisted / Walk-in');assert.equal(draft.residentId,resident.id);
+ assert.equal(draft.staffEncoder,'Maria Staff');
+ // Staff submits walk-in application
+ s=transition(s,{type:'saveApplication',application:input,reference:draft.reference,draft:false},at);
+ const submitted=s.applications.find(a=>a.reference===draft.reference);
+ assert.equal(submitted.status,'Pending Assessment');assert.equal(submitted.source,'Assisted / Walk-in');
+ assert.equal(submitted.staffEncoder,'Maria Staff');assert.equal(submitted.residentId,resident.id);
+ const audit=s.audits.find(a=>a.action==='Application submitted'&&a.reference===draft.reference);
+ assert.ok(audit);assert.equal(audit.role,'staff');assert.equal(audit.user,'Maria Staff');
+});
+
