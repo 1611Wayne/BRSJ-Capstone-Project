@@ -8,7 +8,8 @@ export const APPLICATION_SELECT = `id, clearance_type_id, reference_no, resident
   clearance_types ( name ),
   rejecter:profiles!applications_rejected_by_fkey ( first_name, last_name ),
   assessments ( id, total_amount, assessed_at, fee_schedule_id, business_categories ( name ), business_classifications ( name ),
-    assessor:profiles!assessments_assessed_by_fkey ( first_name, last_name ), assessment_items ( id, fee_component_name, amount ) ),
+    assessor:profiles!assessments_assessed_by_fkey ( first_name, last_name ), assessment_items ( id, fee_component_name, amount, ordinance_reference ),
+    fee_schedules ( ordinance_reference ) ),
   application_documents ( requirement_name, storage_path, original_filename, mime_type, file_size, verification_status, note ),
   correction_requests ( id, message, status, created_at, resolved_at, resolution_note,
     requester:profiles!correction_requests_resident_id_fkey ( first_name, last_name ), resolver:profiles!correction_requests_resolved_by_fkey ( first_name, last_name ) ),
@@ -65,9 +66,12 @@ function paymentAndRelease(r: Row): Partial<Application> {
 }
 
 function toAssessment(x: Row) {
-  const items = [...(x.assessment_items ?? [])].sort((a: Row, b: Row) => a.id - b.id).map((i: Row) => ({ name: i.fee_component_name, amount: Number(i.amount) }));
+  const items = [...(x.assessment_items ?? [])].sort((a: Row, b: Row) => a.id - b.id).map((i: Row) => ({
+    name: i.fee_component_name, amount: Number(i.amount), ...(i.ordinance_reference ? { ordinance: i.ordinance_reference } : {})
+  }));
+  const ord = one(x.fee_schedules)?.ordinance_reference ?? items.find((i: Row) => i.ordinance)?.ordinance;
   return { items, total: Number(x.total_amount), category: one(x.business_categories)?.name ?? '', classification: one(x.business_classifications)?.name ?? '',
-    assessedBy: name(one(x.assessor)), assessedAt: x.assessed_at, scheduleId: String(x.fee_schedule_id) };
+    assessedBy: name(one(x.assessor)), assessedAt: x.assessed_at, scheduleId: String(x.fee_schedule_id), ...(ord ? { ordinance: ord } : {}) };
 }
 
 // The Applicant-entered columns of an application (never status, reference, owner or Staff fields).

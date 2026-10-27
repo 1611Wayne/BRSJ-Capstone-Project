@@ -221,7 +221,7 @@ export function transition(state: PortalState, command: Command, now = new Date(
     const totalCents = items.reduce((sum, item) => sum + Math.round(item.amount * 100), 0);
     requireThat(Number.isSafeInteger(totalCents), 'The total assessment amount is too large.');
     if (items.some((item, index) => item.amount !== schedule.items[index].amount)) log('Assessment fee amounts adjusted', reference, JSON.stringify(schedule.items), JSON.stringify(items));
-    a.assessment = { items, total: totalCents/100, category: schedule.category, classification: schedule.classification, scheduleId: schedule.id, assessedBy: fullName(actor), assessedAt: now };
+    a.assessment = { items, total: totalCents/100, category: schedule.category, classification: schedule.classification, scheduleId: schedule.id, assessedBy: fullName(actor), assessedAt: now, ordinance: schedule.ordinance };
     a.status = 'Awaiting OR'; a.staffEncoder = fullName(actor); log('Assessment confirmed', reference, original.status, JSON.stringify(a.assessment));
     notify(a.residentId, reference, 'assessment_ready', `Your assessment is ready: ₱${a.assessment.total.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}. Pay at the Municipal Treasury, then upload a photo of your receipt here, or bring the receipt to the barangay. Your reference number is ${reference}.`);
   }

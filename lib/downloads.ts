@@ -190,7 +190,7 @@ function buildClearancePDF(
   const isBusiness = a.clearanceType === 'Business Clearance';
   const clearance = a.clearance!;
   const { year, day, monthName } = parseClearanceDate(clearance.issueDate);
-  const ordinance = schedule?.ordinance?.trim() || 'applicable Barangay Revenue Codes and Ordinances';
+  const ordinance = a.assessment?.ordinance?.trim() || schedule?.ordinance?.trim() || 'and applicable municipal and barangay tax ordinances';
   const amtPaid = a.receipt?.amountPaid ?? a.simulatedPayment?.amount ?? 0;
   const orNo = a.receipt?.orNumber ?? a.paymentVerification?.orNumber ?? '';
   const orDate = a.receipt?.orDate ?? '';
@@ -225,16 +225,20 @@ function buildClearancePDF(
   // 200 × 200 pt, centred on page (297.5, 421).
   if (hasSeal) ops.push(`q 200 0 0 200 197.5 321 cm /${sealName} Do Q`);
 
-  // ── 2. REVISED DIAGONAL WATERMARK (above seal, behind all other content) ───
-  // Seal is drawn first so it does not cover the REVISED text.
-  // 90 pt bold, rotated 45° around page centre, grey 0.87 (≈ seal lightness).
-  // Only on revised clearances; non-revised clearances skip this block.
+  // ── 2. REVISED / SIMULATION DIAGONAL WATERMARK (above seal, behind all other content) ───
+  // Seal is drawn first so it does not cover the watermark text.
+  // Rotated 45° around page centre.
   if (isRevised) {
-    // Width ≈ 7 chars × 90pt × 0.55 = 347pt → centre offset −173.
-    // Cap-height ≈ 63pt → vertical centre offset −32.
+    // 90 pt bold, grey 0.87 (≈ seal lightness). Width ≈ 7 chars × 90pt × 0.55 = 347pt → centre offset −173.
     ops.push('q 0.7071 0.7071 -0.7071 0.7071 297.5 421 cm');
     ops.push('0.87 0.87 0.87 rg');
     ops.push(`BT /Fb 90 Tf -173 -32 Td (REVISED) Tj ET`);
+    ops.push('Q');
+  } else if (a.simulatedPayment) {
+    // 68 pt bold, faint grey 0.88. Width ≈ 10 chars × 68pt × 0.55 = 374pt → centre offset −187.
+    ops.push('q 0.7071 0.7071 -0.7071 0.7071 297.5 421 cm');
+    ops.push('0.88 0.88 0.88 rg');
+    ops.push(`BT /Fb 68 Tf -187 -24 Td (SIMULATION) Tj ET`);
     ops.push('Q');
   }
 
@@ -282,9 +286,9 @@ function buildClearancePDF(
   ops.push(`BT /Fb 9 Tf 0.2 0.2 0.2 rg 50 720 Td (To Whom It May Concern:) Tj ET`);
 
   const introLines = [
-    `  This is to certify that the person whose name and thumb mark appears here on has`,
+    `  This is to certify that the person whose name and thumb mark appears hereon has`,
     `  requested ${article} ${esc(a.clearanceType)} from this office and the information`,
-    `  are listed below;`,
+    `  is listed below;`,
   ];
   let iy = 706;
   for (const line of introLines) {
@@ -348,12 +352,20 @@ function buildClearancePDF(
     }
   }
 
-  payRow('CTC No.:',   cy,      null);      cy -= 16;
-  payRow('Issued at:', cy,      null);      cy -= 16;
-  payRow('Issued On:', cy,      null);      cy -= 16;
-  payRow('Amount:',    cy,      `PHP ${amtPaid.toFixed(2)}`); cy -= 16;
-  payRow('OR No.:',    cy,      orNo || '-'); cy -= 16;
-  payRow('OR Date:',   cy,      orDate || '-'); cy -= 8;
+  if (a.simulatedPayment) {
+    payRow('Payment:',    cy, `${a.simulatedPayment.method} (Simulated PoC)`); cy -= 16;
+    payRow('Sim. Ref:',   cy, a.simulatedPayment.referenceNumber); cy -= 16;
+    payRow('Amount:',     cy, `PHP ${amtPaid.toFixed(2)}`); cy -= 16;
+    ops.push(`BT /Fb 8 Tf 0.7 0.1 0.1 rg ${lx} ${cy} Td (SIMULATION - Not an official Treasury payment) Tj ET`); cy -= 16;
+    ops.push(`BT /F1 7.5 Tf 0.45 0.45 0.45 rg ${lx} ${cy} Td (Academic Service Management Proof of Concept only) Tj ET`); cy -= 8;
+  } else {
+    payRow('CTC No.:',   cy,      null);      cy -= 16;
+    payRow('Issued at:', cy,      null);      cy -= 16;
+    payRow('Issued On:', cy,      null);      cy -= 16;
+    payRow('Amount:',    cy,      `PHP ${amtPaid.toFixed(2)}`); cy -= 16;
+    payRow('OR No.:',    cy,      orNo || '-'); cy -= 16;
+    payRow('OR Date:',   cy,      orDate || '-'); cy -= 8;
+  }
 
   // Thumb mark box at right side, spanning the height of the payment block.
   const boxL = 350, boxR = 475;
@@ -433,14 +445,13 @@ async function fetchLogoJpegSlip(): Promise<string> { return fetchLogoJpeg(); }
 //   cy starts at 706, ROW=22, section-rule post-gap=22pt.
 //   Footer    : rule y=48, text y=36, y=24.
 //
-// NOTE: ordinance text is read from the FeeSchedule at download time.
-// If the schedule is later edited, re-downloading an old slip shows new ordinance text.
-// A future fix is to snapshot schedule.ordinance onto the Assessment itself.
+// NOTE: ordinance text is read from the snapshot on Assessment itself (a.assessment.ordinance),
+// falling back to FeeSchedule if not yet snapshot.
 function buildAssessmentSlip(a: Application, schedule: FeeSchedule | undefined, logoJpeg: string): Blob {
   const isBusiness = a.clearanceType === 'Business Clearance';
   const items     = (a.assessment?.items ?? []).filter(i => i.amount > 0);
   const total     = a.assessment?.total ?? 0;
-  const ordinance = schedule?.ordinance?.trim() || '[Revenue ordinance reference not on file]';
+  const ordinance = a.assessment?.ordinance?.trim() || schedule?.ordinance?.trim() || '[Revenue ordinance reference not on file]';
 
   const hasLogo = logoJpeg.length > 0;
   const ops: string[] = [];

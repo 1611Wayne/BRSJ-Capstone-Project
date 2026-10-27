@@ -561,3 +561,10 @@ test('the same document flagged on two requests of one Applicant gives one notic
  assert.equal(notes.length,2);assert.deepEqual(notes.map(n=>n.reference).sort(),[ref,'SJ-2026-000999'].sort());
  assert.ok(notes.every(n=>n.key==='docs:'+n.reference+':'+original.documents[0].requirement));
 });
+test('assessment snapshots ordinance reference onto assessment record',()=>{
+ let s=state('staff-maria');
+ s=transition(s,{type:'review',reference:ref,documents:app(s).documents.map(d=>({...d,status:'Verified'}))},at);
+ s=assess(s);
+ assert.equal(typeof app(s).assessment.ordinance,'string');
+ assert.ok(app(s).assessment.ordinance.length > 0);
+});
