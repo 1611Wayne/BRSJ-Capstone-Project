@@ -10,6 +10,8 @@ const BUCKET = 'application-documents';
 
 // GET /api/applications: an Applicant gets their own requests (drafts included); Staff and Admin get every submitted
 // request (never other people's drafts). If ?reference=... is given, fetches that specific request for authorized users.
+// ?walkInDrafts=1 gives Staff and Admin the saved drafts Staff started at the counter; an Applicant's own online draft
+// stays private. They have their own list so drafts never reach the queues, dashboards or reports.
 export async function GET(request: Request) {
   const me = await currentUser(); if ('error' in me) return me.error;
   const { searchParams } = new URL(request.url);
@@ -19,8 +21,14 @@ export async function GET(request: Request) {
     if (me.user.role === 'resident') query = query.eq('resident_id', me.user.id);
     const { data, error } = await query.maybeSingle();
     if (error) return NextResponse.json({ error: 'Could not load the request: ' + error.message }, { status: 500 });
-    if (!data) return NextResponse.json({ error: 'Request not found.' }, { status: 404 });
+    if (!data || (me.user.role !== 'resident' && data.status === 'Draft' && !data.staff_encoder_id)) return NextResponse.json({ error: 'Request not found.' }, { status: 404 });
     return NextResponse.json({ application: toApplication(data) });
+  }
+  if (searchParams.has('walkInDrafts')) {
+    if (me.user.role === 'resident') return NextResponse.json({ error: 'Only Staff and Admin can open walk-in drafts.' }, { status: 403 });
+    const { data, error } = await supabaseAdmin().from('applications').select(APPLICATION_SELECT).eq('status', 'Draft').not('staff_encoder_id', 'is', null).order('created_at', { ascending: false }).limit(50);
+    if (error) return NextResponse.json({ error: 'Could not load the walk-in drafts: ' + error.message }, { status: 500 });
+    return NextResponse.json({ applications: (data ?? []).map(toApplication) });
   }
   let query = supabaseAdmin().from('applications').select(APPLICATION_SELECT).order('created_at', { ascending: false });
   query = me.user.role === 'resident' ? query.eq('resident_id', me.user.id) : query.neq('status', 'Draft');
@@ -48,19 +56,20 @@ export async function POST(request: Request) {
   const db = supabaseAdmin(), now = new Date().toISOString();
 
   const isStaff = actor.role === 'staff' || actor.role === 'admin';
-  let residentId = actor.id;
+  let residentId = actor.id, idOnFile: string | null = null;
   if (isStaff) {
     if (!body.application?.residentId) {
       return NextResponse.json({ error: 'A resident must be selected for walk-in applications.' }, { status: 400 });
     }
     residentId = body.application.residentId;
-    const { data: resProfile, error: resError } = await db.from('profiles').select('id, role, status').eq('id', residentId).maybeSingle();
+    const { data: resProfile, error: resError } = await db.from('profiles').select('id, role, status, valid_id_path').eq('id', residentId).maybeSingle();
     if (resError || !resProfile) {
       return NextResponse.json({ error: 'The selected resident profile could not be found.' }, { status: 404 });
     }
     if (resProfile.status !== 'Active') {
       return NextResponse.json({ error: 'The selected resident account is inactive.' }, { status: 400 });
     }
+    idOnFile = resProfile.valid_id_path;
   }
 
   const source = isStaff ? 'Assisted / Walk-in' : 'Online';
@@ -84,6 +93,7 @@ export async function POST(request: Request) {
     if (actor.role === 'resident' && data.resident_id !== actor.id) return NextResponse.json({ error: 'This request belongs to another resident.' }, { status: 403 });
     if (isStaff && data.resident_id !== residentId) return NextResponse.json({ error: 'This request belongs to another resident.' }, { status: 403 });
     if (data.status !== 'Draft') return NextResponse.json({ error: 'Only drafts can be edited.' }, { status: 409 });
+    if (isStaff && !data.staff_encoder_id) return NextResponse.json({ error: 'This draft belongs to the resident.' }, { status: 403 });
     previous = data;
   } else if (body.step !== 'create') {
     return NextResponse.json({ error: 'A new request starts with the create step.' }, { status: 400 });
@@ -121,6 +131,16 @@ export async function POST(request: Request) {
       .select('id, reference_no').single();
     if (error || !data) return NextResponse.json({ error: 'Could not create the request: ' + (error?.message ?? 'no row') }, { status: 500 });
     appId = data.id; reference = data.reference_no;
+  }
+
+  // A walk-in resident's ID on file sits in the valid-ids bucket. The request keeps its own copy in its own folder, so it
+  // is reviewed and opened like any other document. Only this resident's own ID on file is accepted from there.
+  for (const d of docs) {
+    if (!idOnFile || d.path !== idOnFile) continue;
+    const copy = `${appId}/${Date.now()}-${d.path.split('/').pop()}`;
+    const { error } = await db.storage.from('valid-ids').copy(d.path, copy, { destinationBucket: BUCKET });
+    if (error) return NextResponse.json({ error: 'Could not attach the ID on file: ' + error.message }, { status: 500 });
+    d.path = copy;
   }
 
   // Files: each must be in this request's own folder and really uploaded; the stored size and type are used.

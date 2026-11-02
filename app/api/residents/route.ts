@@ -1,13 +1,42 @@
 import { NextResponse } from 'next/server';
-import type { User } from '@/types';
+import type { UploadedDocument, User } from '@/types';
+import { isRealAccount } from '@/lib/supabase/config';
 import { currentUser } from '@/lib/server/currentUser';
 import { supabaseAdmin } from '@/lib/supabase/server';
 
 export const dynamic = 'force-dynamic';
 
+const RESIDENT_COLUMNS = 'id, first_name, last_name, email, contact_number, address, role, status, valid_id_path, created_at';
+type Row = Record<string, any>;
+
 const safeFileName = (name: string) => name.replace(/[^A-Za-z0-9._-]+/g, '_').slice(-80);
 
+const toResident = (r: Row, validId?: UploadedDocument): User => ({
+  id: r.id,
+  firstName: r.first_name,
+  lastName: r.last_name,
+  email: r.email ?? '',
+  password: '',
+  role: 'resident',
+  status: r.status,
+  contact: r.contact_number ?? '',
+  address: r.address ?? '',
+  createdAt: r.created_at,
+  validId,
+});
+
+// The ID on file with its real size and type, read from the bucket (the profile keeps only the path).
+async function validIdOnFile(db: ReturnType<typeof supabaseAdmin>, path?: string | null): Promise<UploadedDocument | undefined> {
+  if (!path) return undefined;
+  const [folder, file] = path.split('/');
+  const { data } = await db.storage.from('valid-ids').list(folder, { search: file, limit: 10 });
+  const object = data?.find(o => o.name === file);
+  if (!object) return undefined;
+  return { requirement: 'Valid ID', name: file, size: Number(object.metadata?.size ?? 0), type: String(object.metadata?.mimetype ?? ''), status: 'Pending Review', path };
+}
+
 // GET /api/residents: Staff and Admin search existing registered residents.
+// GET /api/residents?id=...: one resident, with the ID on file, for starting their walk-in application.
 export async function GET(request: Request) {
   const me = await currentUser();
   if ('error' in me) return me.error;
@@ -17,10 +46,19 @@ export async function GET(request: Request) {
 
   const { searchParams } = new URL(request.url);
   const q = searchParams.get('q')?.trim() ?? '';
+  const id = searchParams.get('id');
   const db = supabaseAdmin();
 
+  if (id !== null) {
+    if (!isRealAccount(id)) return NextResponse.json({ error: 'Resident not found.' }, { status: 404 });
+    const { data, error } = await db.from('profiles').select(RESIDENT_COLUMNS).eq('id', id).eq('role', 'resident').eq('status', 'Active').maybeSingle();
+    if (error) return NextResponse.json({ error: 'Could not load the resident: ' + error.message }, { status: 500 });
+    if (!data) return NextResponse.json({ error: 'Resident not found.' }, { status: 404 });
+    return NextResponse.json({ resident: toResident(data, await validIdOnFile(db, data.valid_id_path)) });
+  }
+
   let query = db.from('profiles')
-    .select('id, first_name, last_name, email, contact_number, address, role, status, valid_id_path, created_at')
+    .select(RESIDENT_COLUMNS)
     .eq('role', 'resident')
     .eq('status', 'Active')
     .order('first_name', { ascending: true })
@@ -36,28 +74,7 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: 'Could not search residents: ' + error.message }, { status: 500 });
   }
 
-  const residents: User[] = (data ?? []).map(r => ({
-    id: r.id,
-    firstName: r.first_name,
-    lastName: r.last_name,
-    email: r.email ?? '',
-    password: '',
-    role: 'resident',
-    status: r.status,
-    contact: r.contact_number ?? '',
-    address: r.address ?? '',
-    createdAt: r.created_at,
-    validId: r.valid_id_path ? {
-      requirement: 'Valid ID',
-      name: r.valid_id_path.split('/').pop() || 'Valid ID',
-      size: 0,
-      type: 'image/jpeg',
-      path: r.valid_id_path,
-      status: 'Verified',
-    } : undefined,
-  }));
-
-  return NextResponse.json({ residents });
+  return NextResponse.json({ residents: (data ?? []).map(r => toResident(r)) });
 }
 
 // POST /api/residents: Staff or Admin registers a new resident at the counter.
@@ -71,7 +88,7 @@ export async function POST(request: Request) {
   const db = supabaseAdmin();
   const now = new Date().toISOString();
 
-  let firstName = '', lastName = '', contact = '', address = '', email = '';
+  let firstName = '', lastName = '', contact = '', address = '', email = '', privacyConsent = false;
   let validIdFile: { name: string; type: string; size: number; buffer: Buffer } | undefined;
   let validIdStoragePath: string | undefined;
 
@@ -85,6 +102,7 @@ export async function POST(request: Request) {
     contact = String(formData.get('contact') ?? '').trim();
     address = String(formData.get('address') ?? '').trim();
     email = String(formData.get('email') ?? '').trim();
+    privacyConsent = formData.get('privacyConsent') === 'true';
 
     const file = formData.get('validId');
     if (file && typeof file === 'object' && 'arrayBuffer' in file) {
@@ -112,7 +130,13 @@ export async function POST(request: Request) {
     contact = String(body.contact ?? '').trim();
     address = String(body.address ?? '').trim();
     email = String(body.email ?? '').trim();
+    privacyConsent = body.privacyConsent === true;
     validIdStoragePath = body.validId?.path ? String(body.validId.path) : undefined;
+  }
+
+  // Staff confirm the resident's agreement at the counter; it is never assumed.
+  if (!privacyConsent) {
+    return NextResponse.json({ error: "Confirm the resident's agreement to the Privacy Notice." }, { status: 400 });
   }
 
   if (!firstName || !lastName) {
@@ -203,7 +227,7 @@ export async function POST(request: Request) {
     action: 'Walk-in resident registered',
     reference_no: null,
     application_id: null,
-    new_value: { resident_id: userId, name: `${firstName} ${lastName}`, contact },
+    new_value: { resident_id: userId, name: `${firstName} ${lastName}`, contact, privacy_consent: 'Confirmed by Staff at the counter' },
   });
 
   const resident: User = {
@@ -223,7 +247,7 @@ export async function POST(request: Request) {
       size: validIdFile?.size || 0,
       type: validIdFile?.type || 'image/jpeg',
       path: validIdPath,
-      status: 'Verified',
+      status: 'Pending Review',
     } : undefined,
   };
 

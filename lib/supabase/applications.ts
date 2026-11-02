@@ -62,6 +62,14 @@ export async function loadMyApplications(): Promise<Application[]> {
   return json.applications as Application[];
 }
 
+// The saved drafts Staff started at the counter.
+export async function loadWalkInDrafts(): Promise<Application[]> {
+  const response = await fetch('/api/applications?walkInDrafts=1', { cache: 'no-store' });
+  const json = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(json.error || 'The walk-in drafts could not be loaded.');
+  return json.applications as Application[];
+}
+
 // The signed-in person's own notices from the database.
 export async function loadMyNotifications(): Promise<AppNotification[]> {
   const response = await fetch('/api/notifications', { cache: 'no-store' });

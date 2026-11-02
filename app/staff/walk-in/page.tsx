@@ -5,8 +5,10 @@ import { Field, ErrorMessage } from '@/components/Field';
 import { FileUpload } from '@/components/FileUpload';
 import { ApplicationForm } from '@/components/ApplicationForm';
 import { fullName } from '@/data/mockUsers';
+import Link from 'next/link';
 import { useSupabaseAuth } from '@/lib/supabase/config';
-import type { User, UploadedDocument } from '@/types';
+import { loadWalkInDrafts } from '@/lib/supabase/applications';
+import type { Application, User, UploadedDocument } from '@/types';
 
 export default function WalkInPage() {
   const { state, act } = usePortal();
@@ -19,6 +21,24 @@ export default function WalkInPage() {
   const [id, setId] = useState<UploadedDocument>();
   const [dbResidents, setDbResidents] = useState<User[]>([]);
   const [searching, setSearching] = useState(false);
+  const [dbDrafts, setDbDrafts] = useState<Application[]>([]);
+  const [resumed, setResumed] = useState<Application>();
+
+  // Saved walk-in drafts, for any Staff member to pick up at the counter
+  useEffect(() => {
+    if (!useSupabaseAuth) return;
+    let cancelled = false;
+    loadWalkInDrafts()
+      .then(drafts => {
+        if (!cancelled) setDbDrafts(drafts);
+      })
+      .catch(err => {
+        if (!cancelled) setError((err as Error).message);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Search residents from database in Supabase mode
   useEffect(() => {
@@ -48,8 +68,12 @@ export default function WalkInPage() {
   }, [q, mode]);
 
   if (continued && selected) {
-    return <ApplicationForm resident={selected} />;
+    return <ApplicationForm resident={selected} savedDraft={resumed} />;
   }
+
+  const savedDrafts = useSupabaseAuth
+    ? dbDrafts
+    : state.applications.filter(a => a.status === 'Draft' && a.source === 'Assisted / Walk-in');
 
   // Resident search results: from database when connected, else from in-memory state
   const matches = useSupabaseAuth
@@ -60,6 +84,33 @@ export default function WalkInPage() {
           u.status === 'Active' &&
           [fullName(u), u.contact, u.email, u.address].join(' ').toLowerCase().includes(q.toLowerCase())
       );
+
+  // The search list carries no file details, so the chosen resident's ID on file is loaded before opening the form.
+  async function openForm(residentId: string, draft?: Application) {
+    setBusy(true);
+    setError('');
+    try {
+      let resident = state.users.find(u => u.id === residentId);
+      if (useSupabaseAuth) {
+        const res = await fetch(`/api/residents?id=${encodeURIComponent(residentId)}`, { cache: 'no-store' });
+        const json = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          throw new Error(json.error || 'Could not load this resident.');
+        }
+        resident = json.resident as User;
+      }
+      if (!resident) {
+        throw new Error('Could not load this resident.');
+      }
+      setSelected(resident);
+      setResumed(draft);
+      setContinued(true);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
 
   async function handleCreateResident(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -87,6 +138,10 @@ export default function WalkInPage() {
       setError('Complete address is required.');
       return;
     }
+    if (!f.get('privacy')) {
+      setError("Confirm the resident's agreement to the Privacy Notice.");
+      return;
+    }
 
     if (useSupabaseAuth) {
       setBusy(true);
@@ -95,6 +150,7 @@ export default function WalkInPage() {
         formData.append('name', rawName);
         formData.append('contact', contact);
         formData.append('address', address);
+        formData.append('privacyConsent', 'true');
         if (email) formData.append('email', email);
 
         if (id.url) {
@@ -108,9 +164,8 @@ export default function WalkInPage() {
           throw new Error(json.error || 'Could not register resident.');
         }
 
-        const created: User = json.resident;
-        act({ type: 'user', user: created, reason: 'Walk-in resident registered' });
-        setSelected(created);
+        // The server already saved and logged the new resident.
+        setSelected(json.resident as User);
         setContinued(true);
       } catch (err) {
         setError((err as Error).message);
@@ -132,6 +187,7 @@ export default function WalkInPage() {
         status: 'Active',
         createdAt: new Date().toISOString(),
         validId: id,
+        privacyConsentAt: new Date().toISOString(),
       };
       try {
         act({ type: 'user', user: u, reason: 'Walk-in resident created' });
@@ -147,6 +203,28 @@ export default function WalkInPage() {
     <div className="p-5 md:p-8 max-w-[900px]">
       <h1 className="text-[27px] font-bold text-brand-ink">New Walk-in Application</h1>
       <p className="text-sm mt-1 text-slate-600">Assist a resident in submitting a clearance request at the counter.</p>
+
+      {savedDrafts.length > 0 && (
+        <div className="content-card mt-7 p-6">
+          <h2 className="font-bold text-brand-ink mb-4">Saved Walk-in Drafts</h2>
+          <div className="space-y-3 max-h-[260px] overflow-y-auto">
+            {savedDrafts.map(d => (
+              <div key={d.reference} className="border p-4 flex justify-between items-center gap-3">
+                <div>
+                  <p className="font-semibold text-sm text-brand-ink">{d.applicant}</p>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    {d.reference} • {d.clearanceType}
+                  </p>
+                  {d.staffEncoder && <p className="text-xs text-slate-400 mt-0.5">Started by {d.staffEncoder}</p>}
+                </div>
+                <button type="button" disabled={busy} className="secondary-btn" onClick={() => openForm(d.residentId, d)}>
+                  Continue
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="content-card mt-7 p-6">
         <h2 className="font-bold text-brand-ink mb-4">Resident Information</h2>
@@ -223,9 +301,9 @@ export default function WalkInPage() {
 
             <button
               type="button"
-              disabled={!selected}
+              disabled={!selected || busy}
               className="primary-btn mt-5"
-              onClick={() => setContinued(true)}
+              onClick={() => selected && openForm(selected.id)}
             >
               Continue to Clearance Application
             </button>
@@ -246,9 +324,18 @@ export default function WalkInPage() {
                 <input name="email" type="email" className="text-field" placeholder="Leave empty if resident has no email" />
               </Field>
               <div className="sm:col-span-2">
-                <FileUpload label="Valid ID of Resident *" required value={id} onChange={setId} idCard />
+                <FileUpload label="Valid ID of Resident" required value={id} onChange={setId} idCard />
               </div>
             </div>
+
+            <label className="flex gap-2 mt-5 text-xs leading-4 text-slate-600">
+              <input name="privacy" type="checkbox" required />
+              The resident was told about the Privacy Notice and agrees to the processing of their personal information for
+              barangay clearance services.
+            </label>
+            <Link href="/information#privacy" target="_blank" className="text-xs underline mt-2 block w-fit">
+              Read Privacy Notice
+            </Link>
 
             <button type="submit" disabled={busy} className="primary-btn mt-6">
               {busy ? 'Registering Resident…' : 'Continue to Clearance Application'}
