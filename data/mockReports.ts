@@ -22,5 +22,6 @@ export function paymentCheckSeconds(a: Application) {
 }
 export const mmss = (seconds: number) => `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(Math.floor(seconds % 60)).padStart(2, '0')}`;
 // Daily OR Summary: clearances released against a verified OR on the given Manila day (the day Staff verified the payment).
+// Exclude void transactions from daily entries and totals; their history remains in the Reversion Audit Report.
 export const dailyOrApplications = (applications: Application[], date: string, type = '') =>
-  applications.filter(a => a.receipt && a.clearance && manilaDate(a.clearance.generatedAt) === date && (!type || a.clearanceType === type));
+  applications.filter(a => a.status !== 'Void' && a.receipt && a.clearance && manilaDate(a.clearance.generatedAt) === date && (!type || a.clearanceType === type));

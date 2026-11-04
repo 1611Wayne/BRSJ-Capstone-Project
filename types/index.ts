@@ -31,6 +31,8 @@ export interface Application {
   hasEmployees?: boolean; employeeCount?: number;
   businessSubcategory?: 'Ambulant' | 'Lessor (Paupahan)';
   assessment?: Assessment; receipt?: OfficialReceipt; clearance?: Clearance; confirmation?: ReceiptConfirmation; feedback?: Feedback; inspection?: InspectionReport;
+  // Retains the original issue date while an Admin correction awaits reassessment and a new clearance.
+  clearanceRevisedFrom?: string;
   simulatedPayment?: SimulatedPayment;
   receiptPhoto?: UploadedDocument;
   paymentVerification?: { status: 'Pending' | 'Verified' | 'Needs Correction'; submittedAt: string; checkedBy?: string; checkedAt?: string; orNumber?: string; notes?: string };
@@ -43,7 +45,7 @@ export interface CorrectionRequest { id: string; message: string; requestedBy: s
 export type ApplicationEdits = Partial<Pick<Application, 'applicant' | 'address' | 'contact' | 'purpose' | 'applicationType' | 'businessLocation' | 'businessName' | 'initialOperation' | 'businessContact' | 'ownership' | 'propertyOwner' | 'hasEmployees' | 'employeeCount' | 'businessSubcategory'>>;
 export type ApplicationInput = Omit<Application, 'reference' | 'dateRequested' | 'status'>;
 export type ReversionAction = 'Edit Fields' | 'Void Transaction' | 'Mark Under Review';
-export interface TransactionReversion { reference: string; action: ReversionAction; reason: string; applicant?: string; businessName?: string; orNumber?: string }
+export interface TransactionReversion { reference: string; action: ReversionAction; reason: string; applicant?: string; businessName?: string; orNumber?: string; clearanceType?: string; feeAssessment?: { scheduleId: string; amounts: number[] } }
 export interface AuditLog { id: string; timestamp: string; user: string; role: UserRole; action: string; reference: string; oldValue?: string; newValue?: string; reason?: string; reversion?: boolean }
 export interface ReportRecord { clearanceType: string; count: number; assessed: number; recorded: number }
 // In-app notifications for Applicants. The event names are the same as the notifications.event values in the database. key de-duplicates an

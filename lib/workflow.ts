@@ -339,7 +339,7 @@ export function transition(state: PortalState, command: Command, now = new Date(
       }
       a.paymentVerification = { ...a.paymentVerification, status: 'Verified', checkedBy: fullName(actor), checkedAt: now, ...(orNumber && !a.simulatedPayment ? { orNumber } : {}) };
       if (orNumber && !a.simulatedPayment) log('OR number recorded by staff', reference, JSON.stringify({ orNumber: original.paymentVerification?.orNumber || original.receipt?.orNumber || '' }), JSON.stringify({ orNumber, ...(!original.receipt && a.receipt ? { orDate: a.receipt.orDate, amountPaid: a.receipt.amountPaid } : {}) }));
-      a.clearance = { issueDate: today(), generatedAt: now }; a.status = 'Ready for Download';
+      a.clearance = { issueDate: today(), generatedAt: now, ...(a.clearanceRevisedFrom ? { revisedFrom: a.clearanceRevisedFrom } : {}) }; a.status = 'Ready for Download';
       log('Payment verified by staff', reference, original.status, a.status); log('Clearance generated', reference, original.status, a.status);
       notify(a.residentId, reference, 'clearance_ready', `Your clearance is ready. Claim the printed original, with the barangay’s official stamp, at the monitoring office. Bring your reference number (${reference}). Your digital copy is available as a backup.`);
     }
@@ -373,19 +373,46 @@ export function transition(state: PortalState, command: Command, now = new Date(
     else if (d.action === 'Mark Under Review') a.status = 'Under Review';
     else {
       requireThat(d.applicant?.trim(), 'Applicant name is required.');
-      if (a.receipt && d.orNumber) {
-        validateOR(d.orNumber, a.receipt.orDate, a.receipt.amountPaid, a.assessment!.total);
+      const clearanceType = d.clearanceType ?? a.clearanceType;
+      requireThat(clearanceTypes.some(type => type.name === clearanceType), 'Select a supported clearance type.');
+      const typeChanged = clearanceType !== original.clearanceType;
+      requireThat(!typeChanged || d.feeAssessment, 'Select a fee assessment for the new clearance type.');
+      a.clearanceType = clearanceType;
+      if (clearanceType !== 'Business Clearance') a.businessSubcategory = undefined;
+      if (d.feeAssessment) {
+        const schedule = s.schedules.find(schedule => schedule.id === d.feeAssessment!.scheduleId);
+        requireThat(schedule && schedule.clearanceType === clearanceType && activeSchedule(s.schedules, clearanceType, schedule.category, schedule.classification)?.id === schedule.id, 'Select an effective fee schedule for this clearance type.');
+        const amounts = d.feeAssessment.amounts;
+        requireThat(Array.isArray(amounts) && amounts.length === schedule.items.length && amounts.every(amount => typeof amount === 'number' && Number.isFinite(amount) && amount >= 0 && Number.isSafeInteger(Math.round(amount * 100)) && Math.abs(amount * 100 - Math.round(amount * 100)) < 0.000001), 'Enter a valid non-negative amount with at most two decimal places for every fee component.');
+        const items = schedule.items.map((item, index) => ({ ...item, amount: amounts[index] }));
+        const totalCents = items.reduce((sum, item) => sum + Math.round(item.amount * 100), 0);
+        requireThat(Number.isSafeInteger(totalCents), 'The total assessment amount is too large.');
+        a.assessment = { items, total: totalCents / 100, category: schedule.category, classification: schedule.classification, scheduleId: schedule.id, ordinance: schedule.ordinance, assessedBy: fullName(actor), assessedAt: now };
+      }
+      const assessmentChanged = typeChanged || (!!d.feeAssessment && JSON.stringify([a.assessment?.items, a.assessment?.category, a.assessment?.classification, a.assessment?.scheduleId]) !== JSON.stringify([original.assessment?.items, original.assessment?.category, original.assessment?.classification, original.assessment?.scheduleId]));
+      if (a.receipt && d.orNumber && d.orNumber !== original.receipt?.orNumber) {
+        validateOR(d.orNumber, a.receipt.orDate, a.receipt.amountPaid, original.assessment!.total);
         requireThat(!s.applications.some(x => x.reference !== reference && x.receipt?.orNumber === d.orNumber), 'This OR number is already in use.');
         a.receipt = { ...a.receipt, orNumber: d.orNumber };
         if (d.orNumber !== original.receipt?.orNumber) {
+          a.clearanceRevisedFrom = original.clearance?.revisedFrom || original.clearance?.issueDate || original.clearanceRevisedFrom;
           a.status = 'For Checking'; a.clearance = undefined; a.confirmation = undefined; a.feedback = undefined;
           a.paymentVerification = { status: 'Pending', submittedAt: now };
         }
       }
       a.applicant = d.applicant!.trim(); a.businessName = d.businessName?.trim() || a.businessName;
+      if (assessmentChanged) {
+        // Retain the receipt as evidence, but revoke release and require Staff to check requirements and reassess.
+        // A fresh receipt submission after assessment must still pass the existing amount and OR checks.
+        a.clearanceRevisedFrom = original.clearance?.revisedFrom || original.clearance?.issueDate || original.clearanceRevisedFrom;
+        a.clearance = undefined; a.confirmation = undefined; a.feedback = undefined;
+        a.status = 'Pending Assessment';
+        if (hasPaymentEvidence(a)) a.paymentVerification = { status: 'Needs Correction', submittedAt: original.paymentVerification?.submittedAt || now, notes: d.reason.trim() };
+        a.simulatedPayment = undefined;
+      }
       if (a.clearance) a.clearance = { ...a.clearance, revisedFrom: a.clearance.revisedFrom || a.clearance.issueDate, downloadedAt: undefined };
     }
-    const snapshot = (x: Application) => JSON.stringify({ applicant: x.applicant, businessName: x.businessName, orNumber: x.receipt?.orNumber, status: x.status });
+    const snapshot = (x: Application) => JSON.stringify({ applicant: x.applicant, businessName: x.businessName, clearanceType: x.clearanceType, assessment: x.assessment, orNumber: x.receipt?.orNumber, receipt: x.receipt, simulatedPayment: x.simulatedPayment, status: x.status, clearance: x.clearance, clearanceRevisedFrom: x.clearanceRevisedFrom });
     log(d.action, reference, snapshot(original), snapshot(a), d.reason, true);
   }
   s.applications = s.applications.map(x => x.reference === reference ? a : x);
