@@ -10,6 +10,7 @@ pages, click the buttons and read what is on screen. They are the checks that we
 | `notifications.cjs` | The Applicant's in-app notifications: sidebar badge, "What's new" card, inbox, read state, privacy between users |
 | `verify-page.cjs` | The public verification page finds a clearance released through the receipt-photo flow |
 | `staff-queue.cjs` | The Staff queue and dashboard: the renamed upload screen, the Rejected and Correction Requests tabs, the open-correction count |
+| `admin-reversion.cjs` | Void entries excluded from daily rows and CSV; Admin clearance type and fee corrections, audit snapshots, and Staff reassessment |
 
 ## How to run
 

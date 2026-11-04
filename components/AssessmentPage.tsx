@@ -11,7 +11,7 @@ export function AssessmentPage({reference}:{reference:string}){
  // Reject state
  const [showReject,setShowReject]=useState(false),[rejectReason,setRejectReason]=useState('');
  if(!a)return <div className="p-8">Application Not Found</div>;const business=a.clearanceType==='Business Clearance';const current=revenueCategories.find(c=>c.name===category)!;const schedule=activeSchedule(state.schedules,a.clearanceType,business?category:'',business?classification:'');const editable=a.status==='Pending Assessment'||(a.status==='Under Review'&&!a.receipt);
- const feeAmounts=schedule?(feeDraft?.scheduleId===schedule.id?feeDraft.amounts:schedule.items.map(item=>item.amount.toFixed(2))):[];
+ const feeAmounts=schedule?(feeDraft?.scheduleId===schedule.id?feeDraft.amounts:a.assessment?.scheduleId===schedule.id?a.assessment.items.map(item=>item.amount.toFixed(2)):schedule.items.map(item=>item.amount.toFixed(2))):[];
  const validAmounts=feeAmounts.every(value=>/^\d+(\.\d{1,2})?$/.test(value)&&Number.isFinite(Number(value))&&Number.isSafeInteger(Math.round(Number(value)*100)));
  const feeTotal=feeAmounts.reduce((sum,value)=>sum+Math.round(Number(value||0)*100),0)/100;
  const requiredDocs=requirements(a).filter(r=>r.required);

@@ -1,7 +1,7 @@
 // Runs every browser check in this folder against the running app and prints a summary. Exit code 0 = all passed.
 const { spawnSync } = require('child_process');
 const path = require('path');
-const files = ['reports-and-timer.cjs', 'release-and-return.cjs', 'notifications.cjs', 'verify-page.cjs', 'staff-queue.cjs'];
+const files = ['reports-and-timer.cjs', 'release-and-return.cjs', 'notifications.cjs', 'verify-page.cjs', 'staff-queue.cjs', 'admin-reversion.cjs'];
 const rows = [];
 for (const f of files) {
   const r = spawnSync(process.execPath, [path.join(__dirname, f)], { encoding: 'utf8', timeout: 300000 });

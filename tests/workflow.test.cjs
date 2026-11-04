@@ -413,6 +413,57 @@ test('a request with no released clearance, or no payment evidence, cannot be ve
 // confirmation; the SLA indicators measure the Staff payment check.
 const photoFile={requirement:'Official Receipt',name:'or.jpg',size:1000,type:'image/jpeg',status:'Pending Review'};
 const releasedByPhoto=(orNumber='TR-2026-77777',orDate='2026-09-06')=>transition(role(transition(role(assess(state()),'resident-maria'),{type:'receiptPhoto',reference:ref,photo:photoFile},at),'staff-maria'),{type:'verifyPayment',reference:ref,orNumber,orDate,amountPaid:600},at);
+
+test('Admin can correct clearance type and fees, with reassessment, retained receipt and full audit snapshots',()=>{
+ const issued=releasedByPhoto('123456'),original=structuredClone(app(issued));
+ const schedule=activeSchedule(issued.schedules,'Electrical Clearance','','');
+ const amounts=schedule.items.map(item=>item.amount);amounts[0]=375.25;
+ const data={reference:ref,action:'Edit Fields',reason:'Wrong clearance and assessment',applicant:original.applicant,orNumber:original.receipt.orNumber,clearanceType:'Electrical Clearance',feeAssessment:{scheduleId:schedule.id,amounts}};
+ assert.throws(()=>transition(role(issued,'staff-maria'),{type:'revert',data},at),/Only Admin/);
+ const corrected=transition(role(issued,'admin'),{type:'revert',data},at),a=app(corrected);
+ assert.equal(a.clearanceType,'Electrical Clearance');assert.equal(a.assessment.total,425.25);
+ assert.equal(a.status,'Pending Assessment');assert.equal(a.clearance,undefined);
+ assert.equal(a.confirmation,undefined);assert.equal(a.feedback,undefined);
+ assert.deepEqual(a.receipt,original.receipt);assert.equal(a.paymentVerification.status,'Needs Correction');
+ assert.equal(a.clearanceRevisedFrom,original.clearance.issueDate);
+ const audit=corrected.audits[0],oldValue=JSON.parse(audit.oldValue),newValue=JSON.parse(audit.newValue);
+ assert.equal(audit.reason,data.reason);assert.equal(audit.reversion,true);
+ assert.equal(oldValue.clearanceType,'Business Clearance');assert.equal(oldValue.assessment.total,600);
+ assert.equal(newValue.clearanceType,'Electrical Clearance');assert.equal(newValue.assessment.total,425.25);
+ assert.deepEqual(app(issued),original);
+ assert.throws(()=>transition(role(corrected,'resident-maria'),{type:'download',reference:ref},at),/not available/);
+ assert.throws(()=>transition(role(corrected,'staff-maria'),{type:'verifyPayment',reference:ref,orNumber:'123456'},at),/awaiting staff checking/);
+ assert.throws(()=>transition(role(corrected,'staff-maria'),{type:'assess',reference:ref,category:'',classification:'',amounts},at),/Verify every required document/);
+ const documents=requirements(a).map(r=>({requirement:r.name,name:'test.pdf',size:100,type:'application/pdf',status:'Verified'}));
+ let s=transition(role(corrected,'staff-maria'),{type:'review',reference:ref,documents},at);
+ s=transition(s,{type:'assess',reference:ref,category:'',classification:'',amounts},at);
+ assert.equal(app(s).assessment.total,425.25);assert.equal(app(s).status,'Awaiting OR');
+ s=transition(role(s,'resident-maria'),{type:'receiptPhoto',reference:ref,photo:photoFile},at);
+ assert.throws(()=>transition(role(s,'staff-maria'),{type:'verifyPayment',reference:ref,orNumber:'123456',orDate:'2026-09-06',amountPaid:600},at),/must match/);
+ s=transition(role(s,'staff-maria'),{type:'verifyPayment',reference:ref,orNumber:'123456',orDate:'2026-09-06',amountPaid:425.25},at);
+ assert.equal(app(s).status,'Ready for Download');assert.equal(app(s).clearance.revisedFrom,original.clearance.issueDate);
+});
+
+test('Admin fee-only corrections validate schedules and currency without changing shared schedules',()=>{
+ const issued=releasedByPhoto(),schedule=activeSchedule(issued.schedules,'Business Clearance','Sari-Sari Store','Medium');
+ const amounts=schedule.items.map(item=>item.amount);amounts[0]=325;
+ const data={reference:ref,action:'Edit Fields',reason:'Correct fee',applicant:app(issued).applicant,feeAssessment:{scheduleId:schedule.id,amounts}};
+ const edit=change=>transition(role(issued,'admin'),{type:'revert',data:{...data,...change}},at);
+ const corrected=edit({});assert.equal(app(corrected).assessment.total,625);assert.equal(app(corrected).status,'Pending Assessment');
+ assert.deepEqual(corrected.schedules,issued.schedules);
+ for(const value of [-1,1.001,NaN,Infinity,'25']) {
+  assert.throws(()=>edit({feeAssessment:{scheduleId:schedule.id,amounts:[value,...amounts.slice(1)]}}),/valid non-negative/);
+ }
+ assert.throws(()=>edit({feeAssessment:{scheduleId:schedule.id,amounts:[]}}),/every fee component/);
+ assert.throws(()=>edit({clearanceType:'Unknown'}),/supported clearance type/);
+ assert.throws(()=>edit({clearanceType:'Electrical Clearance',feeAssessment:undefined}),/new clearance type/);
+ assert.throws(()=>edit({clearanceType:'Electrical Clearance'}),/effective fee schedule/);
+ assert.throws(()=>edit({feeAssessment:{scheduleId:'missing',amounts}}),/effective fee schedule/);
+ const future={...schedule,id:'future',effectiveDate:'2999-01-01'};
+ assert.throws(()=>transition({...role(issued,'admin'),schedules:[...issued.schedules,future]},{type:'revert',data:{...data,feeAssessment:{scheduleId:future.id,amounts}}},at),/effective fee schedule/);
+ const unchanged=edit({feeAssessment:{scheduleId:schedule.id,amounts:schedule.items.map(item=>item.amount)}});
+ assert.equal(app(unchanged).status,'Ready for Download');
+});
 test('Monthly Collection counts released payments at the assessed total, and never unverified or simulated ones',()=>{
  const recorded=s=>monthlyRows(s.applications).filter(r=>r.clearanceType===app(s).clearanceType).reduce((n,r)=>n+r.recorded,0),base=recorded(state()),total=app(assess(state())).assessment.total;
  assert.equal(recorded(releasedByPhoto())-base,total);
@@ -430,6 +481,22 @@ test('the Daily OR Summary lists a payment on the Manila day Staff verified it, 
  assert.equal(manilaDate('2026-10-05T17:00:00.000Z'),'2026-10-06');assert.equal(manilaDate('2026-10-05T15:59:00.000Z'),'2026-10-05');
  assert.equal(validOrDate('2026-09-06'),true);assert.equal(validOrDate('2026-09-31'),false);assert.equal(validOrDate('2999-01-01'),false);assert.equal(validOrDate(),false);
 });
+test('Daily OR Summary excludes a voided issued transaction while preserving its receipt and audit history',()=>{
+ const issued=releasedByPhoto(),date=manilaDate(app(issued).clearance.generatedAt);
+ const before=dailyOrApplications(issued.applications,date);
+ assert.ok(before.some(a=>a.reference===ref));
+ const voided=transition(role(issued,'admin'),{type:'revert',data:{reference:ref,action:'Void Transaction',reason:'Issued in error'}},at);
+ const after=dailyOrApplications(voided.applications,date);
+ assert.equal(after.some(a=>a.reference===ref),false);
+ assert.equal(dailyOrApplications(voided.applications,date,'Business Clearance').some(a=>a.reference===ref),false);
+ assert.deepEqual(after.map(a=>a.reference),before.filter(a=>a.reference!==ref).map(a=>a.reference));
+ assert.equal(after.length,before.length-1);
+ assert.equal(after.reduce((sum,a)=>sum+a.receipt.amountPaid,0),before.reduce((sum,a)=>sum+a.receipt.amountPaid,0)-app(issued).receipt.amountPaid);
+ assert.deepEqual(app(voided).receipt,app(issued).receipt);
+ assert.deepEqual(app(voided).clearance,app(issued).clearance);
+ assert.ok(voided.audits.some(a=>a.reference===ref&&a.action==='Void Transaction'&&a.reason==='Issued in error'&&a.reversion));
+});
+
 test('total processing time runs from submission to receipt confirmation (MM:SS); the payment check is timed separately',()=>{
  const closed=state().applications.find(a=>a.status==='Closed - Cleared');
  assert.equal(processingSeconds(closed),9300);assert.equal(mmss(processingSeconds(closed)),'155:00');
