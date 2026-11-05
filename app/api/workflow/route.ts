@@ -54,7 +54,7 @@ export async function POST(request: Request) {
   if (command.type === 'review') {
     for (const d of after.documents) {
       const old = before.documents.find(x => x.requirement === d.requirement);
-      if (old && old.status === d.status && (old.note ?? '') === (d.note ?? '')) continue;
+      if (old && old.status === d.status && (old.note ?? '') === (d.note ?? '') && old.reviewedAt === d.reviewedAt) continue;
       const { error } = await db.from('application_documents')
         .update({ verification_status: d.status, note: d.note ?? null, reviewed_by: me.user.id, reviewed_at: now })
         .eq('application_id', row.id).eq('requirement_name', d.requirement);

@@ -11,6 +11,8 @@ pages, click the buttons and read what is on screen. They are the checks that we
 | `verify-page.cjs` | The public verification page finds a clearance released through the receipt-photo flow |
 | `staff-queue.cjs` | The Staff queue and dashboard: the renamed upload screen, the Rejected and Correction Requests tabs, the open-correction count |
 | `admin-reversion.cjs` | Void entries excluded from daily rows and CSV; Admin clearance type and fee corrections, audit snapshots, and Staff reassessment |
+| `feedback-summary.cjs` | Admin feedback counts for all star ratings, common comment words, empty and rating-only feedback, mobile layout, and Staff visibility |
+| `transaction-log.cjs` | Document review times, full transaction history after reload, Admin reversion history, and monthly reversion counts by Admin in Manila time |
 
 ## How to run
 

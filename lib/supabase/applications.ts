@@ -1,5 +1,12 @@
-import type { AppNotification, Application, ApplicationInput, UploadedDocument } from '@/types';
+import type { AppNotification, Application, ApplicationInput, AuditLog, UploadedDocument } from '@/types';
 import { supabaseBrowser } from './browser';
+
+export async function loadAudits(reference?: string): Promise<AuditLog[]> {
+  const response = await fetch('/api/audits' + (reference ? '?reference=' + encodeURIComponent(reference) : ''), { cache: 'no-store' });
+  const json = await response.json().catch(() => ({}));
+  if (!response.ok) throw Object.assign(new Error(json.error || 'Transaction logs could not be loaded.'), { status: response.status });
+  return json.audits as AuditLog[];
+}
 
 const safeFileName = (name: string) => name.replace(/[^A-Za-z0-9._-]+/g, '_').slice(-80);
 
