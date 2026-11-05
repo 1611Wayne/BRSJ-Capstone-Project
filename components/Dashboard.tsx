@@ -6,8 +6,9 @@ import { StatCard } from './StatCard';
 import { ApplicationTable } from './ApplicationTable';
 import { ReportTable } from './ReportTable';
 import { dateLabel } from '@/lib/workflow';
-import { processingSeconds, paymentCheckSeconds, mmss, SLA_SECONDS } from '@/data/mockReports';
+import { processingSeconds, paymentCheckSeconds, mmss, SLA_SECONDS, feedbackSummary } from '@/data/mockReports';
 import { WhatsNew } from './NotificationInbox';
+import { MonthlyReversions } from './MonthlyReversions';
 import type { UserRole } from '@/types';
 
 /* ── helpers ─────────────────────────────────────────────── */
@@ -109,6 +110,7 @@ export function Dashboard({ role }: { role: UserRole }) {
   const times = apps.map(processingSeconds).filter((n): n is number => n !== null);
   const checks = apps.map(paymentCheckSeconds).filter((n): n is number => n !== null);
   const ratings = apps.flatMap(a => a.feedback ? [a.feedback.rating] : []);
+  const feedback = feedbackSummary(apps);
 
   const metrics = [
     { label: 'Pending Assessment', value: apps.filter(a => a.status === 'Pending Assessment').length, icon: ClipboardCheck },
@@ -211,6 +213,38 @@ export function Dashboard({ role }: { role: UserRole }) {
                 unit="/5"
               />
               <p className="text-xs text-slate-500 mt-3">Average resident satisfaction rating (1–5) for clearances completed each day.</p>
+            </div>
+          </div>
+        </section>
+      )}
+
+      {role === 'admin' && <MonthlyReversions audits={state.audits} />}
+
+      {role === 'admin' && (
+        <section aria-labelledby="feedback-summary-heading" className="mt-12">
+          <div className="flex items-center gap-2 mb-3">
+            <MessageSquare size={20} className="text-brand-primary" aria-hidden="true" />
+            <h2 id="feedback-summary-heading" className="text-xl font-bold text-brand-ink">Customer Feedback Summary</h2>
+          </div>
+          <p className="text-sm text-slate-600 mb-5">{feedback.total} feedback {feedback.total === 1 ? 'response' : 'responses'} · {feedback.commentCount} with comments. Includes all available feedback, across all dates.</p>
+          <div className="grid md:grid-cols-2 gap-6">
+            <div className="content-card p-6">
+              <h3 className="font-bold text-brand-ink mb-4">Count per Star Rating</h3>
+              <ul aria-label="Feedback counts by star rating" className="space-y-4">
+                {feedback.ratingCounts.map(({ rating, count }) => (
+                  <li key={rating} className="flex items-center gap-3" aria-label={`${rating} ${rating === 1 ? 'star' : 'stars'}: ${count} ${count === 1 ? 'response' : 'responses'}`}>
+                    <span className="text-sm w-14 shrink-0">{rating} {rating === 1 ? 'star' : 'stars'}</span>
+                    <div className="h-3 flex-1 rounded bg-slate-100 overflow-hidden" aria-hidden="true"><div className="h-full rounded bg-brand-primary" style={{ width: `${feedback.total ? count / feedback.total * 100 : 0}%` }} /></div>
+                    <span className="text-sm font-semibold w-8 text-right">{count}</span>
+                  </li>
+                ))}
+              </ul>
+              {!feedback.total && <p className="text-sm text-slate-500 mt-4">No feedback submitted yet.</p>}
+            </div>
+            <div className="content-card p-6">
+              <h3 className="font-bold text-brand-ink mb-2">Most Common Comment Words</h3>
+              <p className="text-xs text-slate-500 mb-4">Top 10 words by number of occurrences. Capitalization and punctuation are ignored; common English and Filipino connecting words are excluded.</p>
+              {feedback.commonWords.length ? <ReportTable headers={['Word', 'Occurrences']} rows={feedback.commonWords.map(({ word, count }) => [word, count])} /> : <p className="text-sm text-slate-500">No words to summarize yet.</p>}
             </div>
           </div>
         </section>

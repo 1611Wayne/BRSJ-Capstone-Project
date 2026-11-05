@@ -11,7 +11,8 @@ export const APPLICATION_SELECT = `id, clearance_type_id, reference_no, resident
   assessments ( id, total_amount, assessed_at, fee_schedule_id, business_categories ( name ), business_classifications ( name ),
     assessor:profiles!assessments_assessed_by_fkey ( first_name, last_name ), assessment_items ( id, fee_component_name, amount, ordinance_reference ),
     fee_schedules ( ordinance_reference ) ),
-  application_documents ( requirement_name, storage_path, original_filename, mime_type, file_size, verification_status, note ),
+  application_documents ( requirement_name, storage_path, original_filename, mime_type, file_size, verification_status, note, reviewed_at,
+    reviewer:profiles!application_documents_reviewed_by_fkey ( first_name, last_name ) ),
   correction_requests ( id, message, status, created_at, resolved_at, resolution_note,
     requester:profiles!correction_requests_resident_id_fkey ( first_name, last_name ), resolver:profiles!correction_requests_resolved_by_fkey ( first_name, last_name ) ),
   official_receipts ( or_number, or_date, amount_paid, recorded_at, receipt_photo_path, receipt_photo_filename, receipt_photo_mime_type, receipt_photo_size ),
@@ -30,6 +31,7 @@ export function toApplication(r: Row): Application {
     // A Missing placeholder has no file (all file columns NULL); the prototype shows it as 'Not uploaded yet'.
     requirement: d.requirement_name, name: d.original_filename ?? (d.storage_path ? '' : 'Not uploaded yet'), size: d.file_size ?? 0, type: d.mime_type ?? '',
     status: d.verification_status, ...(d.note ? { note: d.note } : {}), ...(d.storage_path ? { path: d.storage_path } : {}),
+    ...(d.reviewed_at ? { reviewedAt: d.reviewed_at, reviewedBy: name(one(d.reviewer)) } : {}),
   }));
   return {
     reference: r.reference_no, dbId: r.id, residentId: r.resident_id, applicant: r.applicant_name, address: r.address, contact: r.contact_number,

@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { usePortal } from './PortalProvider';
 import { isRealAccount, useSupabaseAuth } from '@/lib/supabase/config';
-import { loadMyApplications, loadMyNotifications } from '@/lib/supabase/applications';
+import { loadAudits, loadMyApplications, loadMyNotifications } from '@/lib/supabase/applications';
 
 // In real sign-in mode, loads requests from the database into the screens once per page load: an Applicant's own
 // requests, or every submitted request for Staff and Admin. If the sign-in has expired, it signs the person out of the
@@ -20,6 +20,7 @@ export function SupabaseSync() {
         if (cancelled) return;
         act({ type: 'loadApplications', applications, ...(user.role === 'resident' ? { replaceOwn: true } : { replaceAll: true }) });
         if (user.role === 'resident') { const notifications = await loadMyNotifications(); if (!cancelled) act({ type: 'loadNotifications', notifications }); }
+        if (user.role === 'admin') { const audits = await loadAudits(); if (!cancelled) act({ type: 'loadAudits', audits }); }
       })
       .catch(e => {
         if (cancelled) return;

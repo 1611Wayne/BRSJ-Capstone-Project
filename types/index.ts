@@ -7,7 +7,7 @@ export interface Admin extends User { role: 'admin' }
 export interface ClearanceType { id: string; name: string; shortName: string; description: string; icon: string }
 export type Ownership = 'Owner' | 'Renter' | 'Occupant';
 export interface DocumentRequirement { name: string; required: boolean }
-export interface UploadedDocument { requirement: string; name: string; size: number; type: string; status: 'Pending Review' | 'Verified' | 'Missing' | 'Needs Replacement'; url?: string; note?: string; path?: string }
+export interface UploadedDocument { requirement: string; name: string; size: number; type: string; status: 'Pending Review' | 'Verified' | 'Missing' | 'Needs Replacement'; url?: string; note?: string; path?: string; reviewedAt?: string; reviewedBy?: string }
 export interface BusinessClassification { name: string; businessClearance: number }
 export interface BusinessCategory { name: string; classifications?: BusinessClassification[]; businessClearance?: number }
 export type RevenueCategory = BusinessCategory;
@@ -46,7 +46,7 @@ export type ApplicationEdits = Partial<Pick<Application, 'applicant' | 'address'
 export type ApplicationInput = Omit<Application, 'reference' | 'dateRequested' | 'status'>;
 export type ReversionAction = 'Edit Fields' | 'Void Transaction' | 'Mark Under Review';
 export interface TransactionReversion { reference: string; action: ReversionAction; reason: string; applicant?: string; businessName?: string; orNumber?: string; clearanceType?: string; feeAssessment?: { scheduleId: string; amounts: number[] } }
-export interface AuditLog { id: string; timestamp: string; user: string; role: UserRole; action: string; reference: string; oldValue?: string; newValue?: string; reason?: string; reversion?: boolean }
+export interface AuditLog { id: string; timestamp: string; user: string; userId?: string; role: UserRole; action: string; reference: string; oldValue?: string; newValue?: string; reason?: string; reversion?: boolean }
 export interface ReportRecord { clearanceType: string; count: number; assessed: number; recorded: number }
 // In-app notifications for Applicants. The event names are the same as the notifications.event values in the database. key de-duplicates an
 // unread notice about the same thing (a flagged document gets its Staff note added to the same notice instead of a second one).

@@ -1,4 +1,4 @@
-import type { Application, ApplicationEdits, ApplicationInput, ApplicationStatus, Clearance, CorrectionRequest, DocumentRequirement, FeeSchedule, InspectionReport, PortalState, SimulatedPayment, TransactionReversion, UploadedDocument, User } from '@/types';
+import type { Application, ApplicationEdits, ApplicationInput, ApplicationStatus, AuditLog, Clearance, CorrectionRequest, DocumentRequirement, FeeSchedule, InspectionReport, PortalState, SimulatedPayment, TransactionReversion, UploadedDocument, User } from '@/types';
 import { clearanceTypes, businessSubcategories } from '@/data/clearanceTypes';
 import { fullName } from '@/data/mockUsers';
 import type { AppNotification, NotificationEvent } from '@/types';
@@ -65,6 +65,7 @@ export type Command =
   | { type: 'sessionUser'; user: User }
   | { type: 'loadApplications'; applications: Application[]; replaceOwn?: boolean; replaceAll?: boolean }
   | { type: 'loadNotifications'; notifications: AppNotification[] }
+  | { type: 'loadAudits'; audits: AuditLog[]; reference?: string }
   | { type: 'register'; user: User }
   | { type: 'saveApplication'; application: ApplicationInput; reference?: string; draft: boolean }
   | { type: 'review'; reference: string; documents: UploadedDocument[] }
@@ -89,7 +90,7 @@ export type Command =
 export function transition(state: PortalState, command: Command, now = new Date().toISOString()): PortalState {
   const s: PortalState = { ...state, users: [...state.users], applications: [...state.applications], schedules: [...state.schedules], audits: [...state.audits], notifications: [...(state.notifications ?? [])] };
   const actor = state.users.find(u => u.id === state.currentUserId && u.status === 'Active');
-  const log = (action: string, reference: string, oldValue = '', newValue = '', reason = '', reversion = false) => s.audits.unshift({ id: `audit-${now}-${s.audits.length}`, timestamp: now, user: actor ? fullName(actor) : 'Resident registration', role: actor?.role || 'resident', action, reference, oldValue, newValue, reason, reversion });
+  const log = (action: string, reference: string, oldValue = '', newValue = '', reason = '', reversion = false) => s.audits.unshift({ id: `audit-${now}-${s.audits.length}`, timestamp: now, user: actor ? fullName(actor) : 'Resident registration', userId: actor?.id, role: actor?.role || 'resident', action, reference, oldValue, newValue, reason, reversion });
   // Notify the Applicant who owns a request. An unread notice with the same key is updated instead of repeated.
   const notify = (userId: string, reference: string, event: NotificationEvent, message: string, key?: string) => {
     const existing = key ? s.notifications.find(n => n.userId === userId && n.key === key && !n.readAt) : undefined;
@@ -121,6 +122,11 @@ export function transition(state: PortalState, command: Command, now = new Date(
     s.users.push(command.user); log('Resident registered', command.user.id); return s;
   }
   requireThat(actor, 'Please log in to continue.');
+  if (command.type === 'loadAudits') {
+    requireThat(actor.role === 'admin' || (actor.role === 'staff' && command.reference), 'Only Admin can load all logs; Staff must select a transaction.');
+    requireThat(!command.reference || command.audits.every(a => a.reference === command.reference), 'These logs belong to another transaction.');
+    s.audits = [...command.audits, ...(command.reference ? s.audits.filter(a => a.reference !== command.reference) : [])]; return s;
+  }
   // Records read from the database (Supabase mode) are put into the screens' state. replaceOwn swaps in the full list
   // of the signed-in Applicant's own requests; otherwise each record is added or replaced by its reference.
   if (command.type === 'loadApplications') {
@@ -177,7 +183,7 @@ export function transition(state: PortalState, command: Command, now = new Date(
     }
     const next = Math.max(126, ...s.applications.map(x => Number(x.reference.split('-')[2]))) + 1;
     const reference = previous?.reference || `SJ-${now.slice(0,4)}-${String(next).padStart(6,'0')}`;
-    const record: Application = { ...a, businessSubcategory: a.clearanceType === 'Business Clearance' ? a.businessSubcategory : undefined, documents: a.documents.map(d => ({ ...d, status: 'Pending Review' as const })), source: actor.role === 'staff' ? 'Assisted / Walk-in' : 'Online', staffEncoder: actor.role === 'staff' ? fullName(actor) : undefined, reference, dateRequested: command.draft ? previous?.dateRequested || now : now, status: command.draft ? 'Draft' : 'Pending Assessment' };
+    const record: Application = { ...a, businessSubcategory: a.clearanceType === 'Business Clearance' ? a.businessSubcategory : undefined, documents: a.documents.map(d => ({ ...d, status: 'Pending Review' as const, reviewedAt: undefined, reviewedBy: undefined })), source: actor.role === 'staff' ? 'Assisted / Walk-in' : 'Online', staffEncoder: actor.role === 'staff' ? fullName(actor) : undefined, reference, dateRequested: command.draft ? previous?.dateRequested || now : now, status: command.draft ? 'Draft' : 'Pending Assessment' };
     s.applications = previous ? s.applications.map(x => x.reference === reference ? record : x) : [record, ...s.applications];
     log(command.draft ? 'Draft saved' : 'Application submitted', reference, previous?.status, record.status); return s;
   }
@@ -186,7 +192,17 @@ export function transition(state: PortalState, command: Command, now = new Date(
   requireThat(original, 'Application not found.');
   requireThat(actor.role !== 'resident' || original.residentId === actor.id, 'This request belongs to another resident.');
   const a = { ...original };
-  if (command.type === 'review') { staff(); requireThat(a.status === 'Pending Assessment' || a.status === 'Under Review', 'Requirements can only be reviewed before assessment.'); a.documents = command.documents.map(({ note, ...d }) => { const flagged = d.status === 'Missing' || d.status === 'Needs Replacement', text = note?.trim().slice(0, 200); return flagged && text ? { ...d, note: text } : d; }); log('Requirements reviewed', reference, JSON.stringify(original.documents.map(d => [d.requirement, d.status])), JSON.stringify(a.documents.map(d => [d.requirement, d.status]))); }
+  if (command.type === 'review') {
+    staff(); requireThat(a.status === 'Pending Assessment' || a.status === 'Under Review', 'Requirements can only be reviewed before assessment.');
+    a.documents = command.documents.map(({ note, reviewedAt, reviewedBy, ...d }) => {
+      const flagged = d.status === 'Missing' || d.status === 'Needs Replacement', text = flagged ? note?.trim().slice(0, 200) : undefined;
+      const old = original.documents.find(x => x.requirement === d.requirement);
+      const changed = !old?.reviewedAt || old.status !== d.status || (old.note || '') !== (text || '');
+      return { ...d, ...(text ? { note: text } : {}), reviewedAt: changed ? now : old.reviewedAt, reviewedBy: changed ? fullName(actor) : old.reviewedBy };
+    });
+    const reviewValues = (documents: UploadedDocument[]) => JSON.stringify(documents.map(d => ({ requirement: d.requirement, status: d.status, note: d.note, reviewedAt: d.reviewedAt, reviewedBy: d.reviewedBy })));
+    log('Requirements reviewed', reference, reviewValues(original.documents), reviewValues(a.documents));
+  }
   // The notice key names the request AND the document: the same document type flagged on two requests of one Applicant
   // gives two notices (one each), and repeating it on one request updates that one notice.
   if (command.type === 'review') {
@@ -206,7 +222,7 @@ export function transition(state: PortalState, command: Command, now = new Date(
     const old = a.documents[index];
     requireThat(old && (old.status === 'Missing' || old.status === 'Needs Replacement'), 'Only a document that Staff marked Missing or Needs Replacement can be replaced.');
     requireThat(validFile(command.document), 'Upload a valid file in JPG, PNG, or PDF, up to 5 MB.');
-    a.documents = a.documents.map((d, i) => i === index ? { ...command.document, requirement: old.requirement, status: 'Pending Review' as const } : d);
+    a.documents = a.documents.map((d, i) => i === index ? { ...command.document, requirement: old.requirement, status: 'Pending Review' as const, reviewedAt: undefined, reviewedBy: undefined } : d);
     log(actor.role === 'staff' ? 'Document replaced by Staff for the Applicant' : 'Document replaced by Applicant', reference, JSON.stringify({ requirement: old.requirement, file: old.name, status: old.status }), JSON.stringify({ requirement: old.requirement, file: command.document.name, status: 'Pending Review' }));
   }
   if (command.type === 'inspection') { staff(); requireThat(a.status !== 'Void', 'A void transaction cannot be inspected.'); requireThat(command.report.status !== 'Completed' || (command.report.inspector.trim() && command.report.date && command.report.date <= today()), 'Completed inspections need an inspector and valid date.'); a.inspection = { ...command.report, savedAt: now }; log('Inspection report saved', reference, JSON.stringify(original.inspection), JSON.stringify(a.inspection)); }

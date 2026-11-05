@@ -5,13 +5,111 @@ const { transition, requirements, validateOR, validFile, activeSchedule, hasPaym
 const { mockApplications } = require('../data/mockApplications.ts');
 const { mockUsers } = require('../data/mockUsers.ts');
 const { mockFeeSchedules } = require('../data/mockFeeSchedules.ts');
-const { monthlyRows, processingSeconds, paymentCheckSeconds, mmss, dailyOrApplications } = require('../data/mockReports.ts');
+const { monthlyRows, processingSeconds, paymentCheckSeconds, mmss, dailyOrApplications, feedbackSummary, monthlyReversions } = require('../data/mockReports.ts');
+const { transactionMilestones, transactionEvents, transactionDateLabel } = require('../lib/transactionLog.ts');
+const { auditRecord } = require('../lib/auditRecords.ts');
 const { clearanceTypes } = require('../data/clearanceTypes.ts');
 const { makePDF } = require('../lib/downloads.ts');
 const state = (id = 'resident-maria') => structuredClone({users:mockUsers,applications:mockApplications,schedules:mockFeeSchedules,audits:[],currentUserId:id});
 const at = '2026-09-07T02:30:12.000Z', ref = 'SJ-2026-000123';
 const app = s => s.applications.find(a=>a.reference===ref);
 const role = (s,id) => ({...s,currentUserId:id});
+
+test('document review times are recorded on changes, preserved on unchanged documents and cleared on replacement',()=>{
+ const before=state('staff-maria'),original=structuredClone(app(before));
+ let s=transition(before,{type:'review',reference:ref,documents:app(before).documents},at);
+ assert.ok(app(s).documents.every(d=>d.reviewedAt===at&&d.reviewedBy==='Maria Staff'));
+ const nextTime='2026-09-07T03:31:14.000Z';
+ s=transition(s,{type:'review',reference:ref,documents:app(s).documents.map((d,i)=>i===0?{...d,status:'Needs Replacement',note:'Blurry'}:d)},nextTime);
+ assert.equal(app(s).documents[0].reviewedAt,nextTime);assert.equal(app(s).documents[1].reviewedAt,at);
+ assert.equal(transactionMilestones(app(s)).find(m=>m.stage==='Document Review Time').timestamp,nextTime);
+ assert.equal(s.audits.filter(a=>a.action==='Requirements reviewed').length,2);
+ const unchanged=transition(s,{type:'review',reference:ref,documents:app(s).documents.map(d=>({...d,reviewedAt:'2099-01-01',reviewedBy:'Fake'}))},'2026-09-07T04:00:00.000Z');
+ assert.equal(app(unchanged).documents[0].reviewedAt,nextTime);assert.equal(app(unchanged).documents[0].reviewedBy,'Maria Staff');
+ const file={...app(s).documents[0],name:'new.pdf',size:1000,type:'application/pdf'};
+ s=transition(s,{type:'replaceDocument',reference:ref,document:file},'2026-09-07T04:00:00.000Z');
+ assert.equal(app(s).documents[0].reviewedAt,undefined);assert.equal(app(s).documents[0].reviewedBy,undefined);
+ assert.equal(s.audits.filter(a=>a.action==='Requirements reviewed').length,2);
+ assert.deepEqual(app(before),original);
+});
+
+test('transaction log preserves repeated stages and reversions with exact times, omitting unrelated requests',()=>{
+ let s=state('staff-maria');
+ s=transition(s,{type:'review',reference:ref,documents:app(s).documents},at);
+ s=transition(s,{type:'review',reference:ref,documents:app(s).documents.map((d,i)=>i===0?{...d,status:'Missing'}:d)},'2026-09-07T03:00:17.000Z');
+ s=transition(role(s,'admin'),{type:'revert',data:{reference:ref,action:'Mark Under Review',reason:'Review again'}},'2026-09-07T03:01:18.000Z');
+ const events=transactionEvents(app(s),[...s.audits,{...s.audits[0],reference:'other',action:'Other request'}]);
+ assert.equal(events.filter(e=>e.action==='Requirements reviewed').length,2);
+ assert.ok(events.some(e=>e.action==='Mark Under Review'&&e.reason==='Review again'&&e.timestamp==='2026-09-07T03:01:18.000Z'));
+ assert.equal(events.some(e=>e.action==='Other request'),false);
+ assert.deepEqual(events.map(e=>Date.parse(e.timestamp)),events.map(e=>Date.parse(e.timestamp)).sort((a,b)=>a-b));
+ const fresh=transactionMilestones(app(state()));
+ assert.equal(fresh.find(m=>m.stage==='Document Review Time').timestamp,undefined);
+ assert.equal(fresh.find(m=>m.stage==='OR Verification Time').timestamp,undefined);
+ const issued=state().applications.find(a=>a.status==='Closed - Cleared');
+ assert.ok(transactionEvents(issued,[]).some(e=>e.action==='Feedback submitted'&&e.timestamp===issued.feedback.submittedAt));
+ assert.match(transactionDateLabel('2026-09-07T03:01:18.000Z'),/11:01:18/);
+});
+
+test('monthly reversion counts group actions by Admin identity and Manila month',()=>{
+ const entry=(id,userId,user,action,timestamp)=>({id,userId,user,action,timestamp,role:'admin',reference:ref,reversion:true});
+ const audits=[
+  entry('1','a','Same Name','Edit Fields','2026-10-31T16:00:00.000Z'),
+  entry('2','a','Same Name','Void Transaction','2026-11-01T02:00:00.000Z'),
+  entry('3','b','Same Name','Mark Under Review','2026-11-15T01:00:00.000Z'),
+  entry('4','a','Same Name','Edit Fields','2026-11-30T16:00:00.000Z'),
+  {...entry('5','a','Same Name','Edit Fields','2026-11-10T01:00:00.000Z'),reversion:false},
+  {...entry('6','a','Same Name','Edit Fields','2026-11-10T01:00:00.000Z'),role:'staff'},
+  entry('7','a','Same Name','Assessment confirmed','2026-11-10T01:00:00.000Z'),
+ ];
+ const rows=monthlyReversions(audits,'2026-11');
+ assert.deepEqual(rows,[{adminId:'a',admin:'Same Name',edits:1,voids:1,reviews:0,total:2},{adminId:'b',admin:'Same Name',edits:0,voids:0,reviews:1,total:1}]);
+ assert.equal(monthlyReversions(audits,'2026-12')[0].total,1);
+ assert.deepEqual(monthlyReversions(audits,'2026-10'),[]);assert.deepEqual(monthlyReversions([],'2026-11'),[]);
+ const legacy={...audits[0],userId:undefined};
+ assert.deepEqual(monthlyReversions([legacy,audits[1]],'2026-11'),[{adminId:'a',admin:'Same Name',edits:1,voids:1,reviews:0,total:2}]);
+ assert.equal(monthlyReversions([legacy,audits[1],audits[2]],'2026-11').length,3);
+});
+
+test('audit records retain database timestamps and JSON values; Staff log loads stay scoped to one transaction',()=>{
+ const row={id:1,created_at:at,user_id:'admin-id',role:'admin',action:'Void Transaction',reference_no:ref,reversion:true,old_value:{status:'Ready for Download'},new_value:{status:'Void'},reason:'Test'};
+ const log=auditRecord(row,'Admin Name');assert.equal(log.timestamp,at);assert.equal(log.userId,'admin-id');assert.equal(log.oldValue,JSON.stringify(row.old_value));
+ assert.equal(auditRecord({...row,created_at:undefined,timestamp:at},'Admin Name').timestamp,at);
+ assert.throws(()=>auditRecord({...row,created_at:undefined},'Admin Name'),/recorded time/);
+ assert.throws(()=>transition(state(),{type:'loadAudits',audits:[log]}),/Only Admin/);
+ assert.throws(()=>transition(state('staff-maria'),{type:'loadAudits',audits:[log]}),/select a transaction/);
+ assert.throws(()=>transition(state('staff-maria'),{type:'loadAudits',reference:'other',audits:[log]}),/another transaction/);
+ const loaded=transition(state('staff-maria'),{type:'loadAudits',reference:ref,audits:[log]});assert.ok(loaded.audits.some(a=>a.id===log.id));
+ assert.deepEqual(transition(state('admin'),{type:'loadAudits',audits:[log]}).audits,[log]);
+});
+
+test('feedback summary includes all five rating counts and counts ratings without comments',()=>{
+ const applications=[5,4,3,2,1,5].map((rating,index)=>({...mockApplications[0],reference:String(index),feedback:{rating,comment:index===0?'Helpful staff':'',submittedAt:at}}));
+ const original=structuredClone(applications);
+ const summary=feedbackSummary([...applications,{...mockApplications[0],feedback:undefined}]);
+ assert.equal(summary.total,6);assert.equal(summary.commentCount,1);
+ assert.deepEqual(summary.ratingCounts,[{rating:5,count:2},{rating:4,count:1},{rating:3,count:1},{rating:2,count:1},{rating:1,count:1}]);
+ assert.deepEqual(applications,original);
+});
+
+test('feedback word counts ignore case, punctuation and connecting words while retaining English and Filipino content',()=>{
+ const comments=['Fast, FAST service! Ang staff ay helpful po.',"I'm happy with the service. Mabilis, mabilis!",'Helpful staff; malinaw ang instructions.','   '];
+ const summary=feedbackSummary(comments.map(comment=>({...mockApplications[0],feedback:{rating:5,comment,submittedAt:at}})));
+ assert.equal(summary.commentCount,3);
+ assert.deepEqual(summary.commonWords,[{word:'fast',count:2},{word:'helpful',count:2},{word:'mabilis',count:2},{word:'service',count:2},{word:'staff',count:2},{word:'happy',count:1},{word:'instructions',count:1},{word:'malinaw',count:1}]);
+});
+
+test('feedback summary handles empty feedback and limits word results with stable alphabetical ties',()=>{
+ const empty=feedbackSummary([]);assert.equal(empty.total,0);assert.equal(empty.commentCount,0);
+ assert.ok(empty.ratingCounts.every(row=>row.count===0));assert.deepEqual(empty.commonWords,[]);
+ const feedback=comment=>({...mockApplications[0],feedback:{rating:4,comment,submittedAt:at}});
+ assert.deepEqual(feedbackSummary([feedback('123 !!! ang ng po the and')]).commonWords,[]);
+ assert.deepEqual(feedbackSummary([feedback('')]).commonWords,[]);
+ const words=['zebra','yellow','violet','silver','orange','magenta','green','gold','cyan','blue','black','amber'];
+ assert.deepEqual(feedbackSummary([feedback(words.join(' '))]).commonWords,words.sort().slice(0,10).map(word=>({word,count:1})));
+ const invalid=[0,6,2.5,NaN].map(rating=>({...feedback('ignored'),feedback:{rating,comment:'ignored',submittedAt:at}}));
+ assert.equal(feedbackSummary(invalid).total,0);
+});
 const assess = s => transition(role(s,'staff-maria'),{type:'assess',reference:ref,category:'Sari-Sari Store',classification:'Medium'},at);
 const or = s => transition(role(s,'resident-maria'),{type:'or',reference:ref,number:'TR-2026-54321',date:'2026-09-06',amount:'600.00'},at);
 // Updated 2026-10-05: the paper's Scope (Ch. 1.4) lists 13, but the user confirmed directly with Barangay
@@ -659,3 +757,52 @@ test('staff can create and submit walk-in application on behalf of a resident wi
  assert.ok(audit);assert.equal(audit.role,'staff');assert.equal(audit.user,'Maria Staff');
 });
 
+// Exercise the audit endpoint with a fake database: no Supabase connection or real records are used.
+const Module = require('node:module');
+let auditApiActor, auditApiRows = [], auditApiApplication, auditApiCalls;
+const fakeAuditDb = {
+ from(table) {
+  auditApiCalls.push(table);let start=0,end=999,reference;
+  const query={
+   select(){return query},order(){return query},range(a,b){start=a;end=b;return query},
+   eq(field,value){if(field==='reference_no')reference=value;return query},in(){return query},
+   async maybeSingle(){return {data:auditApiApplication,error:null}},
+   then(resolve,reject){
+    const data=table==='profiles'?[{id:'admin-id',first_name:'Admin',last_name:'One'}]:auditApiRows.filter(row=>!reference||row.reference_no===reference).slice(start,end+1);
+    return Promise.resolve({data,error:null}).then(resolve,reject);
+   },
+  };return query;
+ },
+};
+const originalLoad = Module._load;
+let auditEndpoint;
+try {
+ Module._load=function(request,parent,...rest){
+  if(request==='@/lib/server/currentUser')return {currentUser:async()=>({user:auditApiActor})};
+  if(request==='@/lib/supabase/server')return {supabaseAdmin:()=>fakeAuditDb};
+  return originalLoad.call(this,request,parent,...rest);
+ };
+ auditEndpoint=require('../app/api/audits/route.ts');
+} finally {Module._load=originalLoad;}
+
+test('audit endpoint denies resident access and unscoped Staff reads before querying the database',async()=>{
+ auditApiCalls=[];auditApiActor={role:'resident'};
+ let response=await auditEndpoint.GET(new Request('http://localhost/api/audits?reference='+ref));
+ assert.equal(response.status,403);assert.deepEqual(auditApiCalls,[]);
+ auditApiActor={role:'staff'};response=await auditEndpoint.GET(new Request('http://localhost/api/audits'));
+ assert.equal(response.status,403);assert.deepEqual(auditApiCalls,[]);
+ auditApiApplication={id:1,status:'Draft',staff_encoder_id:null};
+ response=await auditEndpoint.GET(new Request('http://localhost/api/audits?reference='+ref));assert.equal(response.status,404);
+});
+
+test('audit endpoint reads every page for Admin and scopes Staff transaction history',async()=>{
+ auditApiCalls=[];auditApiActor={role:'admin'};
+ auditApiRows=Array.from({length:1001},(_,index)=>({id:index+1,timestamp:at,user_id:'admin-id',role:'admin',action:'Edit Fields',reference_no:index===1000?'other':ref,reversion:true}));
+ let response=await auditEndpoint.GET(new Request('http://localhost/api/audits'));
+ assert.equal(response.status,200);let body=await response.json();
+ assert.equal(body.audits.length,1001);assert.equal(body.audits[1000].id,'db-1001');
+ assert.equal(body.audits[0].user,'Admin One');assert.equal(body.audits[0].timestamp,at);
+ auditApiActor={role:'staff'};auditApiApplication={id:1,status:'Pending Assessment',staff_encoder_id:null};
+ response=await auditEndpoint.GET(new Request('http://localhost/api/audits?reference='+ref));body=await response.json();
+ assert.equal(response.status,200);assert.equal(body.audits.length,1000);assert.ok(body.audits.every(row=>row.reference===ref));
+});
