@@ -306,7 +306,7 @@ export function transition(state: PortalState, command: Command, now = new Date(
     log('Correction request resolved', reference, openRequest.message, a.status === original.status ? 'Resolved' : `Resolved; ${original.status} -> ${a.status}`, note || '');
   }
   if (command.type === 'or') {
-    requireThat(actor.role === 'resident' || actor.role === 'staff', 'Only Residents or Staff can record OR details.');
+    requireThat(actor.role === 'staff', 'Only Staff can record OR details.');
     requireThat(a.status === 'Awaiting OR' && a.assessment, 'Staff must complete assessment before OR entry.');
     validateOR(command.number, command.date, command.amount, a.assessment.total);
     requireThat(!s.applications.some(x => x.reference !== reference && x.receipt?.orNumber === command.number), 'This OR number is already recorded for another request.');
@@ -347,26 +347,23 @@ export function transition(state: PortalState, command: Command, now = new Date(
       notify(a.residentId, reference, 'payment_returned', `Please upload your receipt again. Reason: ${command.reason.trim()}`);
     } else {
       requireThat(a.receipt || a.receiptPhoto || a.simulatedPayment, 'Payment evidence is required.');
-      if (a.receipt) {
-        validateOR(a.receipt.orNumber, a.receipt.orDate, a.receipt.amountPaid, a.assessment.total);
-        requireThat(!s.applications.some(x => x.reference !== reference && x.receipt?.orNumber === a.receipt!.orNumber), 'This OR number is already recorded for another request.');
-      } else if (a.simulatedPayment) requireThat(a.simulatedPayment.amount === a.assessment.total, 'Payment amount must match the assessed amount.');
-      else requireThat(a.receiptPhoto && validFile(a.receiptPhoto), 'A valid receipt photo is required.');
-      const orNumber = command.orNumber?.trim();
+      if (a.simulatedPayment) requireThat(a.simulatedPayment.amount === a.assessment.total, 'Payment amount must match the assessed amount.');
+      else if (!a.receipt) requireThat(a.receiptPhoto && validFile(a.receiptPhoto), 'A valid receipt photo is required.');
+      const orNumber = command.orNumber?.trim() ?? '';
       if (!a.simulatedPayment) {
         requireThat(orNumber, 'Enter the OR number from the receipt before verifying payment.');
+        const orDate = command.orDate ?? '';
+        const amountPaid = command.amountPaid ?? '';
+        requireThat(validOrDate(orDate), 'Enter a valid OR date that is not in the future.');
+        validateAmountPaid(amountPaid, a.assessment.total);
         requireThat(!s.applications.some(x => x.reference !== reference && (x.receipt?.orNumber === orNumber || x.paymentVerification?.orNumber === orNumber)), 'This OR number is already recorded for another request.');
-        if (a.receipt) a.receipt = { ...a.receipt, orNumber };
-        else {
-          // Receipt-photo flow (D1): Staff type the OR number, the OR date and the Amount Paid shown on the image (manuscript 3.3.1). The amount
-          // has to equal the assessed total. Recording the full receipt lets the reports, the clearance and the verification page read it.
-          requireThat(validOrDate(command.orDate), 'Enter the OR date shown on the receipt. It cannot be a future date.');
-          validateAmountPaid(command.amountPaid ?? '', a.assessment.total);
-          a.receipt = { orNumber, orDate: command.orDate!, amountPaid: Number(command.amountPaid), recordedAt: now, encodedBy: fullName(actor), ...(a.receiptPhoto ? { receiptPhoto: a.receiptPhoto } : {}) };
-        }
+        const receiptPhoto = a.receipt?.receiptPhoto ?? a.receiptPhoto;
+        a.receipt = { orNumber, orDate, amountPaid: Number(amountPaid), recordedAt: now, encodedBy: fullName(actor), ...(receiptPhoto ? { receiptPhoto } : {}) };
       }
       a.paymentVerification = { ...a.paymentVerification, status: 'Verified', checkedBy: fullName(actor), checkedAt: now, ...(orNumber && !a.simulatedPayment ? { orNumber } : {}) };
-      if (orNumber && !a.simulatedPayment) log('OR number recorded by staff', reference, JSON.stringify({ orNumber: original.paymentVerification?.orNumber || original.receipt?.orNumber || '' }), JSON.stringify({ orNumber, ...(!original.receipt && a.receipt ? { orDate: a.receipt.orDate, amountPaid: a.receipt.amountPaid } : {}) }));
+      if (orNumber && !a.simulatedPayment) log('OR details recorded by staff', reference,
+        JSON.stringify({ orNumber: original.receipt?.orNumber || original.paymentVerification?.orNumber || '', orDate: original.receipt?.orDate || '', amountPaid: original.receipt?.amountPaid ?? '' }),
+        JSON.stringify({ orNumber, orDate: a.receipt!.orDate, amountPaid: a.receipt!.amountPaid }));
       a.clearance = { issueDate: today(), generatedAt: now, ...(a.clearanceRevisedFrom ? { revisedFrom: a.clearanceRevisedFrom } : {}) }; a.status = 'Ready for Download';
       log('Payment verified by staff', reference, original.status, a.status); log('Clearance generated', reference, original.status, a.status);
       notify(a.residentId, reference, 'clearance_ready', `Your clearance is ready. Claim the printed original, with the barangay’s official stamp, at the monitoring office. Bring your reference number (${reference}). Your digital copy is available as a backup.`);
@@ -418,15 +415,20 @@ export function transition(state: PortalState, command: Command, now = new Date(
         a.assessment = { items, total: totalCents / 100, category: schedule.category, classification: schedule.classification, scheduleId: schedule.id, ordinance: schedule.ordinance, assessedBy: fullName(actor), assessedAt: now };
       }
       const assessmentChanged = typeChanged || (!!d.feeAssessment && JSON.stringify([a.assessment?.items, a.assessment?.category, a.assessment?.classification, a.assessment?.scheduleId]) !== JSON.stringify([original.assessment?.items, original.assessment?.category, original.assessment?.classification, original.assessment?.scheduleId]));
-      if (a.receipt && d.orNumber && d.orNumber !== original.receipt?.orNumber) {
-        validateOR(d.orNumber, a.receipt.orDate, a.receipt.amountPaid, original.assessment!.total);
-        requireThat(!s.applications.some(x => x.reference !== reference && x.receipt?.orNumber === d.orNumber), 'This OR number is already in use.');
-        a.receipt = { ...a.receipt, orNumber: d.orNumber };
-        if (d.orNumber !== original.receipt?.orNumber) {
-          a.clearanceRevisedFrom = original.clearance?.revisedFrom || original.clearance?.issueDate || original.clearanceRevisedFrom;
-          a.status = 'For Checking'; a.clearance = undefined; a.confirmation = undefined; a.feedback = undefined;
-          a.paymentVerification = { status: 'Pending', submittedAt: now };
-        }
+      const hasOrDetails = d.orNumber !== undefined || d.orDate !== undefined || d.amountPaid !== undefined;
+      const orDetailsChanged = a.receipt && hasOrDetails && (d.orNumber !== original.receipt?.orNumber || d.orDate !== original.receipt?.orDate || d.amountPaid !== original.receipt?.amountPaid);
+      if (a.receipt && orDetailsChanged) {
+        const orNumber = d.orNumber?.trim() ?? '';
+        const orDate = d.orDate ?? '';
+        const amountPaid = d.amountPaid ?? '';
+        requireThat(orNumber, 'Enter the OR number.');
+        requireThat(validOrDate(orDate), 'Enter a valid OR date that is not in the future.');
+        validateAmountPaid(amountPaid, a.assessment!.total);
+        if (orNumber !== original.receipt?.orNumber) requireThat(!s.applications.some(x => x.reference !== reference && x.receipt?.orNumber === orNumber), 'This OR number is already in use.');
+        a.receipt = { ...a.receipt, orNumber, orDate, amountPaid: Number(amountPaid) };
+        a.clearanceRevisedFrom = original.clearance?.revisedFrom || original.clearance?.issueDate || original.clearanceRevisedFrom;
+        a.status = 'For Checking'; a.clearance = undefined; a.confirmation = undefined; a.feedback = undefined;
+        a.paymentVerification = { status: 'Pending', submittedAt: now };
       }
       a.applicant = d.applicant!.trim(); a.businessName = d.businessName?.trim() || a.businessName;
       if (assessmentChanged) {

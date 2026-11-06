@@ -37,7 +37,7 @@ Use the **Staff/Admin Login** link below the normal login form for staff and adm
 3. Log out and log in as Staff in the **same tab**. Open the Applications Queue, review the request's documents, select the business category and classification, and confirm assessment. Standard fee amounts come from the effective fee schedule.
 4. Save an inspection report if desired. Staff can also select or create a resident in **New Walk-in Application**, which reuses the resident form and records the source as **Assisted / Walk-in**.
 5. Return to Maria's login in the same tab. Open **My Applications → View Assessment** and download the sample Pre-Assessment Slip.
-6. Enter a unique sample OR number such as **TR-2026-54321**, an OR date in 2026 that is not in the future, and the exact displayed assessed amount.
+6. As Maria, upload a photo of the Treasury receipt. Log in as Staff to encode and verify its OR number, OR date, and amount paid; the amount must match the assessed total.
 7. Download the sample clearance PDF. This enables **Confirm Receipt**. Confirmation records the time and IP placeholder, closes the request, and opens the optional feedback modal.
 8. Log in as Admin to change fee schedules, review retained versions, correct / void / mark transactions under review, manage resident/staff accounts, and view reports.
 9. Report filters apply to the shared records. Export produces CSV; Print uses the browser's print dialog.

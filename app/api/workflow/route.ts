@@ -165,6 +165,7 @@ export async function POST(request: Request) {
   // ---- the Staff check
   if (command.type === 'verifyPayment') {
     if (after.receipt && !after.simulatedPayment) {
+      if (!after.receipt.orNumber || !after.receipt.orDate || !Number.isFinite(after.receipt.amountPaid)) return fail('Complete the OR number, date, and amount paid before verifying.', 400);
       // The OR number must be unique across ALL requests; the rules above only saw this one, so the database decides.
       const { data: taken } = await db.from('official_receipts').select('application_id').eq('or_number', after.receipt.orNumber).neq('application_id', row.id).limit(1);
       if (taken?.length) return fail('This OR number is already recorded for another request.', 400);
@@ -212,17 +213,19 @@ export async function POST(request: Request) {
       if (!type) return fail('Choose a supported clearance type.', 400);
       changes.clearance_type_id = type.id;
     }
-    // The OR number must be unique across ALL requests; the rules above only saw this one, so the database decides.
-    const newOR = edit && after.receipt && after.receipt.orNumber !== before.receipt?.orNumber ? after.receipt.orNumber : null;
-    if (newOR) {
-      const { data: taken } = await db.from('official_receipts').select('application_id').eq('or_number', newOR).neq('application_id', row.id).limit(1);
+    // Corrected OR details (number, date, amount paid). A new number must be unique across ALL requests; the rules above
+    // only saw this one, so the database decides.
+    const r = after.receipt, old = before.receipt;
+    const newReceipt = edit && r && (r.orNumber !== old?.orNumber || r.orDate !== old?.orDate || r.amountPaid !== old?.amountPaid) ? r : null;
+    if (newReceipt && newReceipt.orNumber !== old?.orNumber) {
+      const { data: taken } = await db.from('official_receipts').select('application_id').eq('or_number', newReceipt.orNumber).neq('application_id', row.id).limit(1);
       if (taken?.length) return fail('This OR number is already in use.', 400);
     }
     const newAssessment = edit && after.assessment && JSON.stringify(after.assessment) !== JSON.stringify(before.assessment) ? after.assessment : null;
     const schedule = newAssessment ? schedules.find(s => s.id === newAssessment.scheduleId) : undefined;
     if (newAssessment && !schedule) return fail('Select an effective fee schedule for this clearance type.', 400);
 
-    // The payment check reopens: Pending after a new OR number, Needs Correction after a new fee. A check that is not
+    // The payment check reopens: Pending after new OR details, Needs Correction after a new fee. A check that is not
     // Pending must name who decided it (a database rule), and here that is the Admin making the correction.
     if (after.paymentVerification && JSON.stringify(after.paymentVerification) !== JSON.stringify(before.paymentVerification)) {
       const v = after.paymentVerification, decided = v.status !== 'Pending';
@@ -230,9 +233,9 @@ export async function POST(request: Request) {
         checked_by: decided ? me.user.id : null, checked_at: decided ? now : null, notes: v.notes ?? null }, { onConflict: 'application_id' });
       if (error) return fail('Could not reopen the payment check: ' + error.message);
     }
-    if (newOR) {
-      const { error } = await db.from('official_receipts').update({ or_number: newOR }).eq('application_id', row.id);
-      if (error) return fail(error.code === '23505' ? 'This OR number is already in use.' : 'Could not save the OR number: ' + error.message, error.code === '23505' ? 400 : 500);
+    if (newReceipt) {
+      const { error } = await db.from('official_receipts').update({ or_number: newReceipt.orNumber, or_date: newReceipt.orDate, amount_paid: newReceipt.amountPaid }).eq('application_id', row.id);
+      if (error) return fail(error.code === '23505' ? 'This OR number is already in use.' : 'Could not save the OR details: ' + error.message, error.code === '23505' ? 400 : 500);
     }
     if (edit) {
       const { error } = await db.from('applications').update(changes).eq('id', row.id);
