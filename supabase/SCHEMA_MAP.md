@@ -145,6 +145,8 @@ Reading is scoped: an Applicant sees only rows of their own application (and the
 | `TransactionReversion` | `transaction_reversions` (`action`, `reason`, `old_values`, `new_values`, `admin_id`) | |
 | `FeeSchedule` (+ `items`) | `fee_schedules` + `fee_schedule_items` | ids differ (string vs serial); category and classification are names vs ids |
 | status changes | `application_status_history` | the frontend has no separate list; it is in the audit log |
+| `Application.clearanceRevisedFrom` | `applications.clearance_revised_from` (migration 14) | the original issue date of a clearance an Admin correction withdrew; the next clearance gets it as `clearances.revised_from` (REVISED) |
+| (no frontend field) | `sms_sends` + `claim_sms_send()` (migration 15) | sign-in texts of the last two days, for the SMS hook's daily caps; server only, rows deleted after two days |
 
 ## 3. Wiring traps (read before connecting the frontend)
 

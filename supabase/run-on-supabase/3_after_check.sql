@@ -29,6 +29,8 @@ with c as (
   union all select 19, 'storage: 6 rules on uploaded files (read and upload for each bucket)', (select count(*) from pg_policies where schemaname = 'storage' and tablename = 'objects' and policyname like 'storage: %')::text, '6'
   union all select 20, 'new applications get their reference number from the database', (select (pg_get_expr(d.adbin, d.adrelid) like '%next_reference_no()%')::text from pg_attrdef d join pg_attribute a on a.attrelid = d.adrelid and a.attnum = d.adnum where d.adrelid = 'public.applications'::regclass and a.attname = 'reference_no'), 'true'
   union all select 21, 'SAMPLE fee schedules loaded (23 schedules, 138 fee lines)', (select (count(distinct f.id) || ' / ' || count(i.id)) from public.fee_schedules f join public.fee_schedule_items i on i.fee_schedule_id = f.id where f.ordinance_reference like 'SAMPLE%'), '23 / 138'
+  union all select 22, 'applications.clearance_revised_from exists (REVISED date of a withdrawn clearance)', (select count(*) from information_schema.columns where table_schema = 'public' and table_name = 'applications' and column_name = 'clearance_revised_from')::text, '1'
+  union all select 23, 'daily cap on sign-in texts (table sms_sends + function claim_sms_send)', ((select count(*) from information_schema.tables where table_schema = 'public' and table_name = 'sms_sends') + (select count(*) from pg_proc where proname = 'claim_sms_send'))::text, '2'
 )
 select n, item, expected, actual, (expected = actual) as ok from c
 union all

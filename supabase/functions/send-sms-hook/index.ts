@@ -35,12 +35,42 @@
 // echoes them back inside an error reply (see redact()).
 //
 // The OTP wording below should stay matched to the sample message registered
-// with Semaphore for the sender name (submitted 2026-09-23); change one, check
-// the other.
+// with Semaphore for the sender name (approved 2026-11, "BrgySJMR"); change
+// one, check the other.
 
 import { Webhook } from 'https://esm.sh/standardwebhooks@1.0.0';
 
 const SEMAPHORE_API_KEY = Deno.env.get('SEMAPHORE_API_KEY');
+// The sender name Semaphore approved for this account: what the text shows as
+// "from". Without it Semaphore uses its own default name, not ours.
+const SENDER_NAME = 'BrgySJMR';
+
+// Daily caps (rolling 24 hours), checked by public.claim_sms_send (migration
+// 20261106010000_sms_daily_cap.sql) before every text, because every text costs
+// Semaphore credit. Change the numbers here; no migration needed.
+const CODES_PER_NUMBER_PER_DAY = 5;     // stops flooding one phone
+const CODES_PER_PROJECT_PER_DAY = 200;  // stops a bot draining the balance
+
+// A refusal we decided on ourselves (not Semaphore, not a fault).
+class LimitError extends Error {}
+
+// Asks the database whether this text may go, and records it if so. Uses the
+// project URL and service key Supabase gives every Edge Function. If the check
+// itself fails, nothing is sent: a broken limit must not mean "no limit".
+async function claimSend(phone: string) {
+  const url = Deno.env.get('SUPABASE_URL'), key = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+  if (!url || !key) throw new Error('SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY is missing, so the daily limit cannot be checked.');
+  const res = await fetch(`${url}/rest/v1/rpc/claim_sms_send`, {
+    method: 'POST',
+    headers: { apikey: key, Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ p_phone: phone, per_number: CODES_PER_NUMBER_PER_DAY, per_day: CODES_PER_PROJECT_PER_DAY }),
+  });
+  if (!res.ok) throw new Error(`the daily limit could not be checked (HTTP ${res.status}); is migration 15 run?`);
+  const answer = await res.json();
+  if (answer === 'number') throw new LimitError(`This number already got ${CODES_PER_NUMBER_PER_DAY} codes today. Try again tomorrow, or sign in with email.`);
+  if (answer === 'project') throw new LimitError('Sign-in by text is busy today. Please sign in with email, or try again tomorrow.');
+  if (answer !== 'ok') throw new Error('unexpected answer from the daily limit check.');
+}
 
 // Marks "Semaphore itself said no", as opposed to a problem on our side.
 class SemaphoreError extends Error {}
@@ -71,7 +101,7 @@ async function sendViaSemaphore(phone: string, otp: string) {
   const res = await fetch('https://semaphore.co/api/v4/messages', {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({ apikey: SEMAPHORE_API_KEY, number, message }),
+    body: new URLSearchParams({ apikey: SEMAPHORE_API_KEY, number, message, sendername: SENDER_NAME }),
   });
   const body = await res.json().catch(() => null);
   if (!res.ok) {
@@ -113,12 +143,24 @@ Deno.serve(async (req) => {
     return respond(403, 'Signature verification failed.');
   }
 
+  // Philippine mobile numbers only (Semaphore is a Philippine service, and the
+  // portal is for one barangay); anything else is refused before it costs credit.
+  if (!/^\+?639\d{9}$/.test(user.phone)) {
+    console.error('send-sms-hook: refused a number that is not a Philippine mobile number.');
+    return respond(400, 'Only Philippine mobile numbers (09...) can receive sign-in codes.');
+  }
+
   try {
+    await claimSend(user.phone.replace(/^\+/, ''));
     await sendViaSemaphore(user.phone, sms.otp);
     console.log('send-sms-hook: code handed to Semaphore.');
     return respond(200);
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error);
+    if (error instanceof LimitError) {
+      console.warn('send-sms-hook: daily limit reached, nothing sent:', reason);
+      return respond(429, reason);
+    }
     console.error('send-sms-hook:', reason);
     return respond(error instanceof SemaphoreError ? 502 : 500, `Failed to send SMS: ${reason}`);
   }
