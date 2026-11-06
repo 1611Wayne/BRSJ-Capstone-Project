@@ -10,7 +10,7 @@ export function ORLogs() {
  const {state}=usePortal();
  const [search,setSearch]=useState('');
  const records=state.audits.flatMap(log=>{
-  if(!['OR number recorded by staff','OR details submitted for checking','Edit Fields'].includes(log.action))return [];
+    if(!['OR number recorded by staff','OR details recorded by staff','OR details submitted for checking','Edit Fields'].includes(log.action))return [];
   try {
    const value=JSON.parse(log.newValue||'{}');
    if(typeof value.orNumber!=='string'||!value.orNumber)return [];

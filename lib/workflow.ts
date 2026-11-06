@@ -335,26 +335,23 @@ export function transition(state: PortalState, command: Command, now = new Date(
       notify(a.residentId, reference, 'payment_returned', `Please upload your receipt again. Reason: ${command.reason.trim()}`);
     } else {
       requireThat(a.receipt || a.receiptPhoto || a.simulatedPayment, 'Payment evidence is required.');
-      if (a.receipt) {
-        validateOR(a.receipt.orNumber, a.receipt.orDate, a.receipt.amountPaid, a.assessment.total);
-        requireThat(!s.applications.some(x => x.reference !== reference && x.receipt?.orNumber === a.receipt!.orNumber), 'This OR number is already recorded for another request.');
-      } else if (a.simulatedPayment) requireThat(a.simulatedPayment.amount === a.assessment.total, 'Payment amount must match the assessed amount.');
-      else requireThat(a.receiptPhoto && validFile(a.receiptPhoto), 'A valid receipt photo is required.');
-      const orNumber = command.orNumber?.trim();
+      if (a.simulatedPayment) requireThat(a.simulatedPayment.amount === a.assessment.total, 'Payment amount must match the assessed amount.');
+      else if (!a.receipt) requireThat(a.receiptPhoto && validFile(a.receiptPhoto), 'A valid receipt photo is required.');
+      const orNumber = command.orNumber?.trim() ?? '';
       if (!a.simulatedPayment) {
         requireThat(orNumber, 'Enter the OR number from the receipt before verifying payment.');
+        const orDate = command.orDate ?? '';
+        const amountPaid = command.amountPaid ?? '';
+        requireThat(validOrDate(orDate), 'Enter a valid OR date that is not in the future.');
+        validateAmountPaid(amountPaid, a.assessment.total);
         requireThat(!s.applications.some(x => x.reference !== reference && (x.receipt?.orNumber === orNumber || x.paymentVerification?.orNumber === orNumber)), 'This OR number is already recorded for another request.');
-        if (a.receipt) a.receipt = { ...a.receipt, orNumber };
-        else {
-          // Receipt-photo flow (D1): Staff type the OR number, the OR date and the Amount Paid shown on the image (manuscript 3.3.1). The amount
-          // has to equal the assessed total. Recording the full receipt lets the reports, the clearance and the verification page read it.
-          requireThat(validOrDate(command.orDate), 'Enter the OR date shown on the receipt. It cannot be a future date.');
-          validateAmountPaid(command.amountPaid ?? '', a.assessment.total);
-          a.receipt = { orNumber, orDate: command.orDate!, amountPaid: Number(command.amountPaid), recordedAt: now, encodedBy: fullName(actor), ...(a.receiptPhoto ? { receiptPhoto: a.receiptPhoto } : {}) };
-        }
+        const receiptPhoto = a.receipt?.receiptPhoto ?? a.receiptPhoto;
+        a.receipt = { orNumber, orDate, amountPaid: Number(amountPaid), recordedAt: now, encodedBy: fullName(actor), ...(receiptPhoto ? { receiptPhoto } : {}) };
       }
       a.paymentVerification = { ...a.paymentVerification, status: 'Verified', checkedBy: fullName(actor), checkedAt: now, ...(orNumber && !a.simulatedPayment ? { orNumber } : {}) };
-      if (orNumber && !a.simulatedPayment) log('OR number recorded by staff', reference, JSON.stringify({ orNumber: original.paymentVerification?.orNumber || original.receipt?.orNumber || '' }), JSON.stringify({ orNumber, ...(!original.receipt && a.receipt ? { orDate: a.receipt.orDate, amountPaid: a.receipt.amountPaid } : {}) }));
+      if (orNumber && !a.simulatedPayment) log('OR details recorded by staff', reference,
+        JSON.stringify({ orNumber: original.receipt?.orNumber || original.paymentVerification?.orNumber || '', orDate: original.receipt?.orDate || '', amountPaid: original.receipt?.amountPaid ?? '' }),
+        JSON.stringify({ orNumber, orDate: a.receipt!.orDate, amountPaid: a.receipt!.amountPaid }));
       a.clearance = { issueDate: today(), generatedAt: now, ...(a.clearanceRevisedFrom ? { revisedFrom: a.clearanceRevisedFrom } : {}) }; a.status = 'Ready for Download';
       log('Payment verified by staff', reference, original.status, a.status); log('Clearance generated', reference, original.status, a.status);
       notify(a.residentId, reference, 'clearance_ready', `Your clearance is ready. Claim the printed original, with the barangay’s official stamp, at the monitoring office. Bring your reference number (${reference}). Your digital copy is available as a backup.`);

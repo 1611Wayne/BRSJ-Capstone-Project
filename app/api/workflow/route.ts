@@ -151,6 +151,7 @@ export async function POST(request: Request) {
   // ---- the Staff check
   if (command.type === 'verifyPayment') {
     if (after.receipt && !after.simulatedPayment) {
+      if (!after.receipt.orNumber || !after.receipt.orDate || !Number.isFinite(after.receipt.amountPaid)) return fail('Complete the OR number, date, and amount paid before verifying.', 400);
       // The OR number must be unique across ALL requests; the rules above only saw this one, so the database decides.
       const { data: taken } = await db.from('official_receipts').select('application_id').eq('or_number', after.receipt.orNumber).neq('application_id', row.id).limit(1);
       if (taken?.length) return fail('This OR number is already recorded for another request.', 400);
