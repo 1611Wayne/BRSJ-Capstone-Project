@@ -111,7 +111,7 @@ test('feedback summary handles empty feedback and limits word results with stabl
  assert.equal(feedbackSummary(invalid).total,0);
 });
 const assess = s => transition(role(s,'staff-maria'),{type:'assess',reference:ref,category:'Sari-Sari Store',classification:'Medium'},at);
-const or = s => transition(role(s,'resident-maria'),{type:'or',reference:ref,number:'TR-2026-54321',date:'2026-09-06',amount:'600.00'},at);
+const or = s => transition(role(s,'staff-maria'),{type:'or',reference:ref,number:'TR-2026-54321',date:'2026-09-06',amount:'600.00'},at);
 // Updated 2026-10-05: the paper's Scope (Ch. 1.4) lists 13, but the user confirmed directly with Barangay
 // San Jose office staff that only 9 are real; Ambulant and Lessor (Paupahan) were folded into Business
 // Clearance, Film Shooting and Products Promo don't exist at this barangay. See CHANGES.md for the full note.
@@ -162,7 +162,8 @@ test('role separation blocks assessment, fees, and another residents OR entry',(
  const s=state();
  assert.throws(()=>transition(s,{type:'assess',reference:ref,category:'Bakery',classification:'Small'}),/Only Staff/);
  assert.throws(()=>transition(s,{type:'fees',schedule:mockFeeSchedules[0]}),/Only Admin/);
- assert.throws(()=>transition(s,{type:'or',reference:'SJ-2026-000124',number:'TR-2026-99999',date:'2026-09-06',amount:'550.00'}),/another resident/);
+ for(const actor of ['resident-maria','admin'])assert.throws(()=>transition(role(assess(state()),actor),{type:'or',reference:ref,number:'TR-2026-99999',date:'2026-09-06',amount:'600.00'}),/Only Staff can record OR details/);
+ assert.equal(app(or(assess(state()))).receipt.encodedBy,'Maria Staff');
 });
 test('assessment requires verified documents and automatically uses configured fees',()=>{
  let s=state('staff-maria');app(s).documents[0].status='Missing';
@@ -187,7 +188,7 @@ test('OR gate blocks premature, invalid, future, mismatched, duplicate and non-c
  ['TR-2026-54321','2026-09-06','500',600],['TR-2026-54321','2026-09-06','6e2',600]
  ])assert.throws(()=>validateOR(...args));
  assert.doesNotThrow(()=>validateOR('TR-2026-54321','2026-09-06','600.00',600));
- const s=role(assess(state()),'resident-maria');
+ const s=role(assess(state()),'staff-maria');
  assert.throws(()=>transition(s,{type:'or',reference:ref,number:'TR-2026-12342',date:'2026-09-06',amount:'600.00'}),/already recorded/);
 });
 test('download precedes confirmation; closure timestamps and feedback are recorded',()=>{
@@ -256,7 +257,6 @@ test('generated PDF has valid object offsets, prototype watermark and a real QR 
 test('all payment methods require staff verification and block release beforehand',()=>{
  const photo={requirement:'Official Receipt Photo',name:'receipt.png',type:'image/png',size:1024,status:'Needs Replacement',url:'data:image/png;base64,example'};
  for(const command of [
-  {type:'or',reference:ref,number:'TR-2026-54321',date:'2026-09-06',amount:'600.00'},
   {type:'receiptPhoto',reference:ref,photo},
   {type:'onlinePayment',reference:ref,method:'GCash',amount:600}
  ]){

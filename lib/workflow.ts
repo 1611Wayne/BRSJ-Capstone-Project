@@ -294,7 +294,7 @@ export function transition(state: PortalState, command: Command, now = new Date(
     log('Correction request resolved', reference, openRequest.message, a.status === original.status ? 'Resolved' : `Resolved; ${original.status} -> ${a.status}`, note || '');
   }
   if (command.type === 'or') {
-    requireThat(actor.role === 'resident' || actor.role === 'staff', 'Only Residents or Staff can record OR details.');
+    requireThat(actor.role === 'staff', 'Only Staff can record OR details.');
     requireThat(a.status === 'Awaiting OR' && a.assessment, 'Staff must complete assessment before OR entry.');
     validateOR(command.number, command.date, command.amount, a.assessment.total);
     requireThat(!s.applications.some(x => x.reference !== reference && x.receipt?.orNumber === command.number), 'This OR number is already recorded for another request.');
