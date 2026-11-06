@@ -1,19 +1,21 @@
 import { NextResponse } from 'next/server';
 import type { Command } from '@/lib/workflow';
 import { transition } from '@/lib/workflow';
-import type { PortalState } from '@/types';
+import type { Assessment, PortalState } from '@/types';
 import { supabaseAdmin } from '@/lib/supabase/server';
 import { currentUser } from '@/lib/server/currentUser';
 import { APPLICATION_SELECT, applicantColumns, toApplication } from '@/lib/server/applicationRows';
 import { loadFeeSchedules } from '@/lib/server/feeSchedules';
 import { loadUnreadNotifications, persistAudits, persistNotifications } from '@/lib/server/persist';
 
+type Schedule = Awaited<ReturnType<typeof loadFeeSchedules>>[number];
+
 export const dynamic = 'force-dynamic';
 
 // The workflow steps the database can already save. Each one runs the prototype's own rules (lib/workflow.ts) as the
 // signed-in person, on the request as it is in the database, and then saves exactly what changed.
 const SUPPORTED = new Set<Command['type']>(['review', 'assess', 'reject', 'requestCorrection', 'editApplication', 'resolveCorrection', 'replaceDocument',
-  'receiptPhoto', 'onlinePayment', 'verifyPayment', 'returnPayment', 'printClearance', 'download', 'confirm', 'feedback']);
+  'receiptPhoto', 'onlinePayment', 'verifyPayment', 'returnPayment', 'printClearance', 'download', 'confirm', 'feedback', 'revert']);
 const RECEIPTS = 'receipt-photos';
 
 // Checks that a file the browser uploaded is in this request's own folder of a bucket; returns its stored size and type.
@@ -29,21 +31,42 @@ async function storedFile(db: ReturnType<typeof supabaseAdmin>, bucket: string, 
 }
 const BUCKET = 'application-documents';
 const fail = (message: string, status = 500) => NextResponse.json({ error: message }, { status });
+const parsed = (value?: string) => { if (!value) return null; try { return JSON.parse(value); } catch { return value; } };
+
+// Saves an assessment and its fee lines (Staff assessment, or an Admin fee correction). Amounts may be adjusted, so the
+// schedule's own amount is kept beside each line.
+async function saveAssessment(db: ReturnType<typeof supabaseAdmin>, applicationId: number, assessment: Assessment, schedule: Schedule, by: string, at: string) {
+  const { data: saved, error } = await db.from('assessments').upsert({
+    application_id: applicationId, business_category_id: schedule.categoryId, classification_id: schedule.classificationId,
+    fee_schedule_id: Number(schedule.id), assessed_by: by, assessed_at: at, total_amount: assessment.total,
+  }, { onConflict: 'application_id' }).select('id').single();
+  if (error || !saved) return 'Could not save the assessment: ' + (error?.message ?? 'no row');
+  await db.from('assessment_items').delete().eq('assessment_id', saved.id);
+  const { error: itemsError } = await db.from('assessment_items').insert(assessment.items.map((item, i) => ({
+    assessment_id: saved.id, fee_component_name: item.name, amount: item.amount,
+    scheduled_amount: schedule.items[i]?.amount ?? null, ordinance_reference: schedule.ordinance,
+  })));
+  return itemsError ? 'Could not save the fee lines: ' + itemsError.message : null;
+}
 
 // POST /api/workflow  { command }: one workflow step on one request.
 export async function POST(request: Request) {
   const me = await currentUser(); if ('error' in me) return me.error;
   let command: Command;
   try { ({ command } = await request.json()); } catch { return fail('The request could not be read.', 400); }
-  if (!command || !SUPPORTED.has(command.type) || !('reference' in command)) return fail('This action is not connected to the database yet.', 400);
+  if (!command || !SUPPORTED.has(command.type)) return fail('This action is not connected to the database yet.', 400);
+  const reference = command.type === 'revert' ? command.data?.reference : 'reference' in command ? command.reference : undefined;
+  if (!reference) return fail('This action is not connected to the database yet.', 400);
 
   const db = supabaseAdmin(), now = new Date().toISOString();
-  const { data: row } = await db.from('applications').select(APPLICATION_SELECT).eq('reference_no', command.reference).maybeSingle();
+  const { data: row } = await db.from('applications').select(APPLICATION_SELECT).eq('reference_no', reference).maybeSingle();
   if (!row) return fail('This request was not found.', 404);
   if (me.user.role === 'resident' && row.resident_id !== me.user.id) return fail('This request belongs to another resident.', 403);
 
   const before = toApplication(row);
-  const schedules = command.type === 'assess' ? await loadFeeSchedules(db, before.clearanceType).catch(() => null) : [];
+  // The rules pick fee schedules by their database id: Staff assessment, or an Admin fee correction (maybe for a new type).
+  const scheduleType = command.type === 'assess' ? before.clearanceType : command.type === 'revert' && command.data.feeAssessment ? command.data.clearanceType ?? before.clearanceType : undefined;
+  const schedules = scheduleType ? await loadFeeSchedules(db, scheduleType).catch(() => null) : [];
   if (!schedules) return fail('Could not load the fee schedules.');
   const unread = await loadUnreadNotifications(db, row.resident_id, row.id, row.reference_no);
   const state: PortalState = { users: [me.user], applications: [before], schedules, audits: [], notifications: unread, currentUserId: me.user.id };
@@ -65,17 +88,8 @@ export async function POST(request: Request) {
   if (command.type === 'assess' && after.assessment) {
     // The schedule the rules picked; its database id is the prototype schedule id. Amounts may be Staff-adjusted.
     const schedule = schedules.find(s => s.id === after.assessment!.scheduleId)!;
-    const { data: saved, error } = await db.from('assessments').upsert({
-      application_id: row.id, business_category_id: schedule.categoryId, classification_id: schedule.classificationId,
-      fee_schedule_id: Number(schedule.id), assessed_by: me.user.id, assessed_at: now, total_amount: after.assessment.total,
-    }, { onConflict: 'application_id' }).select('id').single();
-    if (error || !saved) return fail('Could not save the assessment: ' + (error?.message ?? 'no row'));
-    await db.from('assessment_items').delete().eq('assessment_id', saved.id);
-    const { error: itemsError } = await db.from('assessment_items').insert(after.assessment.items.map((item, i) => ({
-      assessment_id: saved.id, fee_component_name: item.name, amount: item.amount,
-      scheduled_amount: schedule.items[i]?.amount ?? null, ordinance_reference: schedule.ordinance,
-    })));
-    if (itemsError) return fail('Could not save the fee lines: ' + itemsError.message);
+    const problem = await saveAssessment(db, row.id, after.assessment, schedule, me.user.id, now);
+    if (problem) return fail(problem);
   }
 
   if (command.type === 'requestCorrection') {
@@ -159,7 +173,8 @@ export async function POST(request: Request) {
     }
     const { error: vError } = await db.from('payment_verifications').update({ status: 'Verified', checked_by: me.user.id, checked_at: now, notes: null }).eq('application_id', row.id);
     if (vError) return fail('Could not save the payment check: ' + vError.message);
-    const { error: cError } = await db.from('clearances').upsert({ application_id: row.id, issue_date: after.clearance!.issueDate, generated_at: now, downloaded_at: null }, { onConflict: 'application_id' });
+    // After an Admin correction withdrew the clearance, the new one is REVISED and keeps the original issue date.
+    const { error: cError } = await db.from('clearances').upsert({ application_id: row.id, issue_date: after.clearance!.issueDate, generated_at: now, downloaded_at: null, revised_from: after.clearance!.revisedFrom ?? null }, { onConflict: 'application_id' });
     if (cError) return fail('Could not create the clearance: ' + cError.message);
   }
   if (command.type === 'returnPayment') {
@@ -184,6 +199,64 @@ export async function POST(request: Request) {
     if (error) return fail('Could not save your feedback: ' + error.message);
   }
   // printClearance changes nothing on the record; its audit entry is written below.
+
+  // ---- Admin correction (Transaction Reversion). Void and Mark Under Review change only the status (saved below).
+  // Everything that can refuse is checked first, and nothing is removed until the changes themselves are saved, so a
+  // refusal leaves the request as it was.
+  if (command.type === 'revert') {
+    const edit = command.data.action === 'Edit Fields';
+    const changes: Record<string, unknown> = edit ? { applicant_name: after.applicant, business_name: after.businessName,
+      business_subcategory: after.businessSubcategory ?? null, clearance_revised_from: after.clearanceRevisedFrom ?? null } : {};
+    if (edit && after.clearanceType !== before.clearanceType) {
+      const { data: type } = await db.from('clearance_types').select('id').eq('name', after.clearanceType).eq('active', true).maybeSingle();
+      if (!type) return fail('Choose a supported clearance type.', 400);
+      changes.clearance_type_id = type.id;
+    }
+    // The OR number must be unique across ALL requests; the rules above only saw this one, so the database decides.
+    const newOR = edit && after.receipt && after.receipt.orNumber !== before.receipt?.orNumber ? after.receipt.orNumber : null;
+    if (newOR) {
+      const { data: taken } = await db.from('official_receipts').select('application_id').eq('or_number', newOR).neq('application_id', row.id).limit(1);
+      if (taken?.length) return fail('This OR number is already in use.', 400);
+    }
+    const newAssessment = edit && after.assessment && JSON.stringify(after.assessment) !== JSON.stringify(before.assessment) ? after.assessment : null;
+    const schedule = newAssessment ? schedules.find(s => s.id === newAssessment.scheduleId) : undefined;
+    if (newAssessment && !schedule) return fail('Select an effective fee schedule for this clearance type.', 400);
+
+    // The payment check reopens: Pending after a new OR number, Needs Correction after a new fee. A check that is not
+    // Pending must name who decided it (a database rule), and here that is the Admin making the correction.
+    if (after.paymentVerification && JSON.stringify(after.paymentVerification) !== JSON.stringify(before.paymentVerification)) {
+      const v = after.paymentVerification, decided = v.status !== 'Pending';
+      const { error } = await db.from('payment_verifications').upsert({ application_id: row.id, status: v.status, submitted_at: v.submittedAt,
+        checked_by: decided ? me.user.id : null, checked_at: decided ? now : null, notes: v.notes ?? null }, { onConflict: 'application_id' });
+      if (error) return fail('Could not reopen the payment check: ' + error.message);
+    }
+    if (newOR) {
+      const { error } = await db.from('official_receipts').update({ or_number: newOR }).eq('application_id', row.id);
+      if (error) return fail(error.code === '23505' ? 'This OR number is already in use.' : 'Could not save the OR number: ' + error.message, error.code === '23505' ? 400 : 500);
+    }
+    if (edit) {
+      const { error } = await db.from('applications').update(changes).eq('id', row.id);
+      if (error) return fail('Could not save the correction: ' + error.message);
+    }
+    if (newAssessment) {
+      const problem = await saveAssessment(db, row.id, newAssessment, schedule!, me.user.id, now);
+      if (problem) return fail(problem);
+    }
+    // What the correction withdrew or marked on the release side.
+    if (before.clearance && !after.clearance) await db.from('clearances').delete().eq('application_id', row.id);
+    else if (after.clearance && (after.clearance.revisedFrom !== before.clearance?.revisedFrom || !!after.clearance.downloadedAt !== !!before.clearance?.downloadedAt)) {
+      const { error } = await db.from('clearances').update({ revised_from: after.clearance.revisedFrom ?? null, downloaded_at: after.clearance.downloadedAt ?? null }).eq('application_id', row.id);
+      if (error) return fail('Could not mark the clearance as revised: ' + error.message);
+    }
+    if (before.confirmation && !after.confirmation) await db.from('receipt_confirmations').delete().eq('application_id', row.id);
+    if (before.feedback && !after.feedback) await db.from('feedback').delete().eq('application_id', row.id);
+    if (before.simulatedPayment && !after.simulatedPayment) await db.from('simulated_payments').delete().eq('application_id', row.id);
+    // The Reversion Audit Report's own record, besides the audit log entry written below.
+    const entry = next.audits.find(a => a.reversion);
+    const { error } = await db.from('transaction_reversions').insert({ application_id: row.id, admin_id: me.user.id, action: command.data.action,
+      reason: command.data.reason.trim(), old_values: parsed(entry?.oldValue), new_values: parsed(entry?.newValue) });
+    if (error) return fail('Could not record the reversion: ' + error.message);
+  }
 
   // Status (and, for a rejection, the reason and who rejected), with the status history.
   if (after.status !== before.status) {

@@ -1,11 +1,23 @@
-import type { AppNotification, Application, ApplicationInput, AuditLog, UploadedDocument } from '@/types';
+import type { AppNotification, Application, ApplicationInput, AuditLog, FeeSchedule, UploadedDocument } from '@/types';
 import { supabaseBrowser } from './browser';
 
-export async function loadAudits(reference?: string): Promise<AuditLog[]> {
-  const response = await fetch('/api/audits' + (reference ? '?reference=' + encodeURIComponent(reference) : ''), { cache: 'no-store' });
+// One transaction's log (a reference), or Admin's filtered history: since / until (ISO times), reversions only, the newest N.
+export type AuditQuery = { since?: string; until?: string; reversion?: boolean; limit?: number };
+export async function loadAudits(query?: string | AuditQuery): Promise<AuditLog[]> {
+  const q = typeof query === 'string' ? { reference: query } : query ?? {};
+  const params = new URLSearchParams(Object.entries(q).flatMap(([key, value]) => value === undefined || value === false ? [] : [[key, value === true ? '1' : String(value)]]));
+  const response = await fetch('/api/audits' + (params.toString() ? '?' + params : ''), { cache: 'no-store' });
   const json = await response.json().catch(() => ({}));
   if (!response.ok) throw Object.assign(new Error(json.error || 'Transaction logs could not be loaded.'), { status: response.status });
   return json.audits as AuditLog[];
+}
+
+// Every fee schedule from the database, for Staff and Admin screens (their ids are the database ids).
+export async function loadDbFeeSchedules(): Promise<FeeSchedule[]> {
+  const response = await fetch('/api/fee-schedules', { cache: 'no-store' });
+  const json = await response.json().catch(() => ({}));
+  if (!response.ok) throw Object.assign(new Error(json.error || 'The fee schedules could not be loaded.'), { status: response.status });
+  return json.schedules as FeeSchedule[];
 }
 
 const safeFileName = (name: string) => name.replace(/[^A-Za-z0-9._-]+/g, '_').slice(-80);

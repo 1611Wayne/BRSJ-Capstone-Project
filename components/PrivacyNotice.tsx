@@ -8,7 +8,7 @@ const list = 'list-disc pl-5 mt-2 space-y-1';
 export function PrivacyNotice() {
   return <section id="privacy" className="content-card p-6 mt-6">
     <h2 className="text-xl font-bold">Privacy Notice</h2>
-    <p className="text-xs text-slate-500 mt-1">Last updated: 2 November 2026</p>
+    <p className="text-xs text-slate-500 mt-1">Last updated: 6 November 2026</p>
     {!useSupabaseAuth && <p className="mt-3 border bg-slate-50 p-3 text-sm">This copy of the portal is a demonstration. It uses fictional records that stay in this browser tab, and closing the tab clears them. Use sample information only.</p>}
     <p className="mt-3">Barangay San Jose, Rodriguez, Rizal runs this portal and is responsible for your personal information. This notice explains what we collect, why we need it, who can see it, and your rights under the Data Privacy Act of 2012 (Republic Act No. 10173).</p>
 
@@ -39,7 +39,7 @@ export function PrivacyNotice() {
     <h3 className={heading}>Who can see it</h3>
     <ul className={list}>
       <li><strong>Barangay Staff and Admin</strong> who handle clearances.</li>
-      <li><strong>Service providers that run this portal:</strong> Supabase, which stores our records and files in Sydney, Australia, and Vercel, which hosts the website. Your information is therefore stored outside the Philippines. The barangay remains responsible for it.</li>
+      <li><strong>Service providers that run this portal:</strong> Supabase, which stores our records and files in Sydney, Australia; Vercel, which hosts the website; Semaphore, a Philippine text-message service that receives your mobile number only to send you a sign-in code when you ask for one; and Cloudflare, which checks that sign-ins and registrations come from a person and not an automated program, using technical details of your browser and connection (not your account). Your information is therefore stored outside the Philippines. The barangay remains responsible for it.</li>
       <li><strong>Anyone checking a clearance,</strong> such as a bank or employer, through its QR code or reference number. They see only the reference number, clearance type, issue date and status, and not your name or address.</li>
       <li><strong>The Municipal Treasury,</strong> only through the Pre-Assessment Slip you bring there to pay.</li>
       <li><strong>Those who receive the barangay&apos;s monthly reports:</strong> its administration and the banks it reports to.</li>

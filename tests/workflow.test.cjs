@@ -806,3 +806,23 @@ test('audit endpoint reads every page for Admin and scopes Staff transaction his
  response=await auditEndpoint.GET(new Request('http://localhost/api/audits?reference='+ref));body=await response.json();
  assert.equal(response.status,200);assert.equal(body.audits.length,1000);assert.ok(body.audits.every(row=>row.reference===ref));
 });
+
+test('Admin log loads collect database entries newest first and drop sample ones; schedules load only for Staff and Admin',()=>{
+ const entry=(id,timestamp,extra={})=>({id,timestamp,user:'Admin One',role:'admin',action:'Edit Fields',reference:'SJ-2026-000001',reversion:true,...extra});
+ let s={...state('admin'),audits:[entry('audit-sample','2026-01-01T00:00:00.000Z')]};
+ s=transition(s,{type:'loadAudits',audits:[entry('db-1','2026-11-01T00:00:00.000Z'),entry('db-2','2026-11-02T00:00:00.000Z')]});
+ assert.deepEqual(s.audits.map(a=>a.id),['db-2','db-1']);
+ s=transition(s,{type:'loadAudits',audits:[entry('db-3','2026-10-01T00:00:00.000Z'),entry('db-2','2026-11-02T00:00:00.000Z',{reason:'reloaded'})]});
+ assert.deepEqual(s.audits.map(a=>a.id),['db-2','db-1','db-3']);assert.equal(s.audits[0].reason,'reloaded');
+ const schedules=[{...mockFeeSchedules[0],id:'42'}];
+ assert.deepEqual(transition(state('staff-maria'),{type:'loadSchedules',schedules}).schedules.map(x=>x.id),['42']);
+ assert.deepEqual(transition(state('admin'),{type:'loadSchedules',schedules}).schedules.map(x=>x.id),['42']);
+ assert.throws(()=>transition(state(),{type:'loadSchedules',schedules}),/Only Staff and Admin/);
+});
+
+test('one mobile number in its three spellings maps to the same forms; other numbers are refused',()=>{
+ const { mobileForms } = require('../lib/phone.ts');
+ const forms={local:'09171234567',international:'+639171234567',stored:'639171234567'};
+ for(const input of ['09171234567','+639171234567','639171234567','0917 123 4567','0917-123-4567'])assert.deepEqual(mobileForms(input),forms);
+ for(const input of ['','08171234567','0917123456','091712345678','+6309171234567','02 8123 4567','abc'])assert.equal(mobileForms(input),null);
+});

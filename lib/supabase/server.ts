@@ -16,6 +16,10 @@ export function supabaseAdmin(): SupabaseClient {
   if (!supabaseConfigured()) throw new Error('Supabase is not configured: fill in .env.local (see .env.example).');
   admin ??= createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, {
     auth: { persistSession: false, autoRefreshToken: false },
+    // Next.js keeps fetch() answers in its Data Cache unless told not to. A route that reads no cookies (the public
+    // verify route) then answered from a cached database read for a year, e.g. "Valid" for a voided clearance.
+    // Every database read must be fresh.
+    global: { fetch: (input, init) => fetch(input, { ...init, cache: 'no-store' }) },
   });
   return admin;
 }

@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import type { User } from '@/types';
 import { useSupabaseAuth } from '@/lib/supabase/config';
 import { supabaseForRequest } from '@/lib/supabase/session';
+import { needsProfile } from '@/lib/server/currentUser';
 
 // GET /api/me: the signed-in person's own profile, with the role the DATABASE gives them (resident, staff, admin).
 // Read as that user, so the access rules apply: a person can only ever read their own profile here.
@@ -14,7 +15,7 @@ export async function GET() {
   if (!user) return NextResponse.json({ error: 'You are not signed in.' }, { status: 401 });
   const { data: p, error } = await supabase
     .from('profiles')
-    .select('id, first_name, last_name, email, contact_number, address, role, status, created_at, privacy_consent_at')
+    .select('id, first_name, last_name, email, contact_number, address, role, status, created_at, privacy_consent_at, valid_id_path')
     .eq('id', user.id)
     .single();
   if (error || !p) return NextResponse.json({ error: 'Your account has no profile yet. Ask the barangay office.' }, { status: 404 });
@@ -23,6 +24,7 @@ export async function GET() {
     id: p.id, firstName: p.first_name, lastName: p.last_name, email: p.email ?? user.email ?? '', password: '',
     role: p.role, status: p.status, createdAt: p.created_at, contact: p.contact_number ?? '', address: p.address ?? '',
     ...(p.privacy_consent_at ? { privacyConsentAt: p.privacy_consent_at } : {}),
+    ...(needsProfile(p) ? { needsProfile: true } : {}), ...(p.valid_id_path ? { hasValidId: true } : {}),
   };
   return NextResponse.json({ user: me });
 }

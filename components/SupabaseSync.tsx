@@ -3,10 +3,10 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { usePortal } from './PortalProvider';
 import { isRealAccount, useSupabaseAuth } from '@/lib/supabase/config';
-import { loadAudits, loadMyApplications, loadMyNotifications } from '@/lib/supabase/applications';
+import { loadDbFeeSchedules, loadMyApplications, loadMyNotifications } from '@/lib/supabase/applications';
 
 // In real sign-in mode, loads requests from the database into the screens once per page load: an Applicant's own
-// requests, or every submitted request for Staff and Admin. If the sign-in has expired, it signs the person out of the
+// requests, or every submitted request for Staff and Admin (and the fee schedules from the database). If the sign-in has expired, it signs the person out of the
 // screens and sends them to the login page. Does nothing for the prototype's sample accounts or in prototype mode.
 export function SupabaseSync() {
   const { user, act, ready } = usePortal();
@@ -15,12 +15,13 @@ export function SupabaseSync() {
   useEffect(() => {
     if (!useSupabaseAuth || !ready || !user || !isRealAccount(user.id)) return;
     let cancelled = false;
+    const requestedAt = Date.now();   // clicks saved after this moment are newer than what this reload brings
     loadMyApplications()
       .then(async applications => {
         if (cancelled) return;
-        act({ type: 'loadApplications', applications, ...(user.role === 'resident' ? { replaceOwn: true } : { replaceAll: true }) });
+        act({ type: 'loadApplications', applications, requestedAt, ...(user.role === 'resident' ? { replaceOwn: true } : { replaceAll: true }) });
         if (user.role === 'resident') { const notifications = await loadMyNotifications(); if (!cancelled) act({ type: 'loadNotifications', notifications }); }
-        if (user.role === 'admin') { const audits = await loadAudits(); if (!cancelled) act({ type: 'loadAudits', audits }); }
+        if (user.role !== 'resident') { const schedules = await loadDbFeeSchedules(); if (!cancelled) act({ type: 'loadSchedules', schedules }); }
       })
       .catch(e => {
         if (cancelled) return;

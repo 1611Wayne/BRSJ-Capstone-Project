@@ -15,7 +15,7 @@ const Context = createContext<{ state: PortalState; user?: User; ready: boolean;
 // updates with the same rules, the step is sent to the server, which checks it again and saves it. If the server
 // refuses, a banner says why and the saved requests are loaded again, so the screen never shows unsaved changes.
 const SAVED_ON_SERVER = new Set<Command['type']>(['review', 'assess', 'reject', 'readNotifications', 'requestCorrection', 'editApplication', 'resolveCorrection', 'replaceDocument',
-  'receiptPhoto', 'onlinePayment', 'verifyPayment', 'returnPayment', 'printClearance', 'download', 'confirm', 'feedback']);
+  'receiptPhoto', 'onlinePayment', 'verifyPayment', 'returnPayment', 'printClearance', 'download', 'confirm', 'feedback', 'revert']);
 
 export function PortalProvider({children}:{children:React.ReactNode}) {
   const [state,setState] = useState<PortalState>(initial); const [ready,setReady] = useState(false); const latest = useRef(state);
@@ -32,10 +32,23 @@ export function PortalProvider({children}:{children:React.ReactNode}) {
   // when no newer save for that request is still waiting, so a slow answer never undoes a newer click.
   const queue = useRef<Promise<void>>(Promise.resolve());
   const waiting = useRef(new Map<string, number>());
+  const changedAt = useRef(new Map<string, number>());   // when this screen last changed a request it saves on the server
   function act(command: Command) {
+    // A reload from the database (SupabaseSync) is asked for when the page opens and can be answered after clicks on a
+    // request were already saved. Its copy then predates those clicks: it would undo them on screen, and the next click
+    // would save the old values (Staff's Mark Verified going back to Pending Review; seen in the audit log of
+    // SJ-2026-000058). A request this screen changed after the reload was asked for, or is still saving, keeps the
+    // screen's copy; the saves' own answers keep it in step with the database.
+    if (command.type === 'loadApplications') {
+      const asked = command.requestedAt ?? Infinity;
+      const busy = new Set(Array.from(waiting.current).filter(([, n]) => n > 0).map(([key]) => key));
+      changedAt.current.forEach((at, key) => { if (at >= asked) busy.add(key); });
+      if (busy.size) command = { ...command, applications: command.applications.map(a => busy.has(a.reference) ? latest.current.applications.find(x => x.reference === a.reference) ?? a : a) };
+    }
     const next = transition(latest.current, command); commit(next);
     if (useSupabaseAuth && SAVED_ON_SERVER.has(command.type) && isRealAccount(latest.current.currentUserId)) {
-      const key = ('reference' in command && command.reference) || '*';
+      const key = ('reference' in command && command.reference) || (command.type === 'revert' && command.data.reference) || '*';
+      changedAt.current.set(key, Date.now());
       waiting.current.set(key, (waiting.current.get(key) ?? 0) + 1);
       queue.current = queue.current.then(() => saveOnServer(command, key));
     }

@@ -63,9 +63,10 @@ export const correctableStatuses: ApplicationStatus[] = ['Pending Assessment', '
 export type Command =
   | { type: 'login'; email: string; password: string } | { type: 'logout' }
   | { type: 'sessionUser'; user: User }
-  | { type: 'loadApplications'; applications: Application[]; replaceOwn?: boolean; replaceAll?: boolean }
+  | { type: 'loadApplications'; applications: Application[]; replaceOwn?: boolean; replaceAll?: boolean; requestedAt?: number }   // requestedAt: when a reload asked the server (see PortalProvider)
   | { type: 'loadNotifications'; notifications: AppNotification[] }
   | { type: 'loadAudits'; audits: AuditLog[]; reference?: string }
+  | { type: 'loadSchedules'; schedules: FeeSchedule[] }
   | { type: 'register'; user: User }
   | { type: 'saveApplication'; application: ApplicationInput; reference?: string; draft: boolean }
   | { type: 'review'; reference: string; documents: UploadedDocument[] }
@@ -125,7 +126,18 @@ export function transition(state: PortalState, command: Command, now = new Date(
   if (command.type === 'loadAudits') {
     requireThat(actor.role === 'admin' || (actor.role === 'staff' && command.reference), 'Only Admin can load all logs; Staff must select a transaction.');
     requireThat(!command.reference || command.audits.every(a => a.reference === command.reference), 'These logs belong to another transaction.');
-    s.audits = [...command.audits, ...(command.reference ? s.audits.filter(a => a.reference !== command.reference) : [])]; return s;
+    if (command.reference) { s.audits = [...command.audits, ...s.audits.filter(a => a.reference !== command.reference)]; return s; }
+    // Admin screens each load the slice they show (a date range, reversions, the newest entries). Database entries
+    // collect across loads; sample and on-screen entries are dropped, the database has the saved ones. Newest first.
+    const incoming = new Set(command.audits.map(a => a.id));
+    s.audits = [...command.audits, ...s.audits.filter(a => a.id.startsWith('db-') && !incoming.has(a.id))]
+      .sort((x, y) => Date.parse(y.timestamp) - Date.parse(x.timestamp) || Number(y.id.slice(3)) - Number(x.id.slice(3)));
+    return s;
+  }
+  // The fee schedules from the database replace the sample ones for Staff and Admin (their ids are database ids).
+  if (command.type === 'loadSchedules') {
+    requireThat(actor.role === 'staff' || actor.role === 'admin', 'Only Staff and Admin load the fee schedules.');
+    s.schedules = [...command.schedules]; return s;
   }
   // Records read from the database (Supabase mode) are put into the screens' state. replaceOwn swaps in the full list
   // of the signed-in Applicant's own requests; otherwise each record is added or replaced by its reference.

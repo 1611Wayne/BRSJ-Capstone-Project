@@ -4,7 +4,7 @@ import type { Application, ApplicationInput, UploadedDocument } from '@/types';
 // Column list for reading an application with its clearance type name and documents (see SCHEMA_MAP.md, section 2).
 export const APPLICATION_SELECT = `id, clearance_type_id, reference_no, resident_id, staff_encoder_id, applicant_name, address, contact_number, purpose, date_requested, created_at, status,
   business_name, business_location, date_initial_operation, application_type, ownership_type, property_owner_name, business_contact,
-  source, certified, has_employees, employee_count, business_subcategory, rejection_reason, rejected_at,
+  source, certified, has_employees, employee_count, business_subcategory, rejection_reason, rejected_at, clearance_revised_from,
   clearance_types ( name ),
   rejecter:profiles!applications_rejected_by_fkey ( first_name, last_name ),
   encoder:profiles!applications_staff_encoder_id_fkey ( first_name, last_name ),
@@ -43,6 +43,7 @@ export function toApplication(r: Row): Application {
     ...(r.has_employees === null || r.has_employees === undefined ? {} : { hasEmployees: r.has_employees }),
     ...(r.employee_count ? { employeeCount: r.employee_count } : {}),
     ...(r.business_subcategory ? { businessSubcategory: r.business_subcategory } : {}),
+    ...(r.clearance_revised_from ? { clearanceRevisedFrom: r.clearance_revised_from } : {}),
     ...(r.rejection_reason ? { rejection: { reason: r.rejection_reason, rejectedBy: name(one(r.rejecter)), timestamp: r.rejected_at } } : {}),
     ...(one(r.assessments) ? { assessment: toAssessment(one(r.assessments)!) } : {}),
     ...paymentAndRelease(r),

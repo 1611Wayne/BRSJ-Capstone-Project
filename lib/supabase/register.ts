@@ -1,7 +1,7 @@
 import type { UploadedDocument, User } from '@/types';
 import { supabaseBrowser } from './browser';
 
-export interface RegistrationInput { firstName: string; lastName: string; address: string; contact: string; email: string; password: string; validId: UploadedDocument }
+export interface RegistrationInput { firstName: string; lastName: string; address: string; contact: string; email: string; password: string; validId: UploadedDocument; captchaToken?: string }
 export type RegistrationResult =
   | { status: 'signed-in'; user: User; warnings: string[] }
   | { status: 'confirm-email' };
@@ -18,7 +18,7 @@ export async function registerWithSupabase(input: RegistrationInput): Promise<Re
   const { data, error } = await supabase.auth.signUp({
     email: input.email.trim(),
     password: input.password,
-    options: { data: { first_name: input.firstName.trim(), last_name: input.lastName.trim(), privacy_consent: true } },
+    options: { data: { first_name: input.firstName.trim(), last_name: input.lastName.trim(), privacy_consent: true }, captchaToken: input.captchaToken || undefined },
   });
   if (error) {
     if (/already registered|already exists/i.test(error.message)) throw new Error('This email is already registered. Log in instead.');

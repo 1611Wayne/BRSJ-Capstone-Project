@@ -49,6 +49,7 @@ type Body = { reference?: string; draft: boolean; step?: 'create'; application: 
 export async function POST(request: Request) {
   const me = await currentUser(); if ('error' in me) return me.error;
   const actor = me.user;
+  if (actor.needsProfile) return NextResponse.json({ error: 'Please finish registering (name, address, ID and privacy consent) before applying.' }, { status: 403 });
   if (actor.role !== 'resident' && actor.role !== 'staff' && actor.role !== 'admin') {
     return NextResponse.json({ error: 'You are not authorized to create applications.' }, { status: 403 });
   }

@@ -3,6 +3,7 @@ import type { UploadedDocument, User } from '@/types';
 import { isRealAccount } from '@/lib/supabase/config';
 import { currentUser } from '@/lib/server/currentUser';
 import { supabaseAdmin } from '@/lib/supabase/server';
+import { mobileForms } from '@/lib/phone';
 
 export const dynamic = 'force-dynamic';
 
@@ -51,7 +52,7 @@ export async function GET(request: Request) {
 
   if (id !== null) {
     if (!isRealAccount(id)) return NextResponse.json({ error: 'Resident not found.' }, { status: 404 });
-    const { data, error } = await db.from('profiles').select(RESIDENT_COLUMNS).eq('id', id).eq('role', 'resident').eq('status', 'Active').maybeSingle();
+    const { data, error } = await db.from('profiles').select(RESIDENT_COLUMNS).eq('id', id).eq('role', 'resident').eq('status', 'Active').not('privacy_consent_at', 'is', null).maybeSingle();
     if (error) return NextResponse.json({ error: 'Could not load the resident: ' + error.message }, { status: 500 });
     if (!data) return NextResponse.json({ error: 'Resident not found.' }, { status: 404 });
     return NextResponse.json({ resident: toResident(data, await validIdOnFile(db, data.valid_id_path)) });
@@ -61,6 +62,7 @@ export async function GET(request: Request) {
     .select(RESIDENT_COLUMNS)
     .eq('role', 'resident')
     .eq('status', 'Active')
+    .not('privacy_consent_at', 'is', null)   // an account made by a text code is listed once its owner finished registering
     .order('first_name', { ascending: true })
     .limit(50);
 
@@ -150,7 +152,10 @@ export async function POST(request: Request) {
   }
 
   // Check if contact number already registered
-  const { data: existingContact } = await db.from('profiles').select('id, first_name, last_name').eq('contact_number', contact).maybeSingle();
+  // The same number in any spelling (09..., +639..., 639...) is the same person; stored as 09....
+  const forms = mobileForms(contact)!;
+  contact = forms.local;
+  const { data: existingContact } = await db.from('profiles').select('id, first_name, last_name').in('contact_number', [forms.local, forms.international, forms.stored]).limit(1).maybeSingle();
   if (existingContact) {
     return NextResponse.json({
       error: `A resident with mobile number ${contact} is already registered (${existingContact.first_name} ${existingContact.last_name}). Please select them in "Search Existing Resident".`
