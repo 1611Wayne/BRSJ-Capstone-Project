@@ -217,7 +217,7 @@ test('fee histories retain old versions and do not change existing assessment sn
  assert.throws(()=>transition(s,{type:'fees',schedule:{...previous,items:[{name:'Test',amount:-1}]}}),/non-negative/);
 });
 test('admin reversion requires reason and preserves original and revised values',()=>{
- let s=role(transition(role(or(assess(state())),'staff-maria'),{type:'verifyPayment',reference:ref,orNumber:'TR-2026-54321',orDate:'2026-09-06',amountPaid:600},at),'resident-maria');const data={reference:ref,action:'Edit Fields',reason:'Correct applicant spelling',applicant:'Maria Clara Santos',businessName:'Maria Mini Mart',orNumber:'TR-2026-54321'};
+ let s=role(transition(role(or(assess(state())),'staff-maria'),{type:'verifyPayment',reference:ref,orNumber:'TR-2026-54321',orDate:'2026-09-06',amountPaid:600},at),'resident-maria');const data={reference:ref,action:'Edit Fields',reason:'Correct applicant spelling',applicant:'Maria Clara Santos',businessName:'Maria Mini Mart',orNumber:'TR-2026-54321',orDate:'2026-09-06',amountPaid:600};
  assert.throws(()=>transition(s,{type:'revert',data}),/Only Admin/);
  assert.throws(()=>transition(role(s,'admin'),{type:'revert',data:{...data,reason:''}}),/Reason/);
  s=transition(role(s,'admin'),{type:'revert',data},at);
@@ -283,11 +283,25 @@ test('staff returns payment with reason and resubmission requires another check'
  assert.equal(app(s).clearance,undefined);
 });
 
-test('changing an OR number revokes release and requires staff verification again',()=>{
+test('changing OR details revokes release and requires staff verification again',()=>{
  let s=transition(role(or(assess(state())),'staff-maria'),{type:'verifyPayment',reference:ref,orNumber:'TR-2026-54321',orDate:'2026-09-06',amountPaid:600},at);
- s=transition(role(s,'admin'),{type:'revert',data:{reference:ref,action:'Edit Fields',reason:'Correct OR',applicant:app(s).applicant,orNumber:'TR-2026-77777'}},at);
+ s=transition(role(s,'admin'),{type:'revert',data:{reference:ref,action:'Edit Fields',reason:'Correct OR',applicant:app(s).applicant,orNumber:'TR-2026-77777',orDate:'2026-09-06',amountPaid:600}},at);
  assert.equal(app(s).status,'For Checking');assert.equal(app(s).clearance,undefined);
+ assert.deepEqual([app(s).receipt.orNumber,app(s).receipt.orDate,app(s).receipt.amountPaid],['TR-2026-77777','2026-09-06',600]);
  assert.throws(()=>transition(role(s,'resident-maria'),{type:'download',reference:ref}),/not available/);
+});
+
+test('Admin can revise OR number, date, and amount together with an assessment change',()=>{
+ const issued=releasedByPhoto('TR-2026-77777'),original=structuredClone(app(issued));
+ const schedule=activeSchedule(issued.schedules,original.clearanceType,original.assessment.category,original.assessment.classification);
+ const amounts=schedule.items.map(item=>item.amount);amounts[0]+=25;
+ const amountPaid=amounts.reduce((sum,amount)=>sum+amount,0);
+ const data={reference:ref,action:'Edit Fields',reason:'Correct receipt details',applicant:original.applicant,orNumber:'654321',orDate:'2026-09-07',amountPaid,feeAssessment:{scheduleId:schedule.id,amounts}};
+ const corrected=transition(role(issued,'admin'),{type:'revert',data},at),a=app(corrected);
+ assert.deepEqual([a.receipt.orNumber,a.receipt.orDate,a.receipt.amountPaid],['654321','2026-09-07',amountPaid]);
+ assert.equal(a.assessment.total,amountPaid);assert.equal(a.status,'Pending Assessment');
+ assert.equal(corrected.audits[0].reason,data.reason);assert.equal(corrected.audits[0].reversion,true);
+ assert.deepEqual(JSON.parse(corrected.audits[0].newValue).receipt,a.receipt);
 });
 
 
@@ -526,7 +540,7 @@ test('Admin can correct clearance type and fees, with reassessment, retained rec
  const issued=releasedByPhoto('123456'),original=structuredClone(app(issued));
  const schedule=activeSchedule(issued.schedules,'Electrical Clearance','','');
  const amounts=schedule.items.map(item=>item.amount);amounts[0]=375.25;
- const data={reference:ref,action:'Edit Fields',reason:'Wrong clearance and assessment',applicant:original.applicant,orNumber:original.receipt.orNumber,clearanceType:'Electrical Clearance',feeAssessment:{scheduleId:schedule.id,amounts}};
+ const data={reference:ref,action:'Edit Fields',reason:'Wrong clearance and assessment',applicant:original.applicant,orNumber:original.receipt.orNumber,orDate:original.receipt.orDate,amountPaid:original.receipt.amountPaid,clearanceType:'Electrical Clearance',feeAssessment:{scheduleId:schedule.id,amounts}};
  assert.throws(()=>transition(role(issued,'staff-maria'),{type:'revert',data},at),/Only Admin/);
  const corrected=transition(role(issued,'admin'),{type:'revert',data},at),a=app(corrected);
  assert.equal(a.clearanceType,'Electrical Clearance');assert.equal(a.assessment.total,425.25);

@@ -403,15 +403,20 @@ export function transition(state: PortalState, command: Command, now = new Date(
         a.assessment = { items, total: totalCents / 100, category: schedule.category, classification: schedule.classification, scheduleId: schedule.id, ordinance: schedule.ordinance, assessedBy: fullName(actor), assessedAt: now };
       }
       const assessmentChanged = typeChanged || (!!d.feeAssessment && JSON.stringify([a.assessment?.items, a.assessment?.category, a.assessment?.classification, a.assessment?.scheduleId]) !== JSON.stringify([original.assessment?.items, original.assessment?.category, original.assessment?.classification, original.assessment?.scheduleId]));
-      if (a.receipt && d.orNumber && d.orNumber !== original.receipt?.orNumber) {
-        validateOR(d.orNumber, a.receipt.orDate, a.receipt.amountPaid, original.assessment!.total);
-        requireThat(!s.applications.some(x => x.reference !== reference && x.receipt?.orNumber === d.orNumber), 'This OR number is already in use.');
-        a.receipt = { ...a.receipt, orNumber: d.orNumber };
-        if (d.orNumber !== original.receipt?.orNumber) {
-          a.clearanceRevisedFrom = original.clearance?.revisedFrom || original.clearance?.issueDate || original.clearanceRevisedFrom;
-          a.status = 'For Checking'; a.clearance = undefined; a.confirmation = undefined; a.feedback = undefined;
-          a.paymentVerification = { status: 'Pending', submittedAt: now };
-        }
+      const hasOrDetails = d.orNumber !== undefined || d.orDate !== undefined || d.amountPaid !== undefined;
+      const orDetailsChanged = a.receipt && hasOrDetails && (d.orNumber !== original.receipt?.orNumber || d.orDate !== original.receipt?.orDate || d.amountPaid !== original.receipt?.amountPaid);
+      if (a.receipt && orDetailsChanged) {
+        const orNumber = d.orNumber?.trim() ?? '';
+        const orDate = d.orDate ?? '';
+        const amountPaid = d.amountPaid ?? '';
+        requireThat(orNumber, 'Enter the OR number.');
+        requireThat(validOrDate(orDate), 'Enter a valid OR date that is not in the future.');
+        validateAmountPaid(amountPaid, a.assessment!.total);
+        if (orNumber !== original.receipt?.orNumber) requireThat(!s.applications.some(x => x.reference !== reference && x.receipt?.orNumber === orNumber), 'This OR number is already in use.');
+        a.receipt = { ...a.receipt, orNumber, orDate, amountPaid: Number(amountPaid) };
+        a.clearanceRevisedFrom = original.clearance?.revisedFrom || original.clearance?.issueDate || original.clearanceRevisedFrom;
+        a.status = 'For Checking'; a.clearance = undefined; a.confirmation = undefined; a.feedback = undefined;
+        a.paymentVerification = { status: 'Pending', submittedAt: now };
       }
       a.applicant = d.applicant!.trim(); a.businessName = d.businessName?.trim() || a.businessName;
       if (assessmentChanged) {
