@@ -29,7 +29,8 @@ export function transactionEvents(a: Application, audits: AuditLog[]) {
   for (const milestone of transactionMilestones(a)) {
     if (!milestone.timestamp) continue;
     // Prefer the audit event when one exists for this action. Receipt submission has two legacy action labels.
-    const actions = milestone.stage === 'Receipt Submission Time' ? ['Receipt photo submitted for checking', 'OR details submitted for checking', 'Simulated online payment'] : [milestone.action];
+    const actions = milestone.stage === 'Receipt Submission Time' ? ['Receipt photo submitted for checking', 'OR details submitted for checking', 'Simulated online payment']
+      : milestone.stage === 'Inspection Saved Time' ? ['Inspection report saved', 'Inspection scheduled', 'Inspection rescheduled', 'Inspection schedule cleared', 'Inspection completed'] : [milestone.action];
     if (events.some(event => actions.includes(event.action))) continue;
     events.push({ id: 'milestone-' + milestone.stage, timestamp: milestone.timestamp, user: milestone.user || 'Not recorded', action: milestone.action, reason: undefined });
   }

@@ -20,13 +20,15 @@ export const APPLICATION_SELECT = `id, clearance_type_id, reference_no, resident
   simulated_payments ( method, reference_number, amount, paid_at, note ),
   clearances ( issue_date, generated_at, downloaded_at, revised_from ),
   receipt_confirmations ( confirmed_at, ip_address, confirmer:profiles!receipt_confirmations_confirmed_by_fkey ( first_name, last_name ) ),
-  feedback ( rating, comment, submitted_at )`;
+  feedback ( rating, comment, submitted_at ),
+  inspection_reports ( * )`;
 
 type Row = Record<string, any>;
 const one = (x: unknown) => (Array.isArray(x) ? x[0] : x) as Row | undefined;   // a one-to-one join may come back as an object or a list
 const name = (p?: Row) => p ? [p.first_name, p.last_name].filter(Boolean).join(' ') : 'Staff';
 
-export function toApplication(r: Row): Application {
+export function toApplication(r: Row, includeInspection = false): Application {
+  const inspection = includeInspection ? one(r.inspection_reports) : undefined;
   const docs: UploadedDocument[] = (r.application_documents ?? []).map((d: Row) => ({
     // A Missing placeholder has no file (all file columns NULL); the prototype shows it as 'Not uploaded yet'.
     requirement: d.requirement_name, name: d.original_filename ?? (d.storage_path ? '' : 'Not uploaded yet'), size: d.file_size ?? 0, type: d.mime_type ?? '',
@@ -47,6 +49,11 @@ export function toApplication(r: Row): Application {
     ...(r.rejection_reason ? { rejection: { reason: r.rejection_reason, rejectedBy: name(one(r.rejecter)), timestamp: r.rejected_at } } : {}),
     ...(one(r.assessments) ? { assessment: toAssessment(one(r.assessments)!) } : {}),
     ...paymentAndRelease(r),
+    ...(inspection ? { inspection: {
+      status: inspection.status, inspector: inspection.inspector_name,
+      date: inspection.date_inspected || '', remarks: inspection.remarks || '', savedAt: inspection.saved_at,
+      ...(inspection.scheduled_at ? { scheduledAt: inspection.scheduled_at } : {}),
+    } } : {}),
     ...((r.correction_requests ?? []).length ? { corrections: [...r.correction_requests].sort((x: Row, y: Row) => x.id - y.id).map((c: Row) => ({
       id: 'db-' + c.id, message: c.message, requestedBy: name(one(c.requester)), requestedAt: c.created_at, status: c.status,
       ...(c.status === 'Resolved' ? { resolvedBy: name(one(c.resolver)), resolvedAt: c.resolved_at, ...(c.resolution_note ? { resolutionNote: c.resolution_note } : {}) } : {}),

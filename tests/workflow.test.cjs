@@ -5,7 +5,7 @@ const { transition, requirements, validateOR, validFile, activeSchedule, hasPaym
 const { mockApplications } = require('../data/mockApplications.ts');
 const { mockUsers } = require('../data/mockUsers.ts');
 const { mockFeeSchedules } = require('../data/mockFeeSchedules.ts');
-const { monthlyRows, processingSeconds, paymentCheckSeconds, mmss, dailyOrApplications, feedbackSummary, monthlyReversions } = require('../data/mockReports.ts');
+const { monthlyRows, monthlyCollectionReport, processingSeconds, paymentCheckSeconds, mmss, dailyOrApplications, feedbackSummary, monthlyReversions } = require('../data/mockReports.ts');
 const { transactionMilestones, transactionEvents, transactionDateLabel } = require('../lib/transactionLog.ts');
 const { auditRecord } = require('../lib/auditRecords.ts');
 const { clearanceTypes } = require('../data/clearanceTypes.ts');
@@ -240,10 +240,11 @@ test('reset passwords and deactivated users affect login without leaking passwor
  assert.throws(()=>transition(s,{type:'login',email:resident.email,password:resident.password}),/inactive/);
  assert.throws(()=>transition(s,{type:'user',user:{...resident,role:'admin'},reason:'Bad role'}),/Admin accounts/);
 });
-test('report totals match included requests; drafts and voids are excluded',()=>{
- const s=state(),rows=monthlyRows(s.applications);assert.equal(rows.reduce((sum,r)=>sum+r.count,0),6);
- assert.equal(rows.reduce((sum,r)=>sum+r.recorded,0),s.applications.reduce((sum,a)=>sum+(a.receipt?.amountPaid||0),0));
- app(s).status='Void';assert.equal(monthlyRows(s.applications).reduce((sum,r)=>sum+r.count,0),5);
+test('monthly totals count issued verified receipt photos, excluding legacy typed-only samples and voids',()=>{
+ assert.equal(monthlyRows(state().applications).length,0);
+ const s=releasedByPhoto(),rows=monthlyRows(s.applications);
+ assert.equal(rows.reduce((sum,r)=>sum+r.count,0),1);assert.equal(rows.reduce((sum,r)=>sum+r.recorded,0),600);
+ app(s).status='Void';assert.equal(monthlyRows(s.applications).length,0);
 });
 test('generated PDF has valid object offsets, prototype watermark and a real QR matrix',async()=>{
  const pdf=await makePDF('Electrical Clearance',['SJ-2026-000125','OR: TR-2026-12342'],'http://localhost:3001/verify/SJ-2026-000125').text();
@@ -849,4 +850,142 @@ test('one mobile number in its three spellings maps to the same forms; other num
  const forms={local:'09171234567',international:'+639171234567',stored:'639171234567'};
  for(const input of ['09171234567','+639171234567','639171234567','0917 123 4567','0917-123-4567'])assert.deepEqual(mobileForms(input),forms);
  for(const input of ['','08171234567','0917123456','091712345678','+6309171234567','02 8123 4567','abc'])assert.equal(mobileForms(input),null);
+});
+
+// FT-4 reports use saved assessment snapshots; these fixtures do not implement or change the pending FT-1 fee rules.
+const collectionFixture=(reference,date,applicationType,category,items,changes={})=>{
+ const total=items.reduce((sum,item)=>sum+Math.round(item.amount*100),0)/100;
+ return {...mockApplications[0],reference,status:'Ready for Download',dateRequested:'2026-08-15T02:00:00.000Z',applicationType,
+  assessment:{items,total,category,classification:'',scheduleId:'saved-snapshot',assessedBy:'Staff',assessedAt:'2026-08-15T03:00:00.000Z'},
+  receipt:{orNumber:reference,orDate:'2026-08-31',amountPaid:total,recordedAt:date,encodedBy:'Staff',receiptPhoto:{requirement:'Official Receipt',name:'receipt.jpg',size:100,type:'image/jpeg',status:'Verified'}},
+  paymentVerification:{status:'Verified',submittedAt:date,checkedAt:date,checkedBy:'Staff'},clearance:{issueDate:manilaDate(date),generatedAt:date},...changes};
+};
+
+test('FT-4 groups by Manila issuance date, subcategory, and New or Renewal with saved fee components',()=>{
+ const applications=[
+  collectionFixture('new','2026-08-31T16:00:00.000Z','New Application','Ambulant / Mobile Vendor',[{name:'Clearance Fee',amount:100},{name:'Plate',amount:50},{name:'Inspection Fee',amount:25}]),
+  collectionFixture('renew','2026-09-01T03:00:00.000Z','Renewal','Ambulant / Mobile Vendor',[{name:'Sticker',amount:40}]),
+  collectionFixture('lessor','2026-09-02T03:00:00.000Z','New Application','Lessor',[{name:'Clearance Fee',amount:200}]),
+ ];
+ const before=structuredClone(applications),report=monthlyCollectionReport(applications,'2026-09');
+ assert.equal(report.totals.count,3);assert.equal(report.totals.assessed,415);assert.equal(report.totals.recorded,415);
+ assert.equal(report.daily.find(row=>row.applicationType==='Renewal').components.Sticker,40);
+ assert.equal(report.daily.find(row=>row.applicationType==='Renewal').components.Plate,undefined);
+ assert.equal(report.monthly.filter(row=>row.subcategory==='Ambulant / Mobile Vendor').length,2);
+ assert.equal(report.monthly.filter(row=>row.subcategory==='Lessor').length,1);
+ assert.deepEqual(report.peakDates,['2026-09-01']);assert.equal(report.peakCount,2);
+ assert.equal(report.daily[0].date,'2026-09-01');assert.equal(monthlyCollectionReport(applications,'2026-08').totals.count,0);
+ assert.deepEqual(report.totals.components,{'Clearance Fee':300,'Inspection Fee':25,Plate:50,Sticker:40});
+ assert.deepEqual(applications,before);
+});
+
+test('FT-4 never counts Rejected, Void, pending, review, simulated, or unverified records even with stale OR fields',()=>{
+ const valid=collectionFixture('valid','2026-09-01T00:00:00.000Z','Renewal','Lessor',[{name:'Sticker',amount:50}]);
+ const excluded=['Draft','Rejected','Void','Pending Assessment','Awaiting OR','For Checking','Under Review'].map((status,index)=>({...valid,reference:'bad-'+index,status}));
+ excluded.push({...valid,simulatedPayment:{method:'GCash',amount:50,referenceNumber:'SIM-test',paidAt:at,note:'Simulation'}},
+  {...valid,paymentVerification:{...valid.paymentVerification,status:'Pending'}},
+  {...valid,receipt:undefined},{...valid,clearance:undefined},{...valid,assessment:undefined},
+  {...valid,receipt:{...valid.receipt,receiptPhoto:undefined},receiptPhoto:undefined});
+ assert.equal(monthlyCollectionReport(excluded,'2026-09').totals.count,0);
+ const report=monthlyCollectionReport([valid,...excluded],'2026-09');assert.equal(report.totals.count,1);assert.equal(report.totals.recorded,50);
+ const closed={...valid,status:'Closed - Cleared'};assert.equal(monthlyCollectionReport([closed],'2026-09').totals.recorded,50);
+});
+
+test('FT-4 reconciles decimal amounts, tied peak days, type filters, and empty months',()=>{
+ const applications=[
+  collectionFixture('one','2026-09-01T00:00:00.000Z','New Application','Lessor',[{name:'Custom Fee',amount:0.1},{name:'constructor',amount:0.2}]),
+  collectionFixture('two','2026-09-02T00:00:00.000Z','New Application','Lessor',[{name:'Custom Fee',amount:0.2}]),
+  collectionFixture('three','2026-09-02T01:00:00.000Z','New Application','',[{name:'Electrical Clearance',amount:100}],{clearanceType:'Electrical Clearance'}),
+ ];
+ const report=monthlyCollectionReport(applications,'2026-09');assert.equal(report.totals.recorded,100.5);
+ assert.equal(report.totals.components['Custom Fee'],0.3);assert.equal(report.totals.components.constructor,0.2);
+ const filtered=monthlyCollectionReport(applications,'2026-09','Business Clearance');
+ assert.deepEqual(filtered.peakDates,['2026-09-01','2026-09-02']);assert.equal(filtered.peakCount,1);
+ assert.equal(filtered.totals.recorded,0.5);assert.equal(filtered.monthly[0].recorded,0.5);
+ const empty=monthlyCollectionReport(applications,'2026-10');assert.equal(empty.totals.count,0);assert.deepEqual(empty.daily,[]);assert.deepEqual(empty.peakDates,[]);assert.deepEqual(empty.feeComponents,[]);
+ assert.equal(monthlyCollectionReport(applications,'2026-09','Building Clearance').totals.count,0);
+});
+
+const {inspectionInputValue,inspectionTimestamp,inspectionQueue}=require('../lib/inspections.ts');
+
+test('FT-9 converts Manila appointment inputs independently of device timezone and validates calendar dates',()=>{
+ assert.equal(inspectionTimestamp('2026-11-07T00:30'),'2026-11-06T16:30:00.000Z');
+ assert.equal(inspectionInputValue('2026-11-06T16:30:00.000Z'),'2026-11-07T00:30');
+ assert.equal(inspectionTimestamp(''),undefined);
+ for(const value of ['2026-02-30T09:00','2026-11-07T25:00','bad'])assert.throws(()=>inspectionTimestamp(value),/valid inspection/);
+});
+
+test('FT-9 records scheduling, rescheduling, completion and unscheduling without mutating earlier reports',()=>{
+ const scheduledAt='2026-09-08T01:00:00.000Z',report={status:'Pending',inspector:'  Pedro Staff  ',date:'',remarks:'Bring checklist',scheduledAt};
+ const before=state('staff-maria');let s=transition(before,{type:'inspection',reference:ref,report},at);
+ assert.equal(app(s).inspection.inspector,'Pedro Staff');assert.equal(app(s).inspection.scheduledAt,scheduledAt);assert.equal(s.audits[0].action,'Inspection scheduled');
+ const first=structuredClone(app(s).inspection);
+ s=transition(s,{type:'inspection',reference:ref,report:{...app(s).inspection,scheduledAt:'2026-09-09T02:00:00.000Z'}},at);
+ assert.equal(s.audits[0].action,'Inspection rescheduled');assert.equal(JSON.parse(s.audits[0].oldValue).scheduledAt,scheduledAt);
+ assert.equal(app(before).inspection,undefined);assert.equal(first.scheduledAt,scheduledAt);
+ const overdue=transition(s,{type:'inspection',reference:ref,report:{...app(s).inspection,remarks:'Following up'}},'2026-09-10T01:00:00.000Z');
+ assert.equal(app(overdue).inspection.scheduledAt,'2026-09-09T02:00:00.000Z');
+ const completed=transition(overdue,{type:'inspection',reference:ref,report:{...app(overdue).inspection,status:'Completed',date:'2026-09-10'}},'2026-09-10T02:00:00.000Z');
+ assert.equal(completed.audits[0].action,'Inspection completed');assert.equal(inspectionQueue(completed.applications,'2026-09-10T02:00:00.000Z').overdue.length,0);
+ s=transition(s,{type:'inspection',reference:ref,report:{...app(s).inspection,scheduledAt:undefined}},at);
+ assert.equal(s.audits[0].action,'Inspection schedule cleared');assert.equal(app(s).inspection.scheduledAt,undefined);
+});
+
+test('FT-9 rejects unauthorized or invalid scheduling and blocks assessment until the scheduled inspection is complete',()=>{
+ const report={status:'Pending',inspector:'Pedro Staff',date:'',remarks:'',scheduledAt:'2026-09-08T01:00:00.000Z'};
+ const schedule=(s,changes={})=>transition(s,{type:'inspection',reference:ref,report:{...report,...changes}},at);
+ for(const id of ['resident-maria','admin'])assert.throws(()=>schedule(state(id)),/Only Staff/);
+ assert.throws(()=>schedule(state('staff-maria'),{inspector:' '}),/Assign an inspector/);
+ assert.throws(()=>schedule(state('staff-maria'),{scheduledAt:'2026-09-01T00:00:00Z'}),/not in the past/);
+ assert.throws(()=>schedule(state('staff-maria'),{scheduledAt:'2026-02-30T00:00:00Z'}),/valid inspection date/);
+ assert.throws(()=>schedule(state('staff-maria'),{status:'Unknown'}),/valid inspection status/);
+ for(const status of ['Draft','Rejected','Void','Awaiting OR','Ready for Download']){const s=state('staff-maria');app(s).status=status;assert.throws(()=>schedule(s));}
+ let s=schedule(state('staff-maria'));assert.throws(()=>assess(s),/Complete the scheduled inspection/);
+ s=transition(s,{type:'inspection',reference:ref,report:{...app(s).inspection,status:'Completed',date:'2026-09-07'}},at);
+ assert.equal(app(assess(s)).status,'Awaiting OR');
+ assert.throws(()=>transition(s,{type:'inspection',reference:ref,report:{...app(s).inspection,date:'2026-09-31'}},at),/valid inspection completion date/);
+ const cleared=transition(schedule(state('staff-maria')),{type:'inspection',reference:ref,report:{...report,scheduledAt:undefined}},at);
+ assert.equal(app(assess(cleared)).status,'Awaiting OR');
+});
+
+test('FT-9 lists upcoming and overdue appointments in time order and excludes completed or inactive requests',()=>{
+ const make=(reference,scheduledAt,changes={})=>({...app(state()),reference,inspection:{status:'Pending',inspector:'Pedro',date:'',remarks:'',scheduledAt},...changes});
+ const applications=[make('later','2026-09-08T03:00:00Z'),make('earlier','2026-09-07T03:00:00Z'),make('overdue','2026-09-06T03:00:00Z'),make('void','2026-09-08T03:00:00Z',{status:'Void'}),make('rejected','2026-09-08T03:00:00Z',{status:'Rejected'}),make('closed','2026-09-08T03:00:00Z',{status:'Closed - Cleared'}),make('completed','2026-09-08T03:00:00Z',{inspection:{status:'Completed',inspector:'Pedro',date:'2026-09-06',remarks:'',scheduledAt:'2026-09-08T03:00:00Z'}})];
+ const original=structuredClone(applications),queue=inspectionQueue(applications,'2026-09-07T02:00:00Z');
+ assert.deepEqual(queue.upcoming.map(a=>a.reference),['earlier','later']);assert.deepEqual(queue.overdue.map(a=>a.reference),['overdue']);assert.deepEqual(applications,original);
+});
+
+// The inspection workflow endpoint is exercised without a Supabase connection.
+let inspectionApiActor,inspectionApiReport,inspectionApiError,inspectionApiAudit=[];
+const inspectionDbRow={id:1,reference_no:ref,resident_id:'resident-maria',applicant_name:'Maria Clara',status:'Pending Assessment',date_requested:at,clearance_types:{name:'Business Clearance'},application_documents:[]};
+const inspectionDb={from(table){const q={select(){return q},eq(){return q},is(){return q},
+ async maybeSingle(){return {data:{...inspectionDbRow,inspection_reports:inspectionApiReport},error:null}},
+ async single(){return {data:{...inspectionDbRow,inspection_reports:inspectionApiReport},error:null}},
+ async upsert(value){if(!inspectionApiError)inspectionApiReport=value;return {error:inspectionApiError}},
+ async insert(value){if(table==='audit_logs')inspectionApiAudit.push(...value);return {error:null}},
+ then(resolve,reject){return Promise.resolve({data:[],error:null}).then(resolve,reject)},
+ };return q}};
+let inspectionEndpoint,inspectionMapper;
+try{
+ Module._load=function(request,parent,...rest){
+  if(request==='server-only')return {};
+  if(request==='@/lib/server/currentUser')return {currentUser:async()=>({user:inspectionApiActor})};
+  if(request==='@/lib/supabase/server')return {supabaseAdmin:()=>inspectionDb};
+  return originalLoad.call(this,request,parent,...rest);
+ };
+ inspectionEndpoint=require('../app/api/workflow/route.ts');inspectionMapper=require('../lib/server/applicationRows.ts').toApplication;
+}finally{Module._load=originalLoad;}
+
+test('FT-9 persists and restores scheduled inspections, restricts internal data, and explains a missing migration',async()=>{
+ inspectionApiActor={id:'staff-id',role:'staff',firstName:'Maria',lastName:'Staff',status:'Active'};inspectionApiReport=undefined;inspectionApiError=null;inspectionApiAudit=[];
+ const report={status:'Pending',inspector:'Pedro Staff',date:'',remarks:'Site visit',scheduledAt:new Date(Date.now()+86400000).toISOString()};
+ const request=()=>new Request('http://localhost/api/workflow',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({command:{type:'inspection',reference:ref,report}})});
+ let response=await inspectionEndpoint.POST(request());assert.equal(response.status,200);let body=await response.json();
+ assert.equal(inspectionApiReport.scheduled_at,report.scheduledAt);assert.equal(inspectionApiReport.saved_by,'staff-id');assert.equal(body.application.inspection.scheduledAt,report.scheduledAt);
+ assert.equal(inspectionApiAudit[0].action,'Inspection scheduled');
+ assert.equal(inspectionMapper({...inspectionDbRow,inspection_reports:inspectionApiReport}).inspection,undefined);
+ assert.equal(inspectionMapper({...inspectionDbRow,inspection_reports:inspectionApiReport},true).inspection.inspector,'Pedro Staff');
+ inspectionApiActor={...inspectionApiActor,id:'resident-maria',role:'resident'};response=await inspectionEndpoint.POST(request());assert.equal(response.status,400);assert.match((await response.json()).error,/Only Staff/);
+ inspectionApiActor={...inspectionApiActor,id:'staff-id',role:'staff'};inspectionApiError={message:'scheduled_at column missing'};
+ response=await inspectionEndpoint.POST(request());assert.equal(response.status,500);assert.match((await response.json()).error,/20261106000000_inspection_scheduling.sql/);
 });

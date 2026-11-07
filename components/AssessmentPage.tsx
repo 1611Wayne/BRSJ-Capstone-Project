@@ -1,19 +1,21 @@
 'use client';
+import { InspectionForm } from './InspectionForm';
 import { useEffect, useState } from 'react';import { useRouter } from 'next/navigation';import Link from 'next/link';import { XCircle, CheckCircle2, FileText, Eye, LockKeyhole } from 'lucide-react';
-import { usePortal } from './PortalProvider';import { Field,ErrorMessage,Notice } from './Field';import { FeeTable } from './FeeTable';import { StatusBadge } from './StatusBadge';import { DocumentPreview } from './DocumentPreview';import { ReplaceDocuments } from './ReplaceDocuments';import { revenueCategories } from '@/data/revenueCodeData';import { formatPeso } from '@/data/revenueCodeData';import { activeSchedule,today,requirements } from '@/lib/workflow';import type { UploadedDocument,InspectionReport } from '@/types';
+import { usePortal } from './PortalProvider';import { Field,ErrorMessage,Notice } from './Field';import { FeeTable } from './FeeTable';import { StatusBadge } from './StatusBadge';import { DocumentPreview } from './DocumentPreview';import { ReplaceDocuments } from './ReplaceDocuments';import { revenueCategories } from '@/data/revenueCodeData';import { formatPeso } from '@/data/revenueCodeData';import { activeSchedule,requirements } from '@/lib/workflow';import type { UploadedDocument } from '@/types';
 export function AssessmentPage({reference}:{reference:string}){
  const router=useRouter();const {state,user,act}=usePortal();const a=state.applications.find(a=>a.reference===reference);
  const [category,setCategory]=useState(a?.assessment?.category||(a?.businessSubcategory==='Ambulant'?'Ambulant / Mobile Vendor':a?.businessSubcategory==='Lessor (Paupahan)'?'Lessor':revenueCategories[0].name)),[classification,setClassification]=useState(a?.assessment?.classification||(a?.businessSubcategory==='Ambulant'?'':a?.businessSubcategory==='Lessor (Paupahan)'?revenueCategories.find(c=>c.name==='Lessor')!.classifications![0].name:'Small')),[error,setError]=useState(''),[message,setMessage]=useState(''),[preview,setPreview]=useState<UploadedDocument>();
  const [feeDraft,setFeeDraft]=useState<{scheduleId:string;amounts:string[]}>();
  const [docs,setDocs]=useState(a?.documents||[]);
  // Follow the shared data: records loaded from the database after this page opened, or reloaded after the server refused a change.
- useEffect(()=>{if(a)setDocs(a.documents);},[a?.documents]);const [inspection,setInspection]=useState<InspectionReport>(a?.inspection||{status:'Pending',inspector:'',date:'',remarks:''});
+ useEffect(()=>{if(a)setDocs(a.documents);},[a?.documents]);
  // Reject state
  const [showReject,setShowReject]=useState(false),[rejectReason,setRejectReason]=useState('');
  if(!a)return <div className="p-8">Application Not Found</div>;const business=a.clearanceType==='Business Clearance';const current=revenueCategories.find(c=>c.name===category)!;const schedule=activeSchedule(state.schedules,a.clearanceType,business?category:'',business?classification:'');const editable=a.status==='Pending Assessment'||(a.status==='Under Review'&&!a.receipt);
  const feeAmounts=schedule?(feeDraft?.scheduleId===schedule.id?feeDraft.amounts:a.assessment?.scheduleId===schedule.id?a.assessment.items.map(item=>item.amount.toFixed(2)):schedule.items.map(item=>item.amount.toFixed(2))):[];
  const validAmounts=feeAmounts.every(value=>/^\d+(\.\d{1,2})?$/.test(value)&&Number.isFinite(Number(value))&&Number.isSafeInteger(Math.round(Number(value)*100)));
  const feeTotal=feeAmounts.reduce((sum,value)=>sum+Math.round(Number(value||0)*100),0)/100;
+ const inspectionPending=!!a.inspection?.scheduledAt&&a.inspection.status!=='Completed';
  const requiredDocs=requirements(a).filter(r=>r.required);
  const verifiedCount=requiredDocs.filter(r=>docs.some(d=>d.requirement===r.name&&d.status==='Verified')).length;
  const allVerified=verifiedCount===requiredDocs.length;
@@ -46,16 +48,7 @@ export function AssessmentPage({reference}:{reference:string}){
       </div></div>
      </li>})}</ul>
     </div>
-    <form className="content-card p-6" onSubmit={e=>{e.preventDefault();try{act({type:'inspection',reference,report:inspection});setMessage('Inspection report saved.');setError('');}catch(e){setError((e as Error).message);}}}>
-     <h2 className="font-bold text-brand-ink border-b pb-3">Inspection Report</h2>
-     <div className="form-grid mt-4">
-      <Field label="Inspection Status"><select className="select-field" value={inspection.status} onChange={e=>setInspection({...inspection,status:e.target.value as InspectionReport['status']})}><option>Pending</option><option>Completed</option></select></Field>
-      <Field label="Name of Inspector"><input className="text-field" required={inspection.status==='Completed'} value={inspection.inspector} onChange={e=>setInspection({...inspection,inspector:e.target.value})}/></Field>
-      <Field label="Date Inspected"><input type="date" className="text-field" max={today()} required={inspection.status==='Completed'} value={inspection.date} onChange={e=>setInspection({...inspection,date:e.target.value})}/></Field>
-      <Field label="Remarks"><textarea className="textarea-field" value={inspection.remarks} onChange={e=>setInspection({...inspection,remarks:e.target.value})}/></Field>
-     </div>
-     <button disabled={a.status==='Void'||a.status==='Rejected'} className="secondary-btn mt-4">Save Inspection Report</button>
-    </form>
+    <InspectionForm application={a}/>
    </div>
 
    <div className="content-card p-6 h-fit">
@@ -68,9 +61,9 @@ export function AssessmentPage({reference}:{reference:string}){
     <p className="text-xs mt-4 text-slate-500">Amounts start from the effective fee schedule. Staff can adjust them for this application before confirming assessment.</p>
     <p className="text-sm mt-5">Assessed By: <strong>{a.assessment?.assessedBy||user?.firstName+' '+user?.lastName}</strong></p>
 
-    <button aria-describedby="assessment-verification-hint" disabled={!editable||!schedule||!allVerified||!validAmounts} className="primary-btn w-full mt-5" onClick={()=>{try{act({type:'assess',reference,category:business?category:'',classification:business?classification:'',amounts:feeAmounts.map(Number)});setError('');router.push('/staff/dashboard');}catch(e){setError((e as Error).message);}}}>Confirm Assessment</button>
+    <button aria-describedby="assessment-verification-hint" disabled={!editable||!schedule||!allVerified||!validAmounts||inspectionPending} className="primary-btn w-full mt-5" onClick={()=>{try{act({type:'assess',reference,category:business?category:'',classification:business?classification:'',amounts:feeAmounts.map(Number)});setError('');router.push('/staff/dashboard');}catch(e){setError((e as Error).message);}}}>Confirm Assessment</button>
 
-    {editable&&<p id="assessment-verification-hint" className="text-xs mt-3 text-slate-600">{!allVerified?'Verify all required documents above to enable Confirm Assessment.':!schedule?'No fee schedule is available for this assessment.':'All required documents are verified. Assessment can be confirmed.'}</p>}
+    {editable&&<p id="assessment-verification-hint" className="text-xs mt-3 text-slate-600">{!allVerified?'Verify all required documents above to enable Confirm Assessment.':inspectionPending?'Complete the scheduled inspection above before confirming assessment.':!schedule?'No fee schedule is available for this assessment.':'All required documents are verified. Assessment can be confirmed.'}</p>}
 
     {/* Reject Button */}
     {editable&&!showReject&&<button type="button" className="w-full mt-3 flex items-center justify-center gap-2 border border-red-300 text-red-700 hover:bg-red-50 transition-colors rounded px-4 py-2 text-sm font-semibold" onClick={()=>setShowReject(true)}><XCircle size={16}/>Reject Application</button>}

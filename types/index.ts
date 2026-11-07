@@ -25,7 +25,7 @@ export interface Clearance { issueDate: string; generatedAt: string; revisedFrom
 // confirmedBy is set only when Staff recorded the release at the counter (the Applicant's own confirmation leaves it empty).
 export interface ReceiptConfirmation { timestamp: string; ipPlaceholder: string; completionTime: string; confirmedBy?: string }
 export interface Feedback { rating: number; comment: string; submittedAt: string }
-export interface InspectionReport { status: 'Pending' | 'Completed'; inspector: string; date: string; remarks: string; savedAt?: string }
+export interface InspectionReport { status: 'Pending' | 'Completed'; inspector: string; date: string; remarks: string; savedAt?: string; scheduledAt?: string }
 export interface Application {
   // dbId: the database row id when the record came from Supabase (file paths use it); undefined in the prototype.
   reference: string; dbId?: number; residentId: string; applicant: string; address: string; contact: string; purpose: string; clearanceType: string; dateRequested: string; status: ApplicationStatus;
@@ -51,6 +51,7 @@ export type ReversionAction = 'Edit Fields' | 'Void Transaction' | 'Mark Under R
 export interface TransactionReversion { reference: string; action: ReversionAction; reason: string; applicant?: string; businessName?: string; orNumber?: string; orDate?: string; amountPaid?: number; clearanceType?: string; feeAssessment?: { scheduleId: string; amounts: number[] } }
 export interface AuditLog { id: string; timestamp: string; user: string; userId?: string; role: UserRole; action: string; reference: string; oldValue?: string; newValue?: string; reason?: string; reversion?: boolean }
 export interface ReportRecord { clearanceType: string; count: number; assessed: number; recorded: number }
+export interface MonthlyCollectionRow extends ReportRecord { date: string; subcategory: string; applicationType: Application['applicationType']; components: Record<string, number> }
 // In-app notifications for Applicants. The event names are the same as the notifications.event values in the database. key de-duplicates an
 // unread notice about the same thing (a flagged document gets its Staff note added to the same notice instead of a second one).
 export type NotificationEvent = 'documents_flagged' | 'application_returned' | 'correction_resolved' | 'assessment_ready' | 'payment_returned' | 'clearance_ready';

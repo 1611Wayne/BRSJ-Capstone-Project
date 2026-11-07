@@ -22,19 +22,19 @@ export async function GET(request: Request) {
     const { data, error } = await query.maybeSingle();
     if (error) return NextResponse.json({ error: 'Could not load the request: ' + error.message }, { status: 500 });
     if (!data || (me.user.role !== 'resident' && data.status === 'Draft' && !data.staff_encoder_id)) return NextResponse.json({ error: 'Request not found.' }, { status: 404 });
-    return NextResponse.json({ application: toApplication(data) });
+    return NextResponse.json({ application: toApplication(data, me.user.role !== 'resident') });
   }
   if (searchParams.has('walkInDrafts')) {
     if (me.user.role === 'resident') return NextResponse.json({ error: 'Only Staff and Admin can open walk-in drafts.' }, { status: 403 });
     const { data, error } = await supabaseAdmin().from('applications').select(APPLICATION_SELECT).eq('status', 'Draft').not('staff_encoder_id', 'is', null).order('created_at', { ascending: false }).limit(50);
     if (error) return NextResponse.json({ error: 'Could not load the walk-in drafts: ' + error.message }, { status: 500 });
-    return NextResponse.json({ applications: (data ?? []).map(toApplication) });
+    return NextResponse.json({ applications: (data ?? []).map(row => toApplication(row, me.user.role !== 'resident')) });
   }
   let query = supabaseAdmin().from('applications').select(APPLICATION_SELECT).order('created_at', { ascending: false });
   query = me.user.role === 'resident' ? query.eq('resident_id', me.user.id) : query.neq('status', 'Draft');
   const { data, error } = await query;
   if (error) return NextResponse.json({ error: 'Could not load your requests: ' + error.message }, { status: 500 });
-  return NextResponse.json({ applications: (data ?? []).map(toApplication) });
+  return NextResponse.json({ applications: (data ?? []).map(row => toApplication(row, me.user.role !== 'resident')) });
 }
 
 // step 'create': the first, internal half of a brand-new request (it only makes the empty Draft row so the files have a
@@ -183,7 +183,7 @@ export async function POST(request: Request) {
 
   const { data: saved, error: readError } = await db.from('applications').select(APPLICATION_SELECT).eq('id', appId).single();
   if (readError || !saved) return NextResponse.json({ error: 'Saved, but could not read it back.' }, { status: 500 });
-  return NextResponse.json({ application: toApplication(saved) satisfies Application });
+  return NextResponse.json({ application: toApplication(saved, me.user.role !== 'resident') satisfies Application });
 }
 
 type Row = Record<string, any>;
