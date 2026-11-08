@@ -20,6 +20,15 @@ const SAVED_ON_SERVER = new Set<Command['type']>(['review', 'assess', 'reject', 
 export function PortalProvider({children}:{children:React.ReactNode}) {
   const [state,setState] = useState<PortalState>(initial); const [ready,setReady] = useState(false); const latest = useRef(state);
   const [serverError,setServerError] = useState('');
+  // Changes still on their way to the server. Saves take a few seconds on mobile data: a small "Saving…" note shows
+  // meanwhile, and closing the tab before they finish asks first, because closing would drop them.
+  const [saving,setSaving] = useState(0);
+  useEffect(() => {
+    if (!saving) return;
+    const warn = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = ''; };
+    window.addEventListener('beforeunload', warn);
+    return () => window.removeEventListener('beforeunload', warn);
+  }, [saving]);
   useEffect(() => {
     try { const saved = sessionStorage.getItem('san-jose-prototype-v2'); if (saved) { const parsed = JSON.parse(saved); if (parsed.users && parsed.applications && parsed.schedules && parsed.audits) { const loaded = { ...parsed, notifications: parsed.notifications ?? [] }; latest.current = loaded; setState(loaded); } } } catch { /* Start with sample records when storage is unavailable. */ }
     setReady(true);
@@ -50,7 +59,8 @@ export function PortalProvider({children}:{children:React.ReactNode}) {
       const key = ('reference' in command && command.reference) || (command.type === 'revert' && command.data.reference) || '*';
       changedAt.current.set(key, Date.now());
       waiting.current.set(key, (waiting.current.get(key) ?? 0) + 1);
-      queue.current = queue.current.then(() => saveOnServer(command, key));
+      setSaving(n => n + 1);
+      queue.current = queue.current.then(() => saveOnServer(command, key)).finally(() => setSaving(n => n - 1));
     }
     return next;
   }
@@ -94,6 +104,7 @@ export function PortalProvider({children}:{children:React.ReactNode}) {
   return <Context.Provider value={{state, user: state.users.find(u => u.id === state.currentUserId && u.status === 'Active'), ready, act}}>
     {serverError && <div role="alert" className="fixed top-0 inset-x-0 z-50 bg-red-50 border-b border-red-200 text-red-800 text-sm px-4 py-3 flex gap-3 items-start justify-between"><span>{serverError}</span><button type="button" className="underline shrink-0" onClick={() => setServerError('')}>Dismiss</button></div>}
     {children}
+    {saving > 0 && <div role="status" aria-live="polite" className="saving-note">Saving…</div>}
   </Context.Provider>;
 }
 export function usePortal() { const context = useContext(Context); if (!context) throw new Error('PortalProvider is required'); return context; }

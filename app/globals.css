@@ -163,4 +163,27 @@ button:disabled { opacity: .5; cursor: not-allowed; }
  input,select,textarea { min-width: 0; }
  .primary-btn,.secondary-btn { min-height: 40px; }
 }
+/* Phones and other touch screens: controls big enough for a thumb, and no page zoom when a field is tapped (iPhones zoom
+   in on any field whose text is under 16px). 44px is the touch size Apple and Android both recommend. Links inside a
+   sentence keep their size; desktop layouts are unchanged. */
+@media (max-width: 767px), (pointer: coarse) {
+ input:not([type="checkbox"]):not([type="radio"]):not([type="file"]), select, textarea { font-size: 16px !important; }
+ button, .primary-btn, .secondary-btn { min-height: 44px; }
+ .portal-table a, .portal-topbar a, .public-footer a, .public-navbar a, a.underline:not(p a):not(li a):not(label a) { display: inline-flex; align-items: center; min-height: 44px; }
+ input[type="checkbox"], input[type="radio"] { width: 20px; height: 20px; flex-shrink: 0; }
+ /* A table's Action column stays at the right edge while the rest scrolls sideways, so Review / Edit are always in
+    reach without swiping first. */
+ .portal-table.sticky-actions th:last-child, .portal-table.sticky-actions td:last-child { position: sticky; right: 0; z-index: 1; box-shadow: -8px 0 8px -8px #0004; }
+ .portal-table.sticky-actions td:last-child { background: white; }
+ .portal-table.sticky-actions th:last-child { background: var(--surface-muted); }
+ .portal-table td .flex-wrap { row-gap: 0; }
+ .portal-table.sticky-actions td:last-child :is(a, button) { white-space: nowrap; text-align: left; }
+}
+/* The note shown while changes are still being saved (PortalProvider). */
+.saving-note {
+ position: fixed; z-index: 60; right: max(12px, env(safe-area-inset-right, 0px)); bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+ background: var(--brand-ink); color: white; font-size: 13px; font-weight: 700; padding: 8px 14px; border-radius: 999px;
+ box-shadow: 0 4px 14px #0003; pointer-events: none;
+}
+@media print { .saving-note { display: none !important; } }
 @media print { .portal-sidebar,.portal-topbar,.mobile-nav-toggle,.no-print,button { display:none !important; } .portal-main { padding:0; } .table-wrap{overflow:visible} .portal-table{min-width:0} .content-card{box-shadow:none} body{background:white} }

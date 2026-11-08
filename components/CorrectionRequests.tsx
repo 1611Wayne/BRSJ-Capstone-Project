@@ -73,7 +73,7 @@ function EditEntries({ application: a, onSaved }: { application: Application; on
         <Field label="Business Subcategory (optional)"><select className="select-field" value={form.businessSubcategory} onChange={e => set('businessSubcategory', e.target.value)}><option value="">Business Clearance only</option>{businessSubcategories.map(c => <option key={c}>{c}</option>)}</select></Field>
       </>}
       <Field label="Has employees?"><select className="select-field" value={form.hasEmployees} onChange={e => set('hasEmployees', e.target.value)}><option value="">Not stated</option><option value="yes">Yes</option><option value="no">No</option></select></Field>
-      {form.hasEmployees === 'yes' && <Field label="Number of employees (optional)"><input type="number" min="1" className="text-field" value={form.employeeCount} onChange={e => set('employeeCount', e.target.value)} /></Field>}
+      {form.hasEmployees === 'yes' && <Field label="Number of employees (optional)"><input type="number" inputMode="numeric" min="1" className="text-field" value={form.employeeCount} onChange={e => set('employeeCount', e.target.value)} /></Field>}
     </div>
     {(form.ownership === 'Renter' || form.applicationType === 'Renewal') && <p className="text-xs text-amber-800 mt-3">Renter and Renewal applications need extra documents. Any that are not on file will be added as Missing for the Applicant to upload.</p>}
     <ErrorMessage message={error} />

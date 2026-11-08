@@ -28,9 +28,10 @@ export function OnlinePaymentModal({ reference, amount, onSuccess, onClose }: Pr
       const app = next.applications.find(a => a.reference === reference);
       const ref = app?.simulatedPayment?.referenceNumber || '';
       setSimRef(ref);
+      // Show the "Payment Recorded" confirmation; the person moves on with its Continue button (calling onSuccess here
+      // too used to leave the page at once, so the confirmation only flashed).
       setStep('done');
       setError('');
-      onSuccess(ref, method);
     } catch (e) {
       setError((e as Error).message);
     }

@@ -36,7 +36,7 @@ export function WorkflowPage({step,staff=false}:{step:2|3|4;staff?:boolean}) {
     <button type="button" className="content-card p-6 text-left hover:border-brand-primary transition-colors border" onClick={()=>setPaymentMode('online')}>
      <CreditCard size={26} className="text-brand-primary mb-3" aria-hidden="true"/>
      <h2 className="font-bold text-brand-ink text-base">Online Payment <span className="text-[10px] text-amber-700 font-semibold ml-1 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded">SIMULATION</span></h2>
-     <p className="text-xs text-slate-600 mt-2 leading-5">Use GCash, bank transfer, or other payment methods. This is a simulated payment — no real money involved.</p>
+     <p className="text-xs text-slate-600 mt-2 leading-5">Use GCash, bank transfer, or other payment methods.</p>
     </button>
    </div>}
    {/* Online payment (Revision 7 – modular) */}

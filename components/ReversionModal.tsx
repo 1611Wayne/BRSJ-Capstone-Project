@@ -33,12 +33,12 @@ export function ReversionModal({application:a,onClose,onConfirm}:{application:Ap
     {a.receipt&&<>
      <Field label="OR Number *"><input required className="text-field" value={orNumber} onChange={e=>setOrNumber(e.target.value)}/></Field>
      <Field label="OR Date *"><input required type="date" max={today()} className="text-field" value={orDate} onChange={e=>setOrDate(e.target.value)}/></Field>
-     <Field label="Amount Paid (PHP) *"><input required type="number" min="0" step="0.01" className="text-field" value={amountPaid} onChange={e=>setAmountPaid(e.target.value)}/></Field>
+     <Field label="Amount Paid (PHP) *"><input required type="number" inputMode="decimal" min="0" step="0.01" className="text-field" value={amountPaid} onChange={e=>setAmountPaid(e.target.value)}/></Field>
     </>}
     <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={correctingFees} disabled={clearanceType!==a.clearanceType} onChange={e=>setEditFees(e.target.checked)}/>Correct fee assessment</label>
     {correctingFees&&<div className="space-y-4">
      <Field label="Fee Schedule *"><select required className="select-field" value={schedule?.id||''} onChange={e=>{setScheduleId(e.target.value);setFeeDraft(undefined);}}>{!schedule&&<option value="">No effective fee schedule available</option>}{schedules.map(s=><option key={s.id} value={s.id}>{[s.clearanceType,s.category,s.classification].filter(Boolean).join(' / ')}</option>)}</select></Field>
-     {schedule&&<>{schedule.items.map((item,index)=><Field key={schedule.id+'-'+index} label={item.name+' amount *'}><input type="number" min="0" step="0.01" required className="text-field" value={amounts[index]} onChange={e=>setFeeDraft({scheduleId:schedule.id,amounts:amounts.map((value,i)=>i===index?e.target.value:value)})}/></Field>)}<p className="text-sm font-semibold" aria-live="polite">Total Assessment: {validAmounts&&Number.isSafeInteger(totalCents)?formatPeso(totalCents/100):'Enter valid amounts'}</p></>}
+     {schedule&&<>{schedule.items.map((item,index)=><Field key={schedule.id+'-'+index} label={item.name+' amount *'}><input type="number" inputMode="decimal" min="0" step="0.01" required className="text-field" value={amounts[index]} onChange={e=>setFeeDraft({scheduleId:schedule.id,amounts:amounts.map((value,i)=>i===index?e.target.value:value)})}/></Field>)}<p className="text-sm font-semibold" aria-live="polite">Total Assessment: {validAmounts&&Number.isSafeInteger(totalCents)?formatPeso(totalCents/100):'Enter valid amounts'}</p></>}
      <p className="text-xs text-slate-600">Changing the clearance type or fees returns this request to Pending Assessment. Staff must check the required documents, confirm the corrected assessment, and verify payment again before release. The existing receipt is retained for reference.</p>
     </div>}
    </div>}

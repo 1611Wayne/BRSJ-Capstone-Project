@@ -1,7 +1,7 @@
 'use client';
 import { InspectionForm } from './InspectionForm';
 import { useEffect, useState } from 'react';import { useRouter } from 'next/navigation';import Link from 'next/link';import { XCircle, CheckCircle2, FileText, Eye, LockKeyhole } from 'lucide-react';
-import { usePortal } from './PortalProvider';import { Field,ErrorMessage,Notice } from './Field';import { FeeTable } from './FeeTable';import { StatusBadge } from './StatusBadge';import { DocumentPreview } from './DocumentPreview';import { ReplaceDocuments } from './ReplaceDocuments';import { revenueCategories } from '@/data/revenueCodeData';import { formatPeso } from '@/data/revenueCodeData';import { activeSchedule,requirements } from '@/lib/workflow';import type { UploadedDocument } from '@/types';
+import { usePortal } from './PortalProvider';import { Modal } from './Modal';import { Field,ErrorMessage,Notice } from './Field';import { FeeTable } from './FeeTable';import { StatusBadge } from './StatusBadge';import { DocumentPreview } from './DocumentPreview';import { ReplaceDocuments } from './ReplaceDocuments';import { revenueCategories } from '@/data/revenueCodeData';import { formatPeso } from '@/data/revenueCodeData';import { activeSchedule,requirements } from '@/lib/workflow';import type { UploadedDocument } from '@/types';
 export function AssessmentPage({reference}:{reference:string}){
  const router=useRouter();const {state,user,act}=usePortal();const a=state.applications.find(a=>a.reference===reference);
  const [category,setCategory]=useState(a?.assessment?.category||(a?.businessSubcategory==='Ambulant'?'Ambulant / Mobile Vendor':a?.businessSubcategory==='Lessor (Paupahan)'?'Lessor':revenueCategories[0].name)),[classification,setClassification]=useState(a?.assessment?.classification||(a?.businessSubcategory==='Ambulant'?'':a?.businessSubcategory==='Lessor (Paupahan)'?revenueCategories.find(c=>c.name==='Lessor')!.classifications![0].name:'Small')),[error,setError]=useState(''),[message,setMessage]=useState(''),[preview,setPreview]=useState<UploadedDocument>();
@@ -9,6 +9,9 @@ export function AssessmentPage({reference}:{reference:string}){
  const [docs,setDocs]=useState(a?.documents||[]);
  // Follow the shared data: records loaded from the database after this page opened, or reloaded after the server refused a change.
  useEffect(()=>{if(a)setDocs(a.documents);},[a?.documents]);
+ // After Confirm Assessment: a short confirmation, then back to the dashboard by itself after 3 seconds.
+ const [assessed,setAssessed]=useState<number|null>(null);
+ useEffect(()=>{if(assessed===null)return;const t=setTimeout(()=>router.push('/staff/dashboard'),3000);return()=>clearTimeout(t);},[assessed,router]);
  // Reject state
  const [showReject,setShowReject]=useState(false),[rejectReason,setRejectReason]=useState('');
  if(!a)return <div className="p-8">Application Not Found</div>;const business=a.clearanceType==='Business Clearance';const current=revenueCategories.find(c=>c.name===category)!;const schedule=activeSchedule(state.schedules,a.clearanceType,business?category:'',business?classification:'');const editable=a.status==='Pending Assessment'||(a.status==='Under Review'&&!a.receipt);
@@ -57,11 +60,11 @@ export function AssessmentPage({reference}:{reference:string}){
      <Field label="Business Category *"><select disabled={!editable} className="select-field" value={category} onChange={e=>{setCategory(e.target.value);setClassification(revenueCategories.find(c=>c.name===e.target.value)?.classifications?.[0].name||'');}}>{revenueCategories.map(c=><option key={c.name}>{c.name}</option>)}</select><p className="text-xs text-slate-500 mt-2">Applicant indicated: {a.businessSubcategory||'Business Clearance only'}. Staff make the final selection.</p></Field>
      {current.classifications&&<Field label="Classification / Scale *"><select disabled={!editable} value={classification} className="select-field" onChange={e=>setClassification(e.target.value)}>{current.classifications.map(c=><option key={c.name}>{c.name}</option>)}</select></Field>}
     </div>}
-    <div className="mt-6">{editable&&schedule?<div className="table-wrap"><table className="portal-table border border-slate-300"><thead><tr><th>Fee Component</th><th className="!text-right">Amount (PHP)</th></tr></thead><tbody>{schedule.items.map((item,index)=><tr key={index}><td>{item.name}</td><td><input type="number" min="0" step="0.01" required aria-label={item.name+' amount'} className="text-field text-right" value={feeAmounts[index]} onChange={e=>setFeeDraft({scheduleId:schedule.id,amounts:feeAmounts.map((value,i)=>i===index?e.target.value:value)})}/></td></tr>)}<tr className="bg-slate-100"><td className="font-bold">Total Amount Due</td><td className="text-right font-bold" aria-live="polite">{validAmounts?formatPeso(feeTotal):'Enter valid amounts'}</td></tr></tbody></table></div>:<FeeTable items={a.assessment?.items||schedule?.items||[]}/>}</div>
+    <div className="mt-6">{editable&&schedule?<div className="table-wrap"><table className="portal-table border border-slate-300"><thead><tr><th>Fee Component</th><th className="!text-right">Amount (PHP)</th></tr></thead><tbody>{schedule.items.map((item,index)=><tr key={index}><td>{item.name}</td><td><input type="number" inputMode="decimal" min="0" step="0.01" required aria-label={item.name+' amount'} className="text-field text-right" value={feeAmounts[index]} onChange={e=>setFeeDraft({scheduleId:schedule.id,amounts:feeAmounts.map((value,i)=>i===index?e.target.value:value)})}/></td></tr>)}<tr className="bg-slate-100"><td className="font-bold">Total Amount Due</td><td className="text-right font-bold" aria-live="polite">{validAmounts?formatPeso(feeTotal):'Enter valid amounts'}</td></tr></tbody></table></div>:<FeeTable items={a.assessment?.items||schedule?.items||[]}/>}</div>
     <p className="text-xs mt-4 text-slate-500">Amounts start from the effective fee schedule. Staff can adjust them for this application before confirming assessment.</p>
     <p className="text-sm mt-5">Assessed By: <strong>{a.assessment?.assessedBy||user?.firstName+' '+user?.lastName}</strong></p>
 
-    <button aria-describedby="assessment-verification-hint" disabled={!editable||!schedule||!allVerified||!validAmounts||inspectionPending} className="primary-btn w-full mt-5" onClick={()=>{try{act({type:'assess',reference,category:business?category:'',classification:business?classification:'',amounts:feeAmounts.map(Number)});setError('');router.push('/staff/dashboard');}catch(e){setError((e as Error).message);}}}>Confirm Assessment</button>
+    <button aria-describedby="assessment-verification-hint" disabled={!editable||!schedule||!allVerified||!validAmounts||inspectionPending} className="primary-btn w-full mt-5" onClick={()=>{try{act({type:'assess',reference,category:business?category:'',classification:business?classification:'',amounts:feeAmounts.map(Number)});setError('');setAssessed(feeTotal);}catch(e){setError((e as Error).message);}}}>Confirm Assessment</button>
 
     {editable&&<p id="assessment-verification-hint" className="text-xs mt-3 text-slate-600">{!allVerified?'Verify all required documents above to enable Confirm Assessment.':inspectionPending?'Complete the scheduled inspection above before confirming assessment.':!schedule?'No fee schedule is available for this assessment.':'All required documents are verified. Assessment can be confirmed.'}</p>}
 
@@ -82,5 +85,11 @@ export function AssessmentPage({reference}:{reference:string}){
    </div>
   </div>
   {preview&&<DocumentPreview document={preview} onClose={()=>setPreview(undefined)}/>}
+  {assessed!==null&&<Modal compact title="Application Assessed" onClose={()=>router.push('/staff/dashboard')}>
+   <div role="status" className="text-center mt-4"><CheckCircle2 size={40} className="text-green-600 mx-auto" aria-hidden="true"/>
+    <p className="text-sm mt-3"><strong>{reference}</strong> is assessed at <strong>{formatPeso(assessed)}</strong>. The Applicant is notified to pay at the Treasury.</p>
+    <p className="text-xs text-slate-500 mt-3">Returning to the dashboard in 3 seconds…</p>
+    <button type="button" className="primary-btn w-full mt-5" onClick={()=>router.push('/staff/dashboard')}>Go to Dashboard</button></div>
+  </Modal>}
  </div>;
 }

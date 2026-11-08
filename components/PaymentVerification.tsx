@@ -25,7 +25,7 @@ export function PaymentVerification({application:a}:{application:Application}) {
     {!a.simulatedPayment&&<>
      <Field label="Official Receipt (OR) Number *"><input className="text-field" required value={orNumber} onChange={e=>setOrNumber(e.target.value)} placeholder="Enter the OR number shown on the receipt"/><p className="text-xs text-slate-500 mt-2">Review the receipt photo and manually enter the OR number shown on it.</p></Field>
      <Field label="OR Date *"><input type="date" className="text-field" required max={today()} value={orDate} onChange={e=>setOrDate(e.target.value)}/><p className="text-xs text-slate-500 mt-2">The date printed on the receipt.</p></Field>
-     <Field label="Amount Paid (PHP) *"><input type="number" min="0" step="0.01" className="text-field" required value={amountPaid} onChange={e=>setAmountPaid(e.target.value)} placeholder="Enter the amount printed on the receipt"/><p className="text-xs text-slate-500 mt-2">It must match the assessed amount. If the receipt shows a different amount, return the payment with a reason instead.</p></Field>
+     <Field label="Amount Paid (PHP) *"><input type="number" inputMode="decimal" min="0" step="0.01" className="text-field" required value={amountPaid} onChange={e=>setAmountPaid(e.target.value)} placeholder="Enter the amount printed on the receipt"/><p className="text-xs text-slate-500 mt-2">It must match the assessed amount. If the receipt shows a different amount, return the payment with a reason instead.</p></Field>
     </>}
     <button type="submit" className="primary-btn mt-4" disabled={!a.simulatedPayment&&(!orNumber.trim()||!orDate||!amountPaid.trim())}>Verify Payment</button>
    </form>
