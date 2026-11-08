@@ -987,5 +987,5 @@ test('FT-9 persists and restores scheduled inspections, restricts internal data,
  assert.equal(inspectionMapper({...inspectionDbRow,inspection_reports:inspectionApiReport},true).inspection.inspector,'Pedro Staff');
  inspectionApiActor={...inspectionApiActor,id:'resident-maria',role:'resident'};response=await inspectionEndpoint.POST(request());assert.equal(response.status,400);assert.match((await response.json()).error,/Only Staff/);
  inspectionApiActor={...inspectionApiActor,id:'staff-id',role:'staff'};inspectionApiError={message:'scheduled_at column missing'};
- response=await inspectionEndpoint.POST(request());assert.equal(response.status,500);assert.match((await response.json()).error,/20261106000000_inspection_scheduling.sql/);
+ response=await inspectionEndpoint.POST(request());assert.equal(response.status,500);assert.match((await response.json()).error,/20261108000000_inspection_scheduling.sql/);
 });

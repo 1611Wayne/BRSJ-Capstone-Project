@@ -81,7 +81,7 @@ export async function POST(request: Request) {
       date_inspected: inspection.date || null, remarks: inspection.remarks, scheduled_at: inspection.scheduledAt || null,
       saved_by: me.user.id, saved_at: inspection.savedAt,
     }, { onConflict: 'application_id' });
-    if (error) return fail('Could not save the inspection. Check that migration 20261106000000_inspection_scheduling.sql has been applied. ' + error.message);
+    if (error) return fail('Could not save the inspection. Check that migration 16 (20261108000000_inspection_scheduling.sql, run kit part 12) has been run on Supabase. ' + error.message);
   }
 
   if (command.type === 'review') {
