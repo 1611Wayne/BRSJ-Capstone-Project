@@ -31,6 +31,7 @@ with c as (
   union all select 21, 'SAMPLE fee schedules loaded (23 schedules, 138 fee lines)', (select (count(distinct f.id) || ' / ' || count(i.id)) from public.fee_schedules f join public.fee_schedule_items i on i.fee_schedule_id = f.id where f.ordinance_reference like 'SAMPLE%'), '23 / 138'
   union all select 22, 'applications.clearance_revised_from exists (REVISED date of a withdrawn clearance)', (select count(*) from information_schema.columns where table_schema = 'public' and table_name = 'applications' and column_name = 'clearance_revised_from')::text, '1'
   union all select 23, 'daily cap on sign-in texts (table sms_sends + function claim_sms_send)', ((select count(*) from information_schema.tables where table_schema = 'public' and table_name = 'sms_sends') + (select count(*) from pg_proc where proname = 'claim_sms_send'))::text, '2'
+  union all select 24, 'inspection scheduling (inspection_reports.scheduled_at)', (select count(*) from information_schema.columns where table_schema = 'public' and table_name = 'inspection_reports' and column_name = 'scheduled_at')::text, '1'
 )
 select n, item, expected, actual, (expected = actual) as ok from c
 union all

@@ -1,6 +1,6 @@
 -- STEP 2 of 3. THE MIGRATIONS. Paste ALL of this into the Supabase SQL Editor and click Run.
--- Generated 2026-10-18 from the migration files below (parts 10 and 11 added 2026-11-06), unchanged except that migration 6 was made re-runnable.
--- If you already ran an earlier version of this script, run this one again: it is safe. Parts 10 (the original issue date of a withdrawn clearance) and 11 (a daily cap on sign-in texts) are new.
+-- Generated 2026-10-18 from the migration files below (parts 10 and 11 added 2026-11-06, part 12 on 2026-11-08), unchanged except that migration 6 was made re-runnable.
+-- If you already ran an earlier version of this script, run this one again: it is safe. Parts 10 (the original issue date of a withdrawn clearance), 11 (a daily cap on sign-in texts) and 12 (inspection scheduling) are new.
 -- Parts 6 and 7 are the security rules: who may read each table, and three private file buckets (IDs, documents, receipts).
 -- Run it as the default role (postgres). The editor may warn about "destructive operations" because the script drops and
 -- re-creates some CHECK rules: that is expected, confirm it.
@@ -18,7 +18,7 @@
 -- Afterwards, run STEP 3 (3_after_check.sql).
 
 -- ==========================================================================
--- PART 1 OF 11: 20261005000000_correct_clearance_types.sql
+-- PART 1 OF 12: 20261005000000_correct_clearance_types.sql
 -- ==========================================================================
 -- Correct the clearance_types catalog: 13 -> 9, confirmed with the real client
 -- Generated 2026-10-05. Depends on 20260923010000_seed_clearance_types.sql.
@@ -65,7 +65,7 @@ where name in (
 );
 
 -- ==========================================================================
--- PART 2 OF 11: 20261006000000_add_business_subcategory.sql
+-- PART 2 OF 12: 20261006000000_add_business_subcategory.sql
 -- ==========================================================================
 -- Add the Applicant's optional Ambulant / Lessor indication to applications
 -- Generated 2026-10-06. Depends on 20260922000000_init_schema.sql.
@@ -102,7 +102,7 @@ comment on column public.applications.business_subcategory is
   'Optional. What the Applicant indicated at intake for a Business Clearance: Ambulant or Lessor (Paupahan); NULL = Business Clearance only. A hint for Staff, not the final classification — that is decided at assessment.';
 
 -- ==========================================================================
--- PART 3 OF 11: 20261006010000_sync_schema_with_frontend.sql
+-- PART 3 OF 12: 20261006010000_sync_schema_with_frontend.sql
 -- ==========================================================================
 -- Sync the database with everything the frontend prototype has built since 2026-09-23
 -- Generated 2026-10-06. Depends on ALL of the earlier migrations, in particular
@@ -355,7 +355,7 @@ comment on column public.correction_requests.resident_id is
   'The Applicant who sent the request (the frontend''s requestedBy). The Staff who resolved it is resolved_by.';
 
 -- ==========================================================================
--- PART 4 OF 11: 20261016000000_receipt_confirmed_by.sql
+-- PART 4 OF 12: 20261016000000_receipt_confirmed_by.sql
 -- ==========================================================================
 -- Record WHO confirmed a release at the counter
 -- Generated 2026-10-16. Depends on 20260922000000_init_schema.sql (receipt_confirmations, profiles).
@@ -376,7 +376,7 @@ comment on column public.receipt_confirmations.confirmed_by is
   'The Staff member who recorded the release of the printed original at the counter. NULL = the Applicant confirmed receipt themselves.';
 
 -- ==========================================================================
--- PART 5 OF 11: 20261016010000_notifications.sql
+-- PART 5 OF 12: 20261016010000_notifications.sql
 -- ==========================================================================
 -- In-app notifications for Applicants
 -- Generated 2026-10-16. Depends on 20260922000000_init_schema.sql (profiles, applications).
@@ -422,7 +422,7 @@ comment on table public.notifications is
   'In-app notices for an Applicant (not SMS). Written by the server when Staff act on the Applicant''s application; the Applicant reads them and marks them read. An unread notice with the same dedupe_key is updated instead of repeated.';
 
 -- ==========================================================================
--- PART 6 OF 11: 20261017000000_rls_policies_remaining_tables.sql
+-- PART 6 OF 12: 20261017000000_rls_policies_remaining_tables.sql
 -- ==========================================================================
 -- RLS policies for the remaining tables (everything except profiles and applications, which have their own
 -- policies in 20260923020000). Generated 2026-10-17. Depends on all earlier migrations.
@@ -646,7 +646,7 @@ create trigger notifications_owner_only_marks_read
   for each row execute function public.notifications_owner_only_marks_read();
 
 -- ==========================================================================
--- PART 7 OF 11: 20261017010000_storage_buckets_and_policies.sql
+-- PART 7 OF 12: 20261017010000_storage_buckets_and_policies.sql
 -- ==========================================================================
 -- Storage: three PRIVATE buckets and who may read and upload into each. Generated 2026-10-17.
 -- Depends on 20261017000000_rls_policies_remaining_tables.sql (the helper functions).
@@ -783,7 +783,7 @@ with check (
 );
 
 -- ==========================================================================
--- PART 8 OF 11: 20261018000000_reference_numbers.sql
+-- PART 8 OF 12: 20261018000000_reference_numbers.sql
 -- ==========================================================================
 -- Request reference numbers made by the database: SJ-YYYY-######, one counter per year (Manila time), starting at 1.
 -- Generated 2026-10-18. Depends on 20261017000000_rls_policies_remaining_tables.sql.
@@ -836,7 +836,7 @@ grant execute on function public.next_reference_no() to authenticated, service_r
 alter table public.applications alter column reference_no set default public.next_reference_no();
 
 -- ==========================================================================
--- PART 9 OF 11: 20261018010000_sample_fee_schedules.sql
+-- PART 9 OF 12: 20261018010000_sample_fee_schedules.sql
 -- ==========================================================================
 -- SAMPLE fee data so Staff can test the assessment end to end. Generated 2026-10-18 from the prototype's own data
 -- (data/revenueCodeData.ts and data/mockFeeSchedules.ts), so the numbers are exactly the ones the prototype shows.
@@ -960,7 +960,7 @@ begin
 end $$;
 
 -- ==========================================================================
--- PART 10 OF 11: 20261106000000_clearance_revised_from.sql
+-- PART 10 OF 12: 20261106000000_clearance_revised_from.sql
 -- ==========================================================================
 -- Migration 14: keep a withdrawn clearance's original issue date on the application (IN PROGRESS, 2026-11-06).
 --
@@ -977,7 +977,7 @@ comment on column public.applications.clearance_revised_from is
   'Original issue date of a clearance withdrawn by an Admin correction; the next clearance is marked REVISED with it.';
 
 -- ==========================================================================
--- PART 11 OF 11: 20261106010000_sms_daily_cap.sql
+-- PART 11 OF 12: 20261106010000_sms_daily_cap.sql
 -- ==========================================================================
 -- Migration 15: a daily cap on sign-in texts (IN PROGRESS, 2026-11-06).
 --
@@ -1033,3 +1033,39 @@ $$;
 -- Only the server (the hook, with the service key) may call it.
 revoke all on function public.claim_sms_send(text, integer, integer) from public, anon, authenticated;
 grant execute on function public.claim_sms_send(text, integer, integer) to service_role;
+
+-- ==========================================================================
+-- PART 12 OF 12: 20261108000000_inspection_scheduling.sql
+-- (its own begin; and commit; lines are left out here: this whole script already runs as one piece)
+-- ==========================================================================
+-- Migration 16: inspection scheduling (FT-9). Written by jayemm01 (PR #6, merged 2026-11-08) as
+-- Capstone-frontend/supabase/migrations/20261106000000_inspection_scheduling.sql; copied here unchanged below this
+-- header, under a later date so it sorts after migration 14 (which has the same 20261106000000 prefix) and 15.
+-- Needed before Staff can save an inspection on the real database: /api/workflow writes inspection_reports.scheduled_at.
+--
+-- FT-9. Apply after the existing backend migrations; do not modify already-applied migration files.
+-- Scheduling is optional. Existing inspection results remain unchanged.
+
+alter table public.inspection_reports
+  add column if not exists scheduled_at timestamptz;
+
+comment on column public.inspection_reports.scheduled_at is
+  'Planned inspection appointment. Staff enter Manila local time; stored as an absolute timestamp.';
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint
+    where conrelid = 'public.inspection_reports'::regclass
+      and conname = 'inspection_schedule_requires_inspector'
+  ) then
+    alter table public.inspection_reports add constraint inspection_schedule_requires_inspector
+      check (scheduled_at is null or length(btrim(inspector_name)) > 0);
+  end if;
+end;
+$$;
+
+create index if not exists inspection_reports_pending_schedule_idx
+  on public.inspection_reports (scheduled_at)
+  where status = 'Pending' and scheduled_at is not null;
+
