@@ -15,7 +15,7 @@ export const dynamic = 'force-dynamic';
 // The workflow steps the database can already save. Each one runs the prototype's own rules (lib/workflow.ts) as the
 // signed-in person, on the request as it is in the database, and then saves exactly what changed.
 const SUPPORTED = new Set<Command['type']>(['review', 'assess', 'reject', 'requestCorrection', 'editApplication', 'resolveCorrection', 'replaceDocument',
-  'receiptPhoto', 'onlinePayment', 'verifyPayment', 'returnPayment', 'printClearance', 'download', 'confirm', 'feedback', 'revert']);
+  'receiptPhoto', 'onlinePayment', 'verifyPayment', 'returnPayment', 'printClearance', 'download', 'confirm', 'feedback', 'revert', 'inspection']);
 const RECEIPTS = 'receipt-photos';
 
 // Checks that a file the browser uploaded is in this request's own folder of a bucket; returns its stored size and type.
@@ -63,7 +63,7 @@ export async function POST(request: Request) {
   if (!row) return fail('This request was not found.', 404);
   if (me.user.role === 'resident' && row.resident_id !== me.user.id) return fail('This request belongs to another resident.', 403);
 
-  const before = toApplication(row);
+  const before = toApplication(row, true);
   // The rules pick fee schedules by their database id: Staff assessment, or an Admin fee correction (maybe for a new type).
   const scheduleType = command.type === 'assess' ? before.clearanceType : command.type === 'revert' && command.data.feeAssessment ? command.data.clearanceType ?? before.clearanceType : undefined;
   const schedules = scheduleType ? await loadFeeSchedules(db, scheduleType).catch(() => null) : [];
@@ -73,6 +73,16 @@ export async function POST(request: Request) {
   let next: PortalState;
   try { next = transition(state, command, now); } catch (e) { return fail((e as Error).message, 400); }
   const after = next.applications[0];
+
+  if (command.type === 'inspection' && after.inspection) {
+    const inspection = after.inspection;
+    const { error } = await db.from('inspection_reports').upsert({
+      application_id: row.id, status: inspection.status, inspector_name: inspection.inspector,
+      date_inspected: inspection.date || null, remarks: inspection.remarks, scheduled_at: inspection.scheduledAt || null,
+      saved_by: me.user.id, saved_at: inspection.savedAt,
+    }, { onConflict: 'application_id' });
+    if (error) return fail('Could not save the inspection. Check that migration 20261106000000_inspection_scheduling.sql has been applied. ' + error.message);
+  }
 
   if (command.type === 'review') {
     for (const d of after.documents) {
@@ -279,5 +289,5 @@ export async function POST(request: Request) {
 
   const { data: saved } = await db.from('applications').select(APPLICATION_SELECT).eq('id', row.id).single();
   if (!saved) return fail('Saved, but could not read it back.');
-  return NextResponse.json({ application: toApplication(saved) });
+  return NextResponse.json({ application: toApplication(saved, me.user.role !== 'resident') });
 }

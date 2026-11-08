@@ -13,6 +13,8 @@ pages, click the buttons and read what is on screen. They are the checks that we
 | `admin-reversion.cjs` | Void entries excluded from daily rows and CSV; Admin clearance type and fee corrections, audit snapshots, and Staff reassessment |
 | `feedback-summary.cjs` | Admin feedback counts for all star ratings, common comment words, empty and rating-only feedback, mobile layout, and Staff visibility |
 | `transaction-log.cjs` | Document review times, full transaction history after reload, Admin reversion history, and monthly reversion counts by Admin in Manila time |
+| `monthly-collections.cjs` | Monthly and daily collection breakdowns by subcategory and New/Renewal, saved fee components, exclusions, Manila issuance dates, peak days, CSV, and print |
+| `inspection-scheduling.cjs` | Staff scheduling, rescheduling, clearing and completing inspections, upcoming/overdue lists, assessment gating, reload persistence, and internal visibility |
 
 ## How to run
 

@@ -15,7 +15,7 @@ const Context = createContext<{ state: PortalState; user?: User; ready: boolean;
 // updates with the same rules, the step is sent to the server, which checks it again and saves it. If the server
 // refuses, a banner says why and the saved requests are loaded again, so the screen never shows unsaved changes.
 const SAVED_ON_SERVER = new Set<Command['type']>(['review', 'assess', 'reject', 'readNotifications', 'requestCorrection', 'editApplication', 'resolveCorrection', 'replaceDocument',
-  'receiptPhoto', 'onlinePayment', 'verifyPayment', 'returnPayment', 'printClearance', 'download', 'confirm', 'feedback', 'revert']);
+  'receiptPhoto', 'onlinePayment', 'verifyPayment', 'returnPayment', 'printClearance', 'download', 'confirm', 'feedback', 'revert', 'inspection']);
 
 export function PortalProvider({children}:{children:React.ReactNode}) {
   const [state,setState] = useState<PortalState>(initial); const [ready,setReady] = useState(false); const latest = useRef(state);

@@ -1,14 +1,43 @@
-import type { Application, AuditLog, ReportRecord } from '@/types';
+import type { Application, AuditLog, MonthlyCollectionRow } from '@/types';
 import { manilaDate } from '@/lib/workflow';
 export const SLA_SECONDS = 60; // Demo threshold for the Staff payment check (upload to verification). No SLA has been approved; replace when one is.
-export function monthlyRows(applications: Application[]): ReportRecord[] {
-  const groups: Record<string, ReportRecord> = {};
-  for (const a of applications.filter(a => a.status !== 'Draft' && a.status !== 'Void')) {
-    const row = groups[a.clearanceType] ||= { clearanceType: a.clearanceType, count: 0, assessed: 0, recorded: 0 };
-    row.count++; row.assessed += a.assessment?.total || 0; // Collections are released payments with an OR. A simulated payment has no receipt, so it is never counted (manuscript 3.3.4).
-    row.recorded += a.clearance && a.receipt ? a.receipt.amountPaid : 0;
+// A generated clearance backed by a verified receipt photo is an issued OR transaction.
+// Never count stale receipt/clearance fields on rejected, voided, reverted, or otherwise unissued requests.
+const releasedOrApplications = (applications: Application[]) => applications.filter(a =>
+  (a.status === 'Ready for Download' || a.status === 'Closed - Cleared') &&
+  a.assessment && a.clearance && a.receipt && a.paymentVerification?.status === 'Verified' &&
+  (a.receiptPhoto || a.receipt.receiptPhoto) && !a.simulatedPayment);
+
+// Report saved assessment snapshots, including adjustments; never recompute historical fees from current schedules.
+// Money is accumulated as integer centavos, then converted back to pesos for display/export.
+export function monthlyRows(applications: Application[], byDay = false): MonthlyCollectionRow[] {
+  const groups = new Map<string, MonthlyCollectionRow>();
+  for (const a of releasedOrApplications(applications)) {
+    const date = byDay ? manilaDate(a.clearance!.generatedAt) : '';
+    const subcategory = a.clearanceType === 'Business Clearance' ? a.assessment!.category || a.businessSubcategory || 'General' : '—';
+    const key = JSON.stringify([date, a.clearanceType, subcategory, a.applicationType]);
+    const row = groups.get(key) || { date, clearanceType: a.clearanceType, subcategory, applicationType: a.applicationType, count: 0, assessed: 0, recorded: 0, components: Object.create(null) };
+    row.count++; row.assessed += Math.round(a.assessment!.total * 100); row.recorded += Math.round(a.receipt!.amountPaid * 100);
+    for (const item of a.assessment!.items) row.components[item.name] = (row.components[item.name] || 0) + Math.round(item.amount * 100);
+    groups.set(key, row);
   }
-  return Object.values(groups);
+  return Array.from(groups.values(), row => ({ ...row, assessed: row.assessed / 100, recorded: row.recorded / 100,
+    components: Object.assign(Object.create(null), Object.fromEntries(Object.entries(row.components).map(([name, cents]) => [name, cents / 100]))) }))
+    .sort((a, b) => a.date.localeCompare(b.date) || a.clearanceType.localeCompare(b.clearanceType) || a.subcategory.localeCompare(b.subcategory) || a.applicationType.localeCompare(b.applicationType));
+}
+
+export function monthlyCollectionReport(applications: Application[], month: string, type = '') {
+  const eligible = releasedOrApplications(applications).filter(a => manilaDate(a.clearance!.generatedAt).slice(0, 7) === month && (!type || a.clearanceType === type));
+  const daily = monthlyRows(eligible, true), monthly = monthlyRows(eligible);
+  const feeComponents = Array.from(new Set(eligible.flatMap(a => a.assessment!.items.map(item => item.name)))).sort((a, b) => a.localeCompare(b));
+  const sumMoney = (amounts: number[]) => amounts.reduce((sum, amount) => sum + Math.round(amount * 100), 0) / 100;
+  const totals = { count: eligible.length, assessed: sumMoney(monthly.map(row => row.assessed)), recorded: sumMoney(monthly.map(row => row.recorded)),
+    components: Object.fromEntries(feeComponents.map(name => [name, sumMoney(monthly.map(row => row.components[name] || 0))])) };
+  const volumes = new Map<string, number>();
+  for (const row of daily) volumes.set(row.date, (volumes.get(row.date) || 0) + row.count);
+  const peakCount = Math.max(0, ...volumes.values());
+  const peakDates = Array.from(volumes).filter(([, count]) => count === peakCount).map(([date]) => date).sort();
+  return { daily, monthly, feeComponents, totals, peakCount, peakDates };
 }
 // Total processing duration, as the manuscript defines it (3.3.1): from the initial application submission to the Applicant's
 // receipt confirmation. Null until the Applicant has confirmed receipt.

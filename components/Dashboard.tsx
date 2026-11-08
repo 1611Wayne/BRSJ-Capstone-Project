@@ -10,6 +10,7 @@ import { processingSeconds, paymentCheckSeconds, mmss, SLA_SECONDS, feedbackSumm
 import { WhatsNew } from './NotificationInbox';
 import { MonthlyReversions } from './MonthlyReversions';
 import { useDbAudits } from './useDbAudits';
+import { UpcomingInspections } from './UpcomingInspections';
 import type { UserRole } from '@/types';
 
 /* ── helpers ─────────────────────────────────────────────── */
@@ -253,6 +254,7 @@ export function Dashboard({ role }: { role: UserRole }) {
       )}
 
       {/* Recent activity / applications table */}
+      {role === 'staff' && <UpcomingInspections />}
       {role === 'admin'
         ? <><h2 className="text-xl font-bold text-brand-ink mt-10 mb-5">Recent Activity</h2>{activityError && <p role="alert" className="text-sm text-red-700 mb-3">{activityError}</p>}<ReportTable headers={['Time', 'User', 'Action', 'Reference']} rows={state.audits.slice(0, 8).map(a => [dateLabel(a.timestamp), a.user, a.action, a.reference])} /></>
         : <><h2 className="text-xl font-bold text-brand-ink mt-10 mb-5">Recent Applications</h2><ApplicationTable applications={apps.slice(0, 5)} role={role} /><div className="text-right mt-5"><Link href={'/' + role + '/applications'} className="text-sm text-brand-primary underline">View all applications →</Link></div></>

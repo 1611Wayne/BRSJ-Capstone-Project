@@ -1,6 +1,7 @@
 import type { Application, ApplicationEdits, ApplicationInput, ApplicationStatus, AuditLog, Clearance, CorrectionRequest, DocumentRequirement, FeeSchedule, InspectionReport, PortalState, SimulatedPayment, TransactionReversion, UploadedDocument, User } from '@/types';
 import { clearanceTypes, businessSubcategories } from '@/data/clearanceTypes';
 import { fullName } from '@/data/mockUsers';
+import { canScheduleInspection, inspectionCalendarDate, validInspectionTimestamp } from '@/lib/inspections';
 import type { AppNotification, NotificationEvent } from '@/types';
 // An Applicant's notifications, newest first.
 export const notificationsFor = (state: PortalState, userId?: string): AppNotification[] =>
@@ -237,9 +238,35 @@ export function transition(state: PortalState, command: Command, now = new Date(
     a.documents = a.documents.map((d, i) => i === index ? { ...command.document, requirement: old.requirement, status: 'Pending Review' as const, reviewedAt: undefined, reviewedBy: undefined } : d);
     log(actor.role === 'staff' ? 'Document replaced by Staff for the Applicant' : 'Document replaced by Applicant', reference, JSON.stringify({ requirement: old.requirement, file: old.name, status: old.status }), JSON.stringify({ requirement: old.requirement, file: command.document.name, status: 'Pending Review' }));
   }
-  if (command.type === 'inspection') { staff(); requireThat(a.status !== 'Void', 'A void transaction cannot be inspected.'); requireThat(command.report.status !== 'Completed' || (command.report.inspector.trim() && command.report.date && command.report.date <= today()), 'Completed inspections need an inspector and valid date.'); a.inspection = { ...command.report, savedAt: now }; log('Inspection report saved', reference, JSON.stringify(original.inspection), JSON.stringify(a.inspection)); }
+  if (command.type === 'inspection') {
+    staff(); requireThat(!['Draft', 'Void', 'Rejected'].includes(a.status), 'A draft, void, or rejected transaction cannot be inspected.');
+    const report = command.report;
+    requireThat(report.status === 'Pending' || report.status === 'Completed', 'Select a valid inspection status.');
+    requireThat(typeof report.inspector === 'string' && typeof report.date === 'string' && typeof report.remarks === 'string', 'Enter valid inspection details.');
+    const inspector = report.inspector.trim(), date = report.date, remarks = report.remarks.trim();
+    requireThat(inspector.length <= 120 && remarks.length <= 2000, 'Keep the inspector name within 120 characters and remarks within 2,000 characters.');
+    requireThat(!date || (inspectionCalendarDate(date) && date <= manilaDate(now)), 'Enter a valid inspection completion date that is not in the future.');
+    requireThat(report.status !== 'Completed' || (inspector && date), 'Completed inspections need an inspector and valid date.');
+    const scheduledAt = report.scheduledAt || undefined;
+    requireThat(!scheduledAt || (typeof scheduledAt === 'string' && validInspectionTimestamp(scheduledAt)), 'Enter a valid inspection date and time.');
+    const changedSchedule = Date.parse(scheduledAt || '') !== Date.parse(original.inspection?.scheduledAt || '') && !!scheduledAt;
+    if (scheduledAt) {
+      requireThat(inspector, 'Assign an inspector before scheduling an inspection.');
+      if (changedSchedule) {
+        requireThat(report.status === 'Pending' && canScheduleInspection(a), 'Schedule inspections while the request is pending assessment or under review, before recording completion.');
+        requireThat(Date.parse(scheduledAt) >= Math.floor(Date.parse(now) / 60000) * 60000, 'Choose an inspection date and time that is not in the past.');
+      }
+      if (report.status === 'Pending' && original.inspection?.status === 'Completed') requireThat(canScheduleInspection(a), 'Reopen inspections before assessment.');
+    }
+    a.inspection = { status: report.status, inspector, date, remarks, savedAt: now, ...(scheduledAt ? { scheduledAt: new Date(scheduledAt).toISOString() } : {}) };
+    const action = report.status === 'Completed' && original.inspection?.status !== 'Completed' ? 'Inspection completed'
+      : changedSchedule ? original.inspection?.scheduledAt ? 'Inspection rescheduled' : 'Inspection scheduled'
+      : !scheduledAt && original.inspection?.scheduledAt ? 'Inspection schedule cleared' : 'Inspection report saved';
+    log(action, reference, JSON.stringify(original.inspection), JSON.stringify(a.inspection));
+  }
   if (command.type === 'assess') {
     staff(); requireThat(a.status === 'Pending Assessment' || (a.status === 'Under Review' && !a.receipt), 'This request cannot be assessed at its current stage.');
+    requireThat(!a.inspection?.scheduledAt || a.inspection.status === 'Completed', 'Complete the scheduled inspection before confirming assessment.');
     requireThat(requirements(a).every(r => a.documents.some(d => d.requirement === r.name && d.status === 'Verified')), 'Verify every required document before confirming assessment.');
     const schedule = activeSchedule(s.schedules, a.clearanceType, command.category, command.classification);
     requireThat(schedule, 'No effective fee schedule matches this selection.');
