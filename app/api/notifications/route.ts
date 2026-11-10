@@ -11,6 +11,7 @@ export async function GET() {
   const me = await currentUser(); if ('error' in me) return me.error;
   const { data, error } = await supabaseForRequest().from('notifications')
     .select('id, user_id, event, message, created_at, read_at, dedupe_key, applications ( reference_no )')
+    .eq('user_id', me.user.id)
     .order('created_at', { ascending: false }).limit(200);
   if (error) return NextResponse.json({ error: 'Could not load your notifications: ' + error.message }, { status: 500 });
   const notifications: AppNotification[] = (data ?? []).map((n: Record<string, any>) => ({

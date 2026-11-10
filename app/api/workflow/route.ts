@@ -7,6 +7,7 @@ import { currentUser } from '@/lib/server/currentUser';
 import { APPLICATION_SELECT, applicantColumns, toApplication } from '@/lib/server/applicationRows';
 import { loadFeeSchedules } from '@/lib/server/feeSchedules';
 import { loadUnreadNotifications, persistAudits, persistNotifications } from '@/lib/server/persist';
+import { persistTeamNotice } from '@/lib/server/teamNotifications';
 
 type Schedule = Awaited<ReturnType<typeof loadFeeSchedules>>[number];
 
@@ -285,6 +286,7 @@ export async function POST(request: Request) {
   try {
     await persistAudits(db, next.audits, me.user, row.id);
     await persistNotifications(db, unread, next.notifications.filter(n => n.reference === row.reference_no && n.userId === row.resident_id), row.id);
+    await persistTeamNotice(db, command.type, before, after, row.id, now);
   } catch (e) { return fail((e as Error).message); }
 
   const { data: saved } = await db.from('applications').select(APPLICATION_SELECT).eq('id', row.id).single();

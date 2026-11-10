@@ -15,6 +15,50 @@ const at = '2026-09-07T02:30:12.000Z', ref = 'SJ-2026-000123';
 const app = s => s.applications.find(a=>a.reference===ref);
 const role = (s,id) => ({...s,currentUserId:id});
 
+test('FT-10 notifies only active Staff/Admin on submission, never drafts or failed submissions',()=>{
+ const s=state();s.users.push({...s.users.find(u=>u.role==='staff'),id:'inactive-staff',status:'Inactive'});
+ const input={...app(s),documents:app(s).documents.map(d=>({...d,size:100,type:'application/pdf'}))};
+ const draft=transition(s,{type:'saveApplication',application:input,draft:true},at);
+ assert.equal((draft.notifications??[]).length,0);
+ const record=draft.applications[0];
+ const submitted=transition(draft,{type:'saveApplication',application:input,reference:record.reference,draft:false},at);
+ const notices=submitted.notifications.filter(n=>n.event==='submission_received');
+ assert.deepEqual(notices.map(n=>n.userId).sort(),['admin','staff-maria','staff-pedro']);
+ assert.ok(notices.every(n=>n.reference===record.reference));
+ assert.equal(notificationsFor(submitted,'resident-maria').length,0);
+ assert.equal((s.notifications??[]).length,0);
+ assert.throws(()=>transition(s,{type:'saveApplication',application:{...input,certified:false},draft:false},at));
+});
+
+test('FT-10 correction, payment and release notices preserve Applicant events and per-user read history',()=>{
+ let s=transition(state(),{type:'requestCorrection',reference:ref,message:'Fix the address'},at);
+ assert.equal(notificationsFor(s,'admin')[0].event,'correction_requested');
+ assert.throws(()=>transition(s,{type:'requestCorrection',reference:ref,message:'Another'},at));
+ s=assess(state());
+ const photo={requirement:'OR',name:'or.jpg',size:100,type:'image/jpeg',status:'Pending Review'};
+ s=transition(role(s,'resident-maria'),{type:'receiptPhoto',reference:ref,photo},at);
+ assert.equal(notificationsFor(s,'staff-maria')[0].event,'payment_pending');
+ const read=transition(role(s,'staff-maria'),{type:'readNotifications'},at);
+ assert.ok(notificationsFor(read,'staff-maria').every(n=>n.readAt));
+ assert.ok(notificationsFor(read,'admin').every(n=>!n.readAt));
+ s=transition(role(read,'staff-maria'),{type:'returnPayment',reference:ref,reason:'Unreadable'},at);
+ s=transition(role(s,'resident-maria'),{type:'receiptPhoto',reference:ref,photo},'2026-09-07T03:00:00.000Z');
+ assert.equal(notificationsFor(s,'admin').filter(n=>n.event==='payment_pending').length,1);
+ assert.equal(notificationsFor(s,'staff-maria').filter(n=>n.event==='payment_pending').length,2);
+ s=transition(role(s,'staff-maria'),{type:'verifyPayment',reference:ref,orNumber:'FT10-OR',orDate:'2026-09-06',amountPaid:600},at);
+ assert.ok(notificationsFor(s,'admin').some(n=>n.event==='release_pending'));
+ assert.ok(notificationsFor(s,'resident-maria').some(n=>n.event==='clearance_ready'));
+ assert.ok(notificationsFor(s,'resident-maria').every(n=>!['submission_received','correction_requested','payment_pending','release_pending'].includes(n.event)));
+ assert.throws(()=>transition(role(s,'resident-maria'),{type:'verifyPayment',reference:ref},at));
+});
+
+test('FT-10 explicitly labels simulated payments and uses each role own application route',()=>{
+ const {notificationApplicationPath}=require('../lib/teamNotifications.ts');
+ const s=transition(role(assess(state()),'resident-maria'),{type:'onlinePayment',reference:ref,method:'GCash',amount:600},at);
+ assert.match(notificationsFor(s,'admin')[0].message,/simulated payment/);
+ for(const role of ['resident','staff','admin'])assert.equal(notificationApplicationPath(role,ref),`/${role}/applications/${ref}`);
+});
+
 test('document review times are recorded on changes, preserved on unchanged documents and cleared on replacement',()=>{
  const before=state('staff-maria'),original=structuredClone(app(before));
  let s=transition(before,{type:'review',reference:ref,documents:app(before).documents},at);
@@ -988,4 +1032,55 @@ test('FT-9 persists and restores scheduled inspections, restricts internal data,
  inspectionApiActor={...inspectionApiActor,id:'resident-maria',role:'resident'};response=await inspectionEndpoint.POST(request());assert.equal(response.status,400);assert.match((await response.json()).error,/Only Staff/);
  inspectionApiActor={...inspectionApiActor,id:'staff-id',role:'staff'};inspectionApiError={message:'scheduled_at column missing'};
  response=await inspectionEndpoint.POST(request());assert.equal(response.status,500);assert.match((await response.json()).error,/20261108000000_inspection_scheduling.sql/);
+});
+
+
+test('FT-10 server resolves active team recipients, refreshes unread duplicates and surfaces schema errors',async()=>{
+ const {persistTeamNotice}=require('../lib/server/teamNotifications.ts');
+ const calls=[];let insertError=null,recipientError=null;
+ const db={from(table){const q={
+  select(){return q},eq(column,value){calls.push(['eq',table,column,value]);return q},
+  in(column,value){calls.push(['in',column,value]);return q},order(){return q},is(column,value){calls.push(['is',column,value]);return q},
+  async range(){return {data:recipientError?null:[{id:'staff-db'},{id:'admin-db'}],error:recipientError}},
+  async insert(row){calls.push(['insert',row]);return {error:insertError}},
+  update(row){calls.push(['update',row]);return q},then(resolve,reject){return Promise.resolve({error:null}).then(resolve,reject)}
+ };return q}};
+ const after={...app(state()),status:'For Checking'},before={...after,status:'Awaiting OR'};
+ await persistTeamNotice(db,'receiptPhoto',before,after,42,at);
+ assert.deepEqual(calls.find(c=>c[0]==='in'),['in','role',['staff','admin']]);
+ assert.ok(calls.some(c=>c[0]==='eq'&&c[2]==='status'&&c[3]==='Active'));
+ assert.deepEqual(calls.filter(c=>c[0]==='insert').map(c=>c[1].user_id),['staff-db','admin-db']);
+ assert.ok(calls.filter(c=>c[0]==='insert').every(c=>c[1].application_id===42&&c[1].event==='payment_pending'));
+ calls.length=0;insertError={code:'23505'};
+ await persistTeamNotice(db,'receiptPhoto',before,after,42,at);
+ assert.equal(calls.filter(c=>c[0]==='update').length,2);assert.ok(calls.some(c=>c[0]==='is'&&c[1]==='read_at'&&c[2]===null));
+ calls.length=0;await persistTeamNotice(db,'review',before,after,42,at);assert.deepEqual(calls,[]);
+ insertError={code:'23514',message:'event constraint'};
+ await assert.rejects(()=>persistTeamNotice(db,'receiptPhoto',before,after,42,at),/FT-10 notification event constraint/);
+ recipientError={message:'offline'};
+ await assert.rejects(()=>persistTeamNotice(db,'receiptPhoto',before,after,42,at),/recipients could not be loaded/);
+});
+
+let teamNotificationEndpoint,teamNotificationActor,teamNotificationCalls=[];
+const teamNotificationDb={from(){const q={select(){return q},order(){return q},limit(){return q},
+ eq(column,value){teamNotificationCalls.push(['eq',column,value]);return q},is(column,value){teamNotificationCalls.push(['is',column,value]);return q},update(){return q},
+ then(resolve,reject){return Promise.resolve({data:[],error:null}).then(resolve,reject)}
+ };return q}};
+try{
+ Module._load=function(request,parent,...rest){
+  if(request==='@/lib/server/currentUser')return {currentUser:async()=>({user:teamNotificationActor})};
+  if(request==='@/lib/supabase/session')return {supabaseForRequest:()=>teamNotificationDb};
+  return originalLoad.call(this,request,parent,...rest);
+ };
+ teamNotificationEndpoint=require('../app/api/notifications/route.ts');
+}finally{Module._load=originalLoad;}
+
+test('FT-10 notification GET and mark-read stay scoped to the authenticated user for every role',async()=>{
+ for(const role of ['resident','staff','admin']){
+  teamNotificationActor={id:role+'-id',role};teamNotificationCalls=[];
+  assert.equal((await teamNotificationEndpoint.GET()).status,200);
+  assert.deepEqual(teamNotificationCalls,[['eq','user_id',role+'-id']]);
+  teamNotificationCalls=[];assert.equal((await teamNotificationEndpoint.POST()).status,200);
+  assert.deepEqual(teamNotificationCalls,[['eq','user_id',role+'-id'],['is','read_at',null]]);
+ }
 });

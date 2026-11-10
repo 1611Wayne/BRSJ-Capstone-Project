@@ -151,7 +151,7 @@ export function Dashboard({ role }: { role: UserRole }) {
         {role === 'resident' ? 'Track and manage your clearance applications here.' : 'Service requests and processing overview.'}
       </p>
 
-      {role === 'resident' && <WhatsNew />}
+      <WhatsNew />
 
       {/* Stat cards */}
       <div className="grid sm:grid-cols-2 md:grid-cols-4 gap-4 mt-9">
