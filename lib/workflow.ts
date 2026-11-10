@@ -3,6 +3,7 @@ import { clearanceTypes, businessSubcategories } from '@/data/clearanceTypes';
 import { fullName } from '@/data/mockUsers';
 import { canScheduleInspection, inspectionCalendarDate, validInspectionTimestamp } from '@/lib/inspections';
 import type { AppNotification, NotificationEvent } from '@/types';
+import { teamNotice } from '@/lib/teamNotifications';
 // An Applicant's notifications, newest first.
 export const notificationsFor = (state: PortalState, userId?: string): AppNotification[] =>
   (state.notifications ?? []).filter(n => n.userId === userId).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
@@ -100,6 +101,12 @@ export function transition(state: PortalState, command: Command, now = new Date(
     s.notifications = [{ id: `note-${now}-${s.notifications.length}`, userId, reference, event, message, createdAt: now, ...(key ? { key } : {}) }, ...s.notifications];
   };
   const dropUnread = (userId: string, key: string) => { s.notifications = s.notifications.filter(n => !(n.userId === userId && n.key === key && !n.readAt)); };
+  const notifyTeam = (before: Application | undefined, after: Application) => {
+    const notice = teamNotice(command.type, before, after);
+    if (notice) for (const user of s.users) if (user.status === 'Active' && (user.role === 'staff' || user.role === 'admin')) {
+      notify(user.id, after.reference, notice.event, notice.message, notice.key);
+    }
+  };
   if (command.type === 'logout') { s.currentUserId = null; return s; }
   if (command.type === 'login') {
     const user = s.users.find(u => u.email.toLowerCase() === command.email.trim().toLowerCase() && !!u.password && u.password === command.password && u.status === 'Active');
@@ -198,7 +205,8 @@ export function transition(state: PortalState, command: Command, now = new Date(
     const reference = previous?.reference || `SJ-${now.slice(0,4)}-${String(next).padStart(6,'0')}`;
     const record: Application = { ...a, businessSubcategory: a.clearanceType === 'Business Clearance' ? a.businessSubcategory : undefined, documents: a.documents.map(d => ({ ...d, status: 'Pending Review' as const, reviewedAt: undefined, reviewedBy: undefined })), source: actor.role === 'staff' ? 'Assisted / Walk-in' : 'Online', staffEncoder: actor.role === 'staff' ? fullName(actor) : undefined, reference, dateRequested: command.draft ? previous?.dateRequested || now : now, status: command.draft ? 'Draft' : 'Pending Assessment' };
     s.applications = previous ? s.applications.map(x => x.reference === reference ? record : x) : [record, ...s.applications];
-    log(command.draft ? 'Draft saved' : 'Application submitted', reference, previous?.status, record.status); return s;
+    log(command.draft ? 'Draft saved' : 'Application submitted', reference, previous?.status, record.status);
+    notifyTeam(previous, record); return s;
   }
   const reference = command.type === 'revert' ? command.data.reference : command.reference;
   const original = s.applications.find(a => a.reference === reference);
@@ -473,5 +481,6 @@ export function transition(state: PortalState, command: Command, now = new Date(
     log(d.action, reference, snapshot(original), snapshot(a), d.reason, true);
   }
   s.applications = s.applications.map(x => x.reference === reference ? a : x);
+  notifyTeam(original, a);
   return s;
 }

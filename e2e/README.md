@@ -8,6 +8,7 @@ pages, click the buttons and read what is on screen. They are the checks that we
 | `reports-and-timer.cjs` | Staff verify a receipt photo (OR number, OR date, Amount Paid), then the detail page, the Daily OR Summary and the admin dashboard |
 | `release-and-return.cjs` | Staff return a payment to the Applicant; Staff print the clearance for the stamp and confirm the release; the Applicant's claim-and-backup notice |
 | `notifications.cjs` | The Applicant's in-app notifications: sidebar badge, "What's new" card, inbox, read state, privacy between users |
+| `team-notifications.cjs` | Staff/Admin submission, correction, payment and release inboxes, role links, badges, read persistence, privacy and mobile layout |
 | `verify-page.cjs` | The public verification page finds a clearance released through the receipt-photo flow |
 | `staff-queue.cjs` | The Staff queue and dashboard: the renamed upload screen, the Rejected and Correction Requests tabs, the open-correction count |
 | `admin-reversion.cjs` | Void entries excluded from daily rows and CSV; Admin clearance type and fee corrections, audit snapshots, and Staff reassessment |

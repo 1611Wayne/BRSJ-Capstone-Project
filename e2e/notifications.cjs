@@ -82,7 +82,7 @@ const setUser = (page, id) => page.evaluate(([k, id]) => { const s = JSON.parse(
   await setUser(page, 'staff-maria');
   await page.goto(BASE + '/staff/dashboard');
   await page.waitForSelector('nav');
-  check('Staff have no Notifications item (Applicants only, for now)', !(await page.locator('nav').first().innerText()).includes('Notifications'));
+  check('Staff also have their own Notifications item', (await page.locator('nav').first().innerText()).includes('Notifications'));
   await page.context().close();
 
   // ===== B: a whole journey =====
