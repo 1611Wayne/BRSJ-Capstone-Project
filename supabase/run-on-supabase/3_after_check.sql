@@ -32,6 +32,7 @@ with c as (
   union all select 22, 'applications.clearance_revised_from exists (REVISED date of a withdrawn clearance)', (select count(*) from information_schema.columns where table_schema = 'public' and table_name = 'applications' and column_name = 'clearance_revised_from')::text, '1'
   union all select 23, 'daily cap on sign-in texts (table sms_sends + function claim_sms_send)', ((select count(*) from information_schema.tables where table_schema = 'public' and table_name = 'sms_sends') + (select count(*) from pg_proc where proname = 'claim_sms_send'))::text, '2'
   union all select 24, 'inspection scheduling (inspection_reports.scheduled_at)', (select count(*) from information_schema.columns where table_schema = 'public' and table_name = 'inspection_reports' and column_name = 'scheduled_at')::text, '1'
+  union all select 25, 'Staff and Admin notice kinds allowed (submission_received ... release_pending)', (select (pg_get_constraintdef(oid) like '%release_pending%' and pg_get_constraintdef(oid) like '%submission_received%')::text from pg_constraint where conname = 'notifications_event_check' and conrelid = 'public.notifications'::regclass), 'true'
 )
 select n, item, expected, actual, (expected = actual) as ok from c
 union all
