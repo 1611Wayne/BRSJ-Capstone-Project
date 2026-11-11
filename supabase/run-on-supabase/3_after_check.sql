@@ -33,6 +33,7 @@ with c as (
   union all select 23, 'daily cap on sign-in texts (table sms_sends + function claim_sms_send)', ((select count(*) from information_schema.tables where table_schema = 'public' and table_name = 'sms_sends') + (select count(*) from pg_proc where proname = 'claim_sms_send'))::text, '2'
   union all select 24, 'inspection scheduling (inspection_reports.scheduled_at)', (select count(*) from information_schema.columns where table_schema = 'public' and table_name = 'inspection_reports' and column_name = 'scheduled_at')::text, '1'
   union all select 25, 'Staff and Admin notice kinds allowed (submission_received ... release_pending)', (select (pg_get_constraintdef(oid) like '%release_pending%' and pg_get_constraintdef(oid) like '%submission_received%')::text from pg_constraint where conname = 'notifications_event_check' and conrelid = 'public.notifications'::regclass), 'true'
+  union all select 26, 'several fee versions per day allowed (no unique rule on fee_schedules; lookup index)', (select ((select count(*) from pg_constraint where conrelid = 'public.fee_schedules'::regclass and contype = 'u') = 0 and (select count(*) from pg_indexes where indexname = 'fee_schedules_lookup_idx') = 1)::text), 'true'
 )
 select n, item, expected, actual, (expected = actual) as ok from c
 union all
