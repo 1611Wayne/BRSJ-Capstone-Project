@@ -284,6 +284,20 @@ test('reset passwords and deactivated users affect login without leaking passwor
  assert.throws(()=>transition(s,{type:'login',email:resident.email,password:resident.password}),/inactive/);
  assert.throws(()=>transition(s,{type:'user',user:{...resident,role:'admin'},reason:'Bad role'}),/Admin accounts/);
 });
+test('Admin edits real accounts without seeing their passwords; new accounts still need one (2026-11-12)',()=>{
+ // Real accounts arrive from the database without passwords (loadUsers), and some (made by a text code) have no email.
+ const staffUser={id:'00000000-0000-4000-8000-000000000001',firstName:'Real',lastName:'Staff',email:'real.staff@example.com',password:'x',role:'staff',status:'Active',createdAt:at,contact:'',address:''};
+ const phoneOnly={...staffUser,id:'00000000-0000-4000-8000-000000000002',firstName:'Phone',lastName:'Only',email:'',role:'resident',contact:'09170000000'};
+ let s=transition(state('admin'),{type:'loadUsers',users:[staffUser,phoneOnly]},at);
+ assert.equal(s.users.length,3);assert.ok(s.users.every(u=>u.id===s.currentUserId||u.password===''));
+ assert.throws(()=>transition(state('staff-maria'),{type:'loadUsers',users:[staffUser]}),/Only Admin/);
+ s=transition(s,{type:'user',user:{...s.users.find(u=>u.id===staffUser.id),lastName:'Renamed'},reason:'User updated'},at);
+ assert.equal(s.users.find(u=>u.id===staffUser.id).lastName,'Renamed');
+ s=transition(s,{type:'user',user:{...s.users.find(u=>u.id===phoneOnly.id),address:'Sitio 1'},reason:'User updated'},at);
+ assert.throws(()=>transition(s,{type:'user',user:{...s.users.find(u=>u.id===staffUser.id),password:'short'},reason:'Password reset'}),/8 characters/);
+ assert.throws(()=>transition(s,{type:'user',user:{...staffUser,id:'00000000-0000-4000-8000-000000000003',email:'new.staff@example.com',password:''},reason:'User created'}),/8 characters/);
+ assert.throws(()=>transition(s,{type:'user',user:{...staffUser,id:'00000000-0000-4000-8000-000000000004',email:'',password:'long-enough-1'},reason:'User created'}),/email/);
+});
 test('monthly totals count issued verified receipt photos, excluding legacy typed-only samples and voids',()=>{
  assert.equal(monthlyRows(state().applications).length,0);
  const s=releasedByPhoto(),rows=monthlyRows(s.applications);

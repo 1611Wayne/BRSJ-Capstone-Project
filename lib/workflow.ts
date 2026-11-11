@@ -69,6 +69,7 @@ export type Command =
   | { type: 'loadNotifications'; notifications: AppNotification[] }
   | { type: 'loadAudits'; audits: AuditLog[]; reference?: string }
   | { type: 'loadSchedules'; schedules: FeeSchedule[] }
+  | { type: 'loadUsers'; users: User[] }
   | { type: 'register'; user: User }
   | { type: 'saveApplication'; application: ApplicationInput; reference?: string; draft: boolean }
   | { type: 'review'; reference: string; documents: UploadedDocument[] }
@@ -120,9 +121,12 @@ export function transition(state: PortalState, command: Command, now = new Date(
     s.users = [...s.users.filter(u => u.id !== command.user.id), { ...command.user, password: '' }];
     s.currentUserId = command.user.id; return s;
   }
-  const validateUser = (u: User) => {
-    requireThat(u.firstName.trim() && u.lastName.trim() && u.email.trim() && u.password.length >= 8, 'Name, email / username, and a password of at least 8 characters are required.');
-    requireThat(!s.users.some(x => x.id !== u.id && x.email.toLowerCase() === u.email.toLowerCase()), 'This email or username is already registered.');
+  // A new account needs an email and a password of 8 or more characters. When an existing account is edited, the
+  // password may stay as it is (real accounts never show it: it is '' on screen) and an account that never had an email
+  // (made by a text code) may stay without one; a password reset still needs 8 or more characters.
+  const validateUser = (u: User, previous?: User) => {
+    requireThat(u.firstName.trim() && u.lastName.trim() && (u.email.trim() || (previous && !previous.email.trim())) && (u.password.length >= 8 || (previous && u.password === previous.password)), 'Name, email / username, and a password of at least 8 characters are required.');
+    requireThat(!u.email.trim() || !s.users.some(x => x.id !== u.id && x.email.toLowerCase() === u.email.toLowerCase()), 'This email or username is already registered.');
   };
   if (command.type === 'register') {
     validateUser(command.user);
@@ -141,6 +145,12 @@ export function transition(state: PortalState, command: Command, now = new Date(
     s.audits = [...command.audits, ...s.audits.filter(a => a.id.startsWith('db-') && !incoming.has(a.id))]
       .sort((x, y) => Date.parse(y.timestamp) - Date.parse(x.timestamp) || Number(y.id.slice(3)) - Number(x.id.slice(3)));
     return s;
+  }
+  // Admin User Management (real sign-in): the Staff and resident accounts from the database replace the sample ones.
+  // The signed-in Admin stays; Admin accounts are never in the list (they are managed outside the app).
+  if (command.type === 'loadUsers') {
+    requireThat(actor.role === 'admin', 'Only Admin loads the user accounts.');
+    s.users = [actor, ...command.users.filter(u => u.id !== actor.id && u.role !== 'admin').map(u => ({ ...u, password: '' }))]; return s;
   }
   // The fee schedules from the database replace the sample ones for Staff and Admin (their ids are database ids).
   if (command.type === 'loadSchedules') {
@@ -173,7 +183,7 @@ export function transition(state: PortalState, command: Command, now = new Date(
     requireThat(actor.role === 'admin' || self || (actor.role === 'staff' && !previous && command.user.role === 'resident'), 'You cannot manage this account.');
     requireThat(command.user.role !== 'admin' && (!previous || previous.role !== 'admin'), 'Admin accounts cannot be created or changed here.');
     requireThat(!self || (command.user.role === 'resident' && command.user.status === actor.status && command.user.password === actor.password), 'Profile updates cannot change account permissions.');
-    validateUser(command.user);
+    validateUser(command.user, previous);
     if (previous) s.users = s.users.map(u => u.id === command.user.id ? command.user : u); else s.users.push(command.user);
     const safe = (u?: User) => u ? JSON.stringify({ name: fullName(u), email: u.email, role: u.role, status: u.status, contact: u.contact, address: u.address }) : '';
     log(command.reason, command.user.id, safe(previous), safe(command.user)); return s;

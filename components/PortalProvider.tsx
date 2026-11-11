@@ -15,7 +15,7 @@ const Context = createContext<{ state: PortalState; user?: User; ready: boolean;
 // updates with the same rules, the step is sent to the server, which checks it again and saves it. If the server
 // refuses, a banner says why and the saved requests are loaded again, so the screen never shows unsaved changes.
 const SAVED_ON_SERVER = new Set<Command['type']>(['review', 'assess', 'reject', 'readNotifications', 'requestCorrection', 'editApplication', 'resolveCorrection', 'replaceDocument',
-  'receiptPhoto', 'onlinePayment', 'verifyPayment', 'returnPayment', 'printClearance', 'download', 'confirm', 'feedback', 'revert', 'inspection']);
+  'receiptPhoto', 'onlinePayment', 'verifyPayment', 'returnPayment', 'printClearance', 'download', 'confirm', 'feedback', 'revert', 'inspection', 'fees']);
 
 export function PortalProvider({children}:{children:React.ReactNode}) {
   const [state,setState] = useState<PortalState>(initial); const [ready,setReady] = useState(false); const latest = useRef(state);
@@ -55,8 +55,10 @@ export function PortalProvider({children}:{children:React.ReactNode}) {
       if (busy.size) command = { ...command, applications: command.applications.map(a => busy.has(a.reference) ? latest.current.applications.find(x => x.reference === a.reference) ?? a : a) };
     }
     const next = transition(latest.current, command); commit(next);
-    if (useSupabaseAuth && SAVED_ON_SERVER.has(command.type) && isRealAccount(latest.current.currentUserId)) {
-      const key = ('reference' in command && command.reference) || (command.type === 'revert' && command.data.reference) || '*';
+    // Admin User Management is saved on the server (app/api/users); Staff walk-ins and residents' own profile edits are not this path.
+    const adminAccount = command.type === 'user' && latest.current.users.find(u => u.id === latest.current.currentUserId)?.role === 'admin';
+    if (useSupabaseAuth && (SAVED_ON_SERVER.has(command.type) || adminAccount) && isRealAccount(latest.current.currentUserId)) {
+      const key = ('reference' in command && command.reference) || (command.type === 'revert' && command.data.reference) || (command.type === 'fees' && 'fees') || (command.type === 'user' && 'users') || '*';
       changedAt.current.set(key, Date.now());
       waiting.current.set(key, (waiting.current.get(key) ?? 0) + 1);
       setSaving(n => n + 1);
@@ -81,6 +83,22 @@ export function PortalProvider({children}:{children:React.ReactNode}) {
         if (!response.ok) throw new Error(((await response.json().catch(() => ({}))) as { error?: string }).error || 'Your notifications could not be marked as read.');
         newest(); return;
       }
+      // Admin Fee Configuration: saved as a new version (app/api/fee-schedules); the answer brings every saved version.
+      if (command.type === 'fees') {
+        const response = await fetch('/api/fee-schedules', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ schedule: command.schedule }) });
+        const body = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(body.error || 'The fee schedule was not saved.');
+        if (newest()) commit(transition(latest.current, { type: 'loadSchedules', schedules: body.schedules }));
+        setServerError(''); return;
+      }
+      // Admin User Management (app/api/users); the answer brings every Staff and resident account.
+      if (command.type === 'user') {
+        const response = await fetch('/api/users', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ user: command.user, reason: command.reason }) });
+        const body = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(body.error || 'The account was not saved.');
+        if (newest()) commit(transition(latest.current, { type: 'loadUsers', users: body.users }));
+        setServerError(''); return;
+      }
       // A new file (a replaced document or a receipt photo) is uploaded into the request's own folder first; the server
       // then checks it is there.
       if (command.type === 'replaceDocument' && !command.document.path) command = { ...command, document: await uploadFirst(command.reference, command.document, 'application-documents') };
@@ -94,6 +112,18 @@ export function PortalProvider({children}:{children:React.ReactNode}) {
       waiting.current.set(key, 0);   // the saved data is reloaded below; later saves still go in order
       setServerError('Not saved: ' + (e as Error).message + ' The page now shows what is saved.');
       try {
+        if (command.type === 'fees') {
+          const response = await fetch('/api/fee-schedules', { cache: 'no-store' });
+          const body = await response.json();
+          if (response.ok) commit(transition(latest.current, { type: 'loadSchedules', schedules: body.schedules }));
+          return;
+        }
+        if (command.type === 'user') {
+          const response = await fetch('/api/users', { cache: 'no-store' });
+          const body = await response.json();
+          if (response.ok) commit(transition(latest.current, { type: 'loadUsers', users: body.users }));
+          return;
+        }
         const response = await fetch('/api/applications', { cache: 'no-store' });
         const body = await response.json();
         const role = latest.current.users.find(u => u.id === latest.current.currentUserId)?.role;
