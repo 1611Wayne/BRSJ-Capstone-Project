@@ -54,6 +54,6 @@ export interface ReportRecord { clearanceType: string; count: number; assessed: 
 export interface MonthlyCollectionRow extends ReportRecord { date: string; subcategory: string; applicationType: Application['applicationType']; components: Record<string, number> }
 // In-app notifications for Applicants. The event names are the same as the notifications.event values in the database. key de-duplicates an
 // unread notice about the same thing (a flagged document gets its Staff note added to the same notice instead of a second one).
-export type NotificationEvent = 'documents_flagged' | 'application_returned' | 'correction_resolved' | 'assessment_ready' | 'payment_returned' | 'clearance_ready';
+export type NotificationEvent = 'documents_flagged' | 'application_returned' | 'correction_resolved' | 'assessment_ready' | 'payment_returned' | 'clearance_ready' | 'submission_received' | 'correction_requested' | 'payment_pending' | 'release_pending';
 export interface AppNotification { id: string; userId: string; reference: string; event: NotificationEvent; message: string; createdAt: string; readAt?: string; key?: string }
 export interface PortalState { users: User[]; applications: Application[]; schedules: FeeSchedule[]; audits: AuditLog[]; notifications: AppNotification[]; currentUserId: string | null }

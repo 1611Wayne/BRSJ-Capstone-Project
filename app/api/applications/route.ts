@@ -4,6 +4,7 @@ import { requirements, transition } from '@/lib/workflow';
 import { supabaseAdmin } from '@/lib/supabase/server';
 import { currentUser } from '@/lib/server/currentUser';
 import { APPLICATION_SELECT, applicantColumns, toApplication } from '@/lib/server/applicationRows';
+import { persistTeamNotice } from '@/lib/server/teamNotifications';
 
 export const dynamic = 'force-dynamic';
 const BUCKET = 'application-documents';
@@ -183,6 +184,10 @@ export async function POST(request: Request) {
 
   const { data: saved, error: readError } = await db.from('applications').select(APPLICATION_SELECT).eq('id', appId).single();
   if (readError || !saved) return NextResponse.json({ error: 'Saved, but could not read it back.' }, { status: 500 });
+  if (!body.draft) {
+    try { await persistTeamNotice(db, 'saveApplication', previous ? toApplication(previous) : undefined, toApplication(saved), appId, now); }
+    catch (e) { return NextResponse.json({ error: (e as Error).message }, { status: 500 }); }
+  }
   return NextResponse.json({ application: toApplication(saved, me.user.role !== 'resident') satisfies Application });
 }
 

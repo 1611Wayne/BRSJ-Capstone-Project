@@ -10,8 +10,8 @@ import { useSupabaseAuth } from '@/lib/supabase/config';
 import { supabaseBrowser } from '@/lib/supabase/browser';
 const menus={
  resident:[['dashboard','Dashboard',LayoutDashboard],['apply','Apply for Clearance',FileText],['applications','My Applications',FolderOpen],['notifications','Notifications',Bell],['profile','Profile',User]],
- staff:[['dashboard','Dashboard',LayoutDashboard],['applications','Applications Queue',ClipboardList],['assessment','Assessment & Evaluation',FileText],['walk-in','New Walk-in Application',UserPlus],['or-entry','Upload Receipt for Applicant',ReceiptText],['transactions','Processed Transactions',History],['or-logs','OR Logs',ReceiptText]],
- admin:[['dashboard','Dashboard',LayoutDashboard],['transactions','Transactions',ClipboardList],['fee-configuration','Fee Configuration',Settings],['transaction-reversion','Transaction Reversion',Undo2],['reports','Reports',BarChart3],['users','User Management',Users],['audit-trail','Audit Trail',History]]
+ staff:[['dashboard','Dashboard',LayoutDashboard],['notifications','Notifications',Bell],['applications','Applications Queue',ClipboardList],['assessment','Assessment & Evaluation',FileText],['walk-in','New Walk-in Application',UserPlus],['or-entry','Upload Receipt for Applicant',ReceiptText],['transactions','Processed Transactions',History],['or-logs','OR Logs',ReceiptText]],
+ admin:[['dashboard','Dashboard',LayoutDashboard],['notifications','Notifications',Bell],['transactions','Transactions',ClipboardList],['fee-configuration','Fee Configuration',Settings],['transaction-reversion','Transaction Reversion',Undo2],['reports','Reports',BarChart3],['users','User Management',Users],['audit-trail','Audit Trail',History]]
 } as const;
 export function Sidebar({role}:{role:UserRole}) {
  const pathname=usePathname(), router=useRouter(); const {act,state,user}=usePortal();const unread=state.notifications?.filter(n=>n.userId===user?.id&&!n.readAt).length||0; const [open,setOpen]=useState(false);
