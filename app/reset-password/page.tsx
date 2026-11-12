@@ -34,6 +34,7 @@ export default function ResetPasswordPage(){
    const response=await fetch('/api/me',{cache:'no-store'});const body=await response.json().catch(()=>({}));
    if(cancelled)return;
    if(!response.ok){setError(body.error||'Could not load your account.');setState('invalid');return;}
+   void fetch('/api/account/signed-in',{method:'POST'}).catch(()=>{});   // Audit Trail: signed in by the reset link (DB-7)
    setUser(body.user as User);setState('ready');
   })().catch(()=>{if(!cancelled)setState('invalid');});
   return()=>{cancelled=true;};

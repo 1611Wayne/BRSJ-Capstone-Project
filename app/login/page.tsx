@@ -17,6 +17,7 @@ async function loadMe(): Promise<User> {
   const response = await fetch('/api/me', { cache: 'no-store' });
   const body = await response.json().catch(() => ({}));
   if (!response.ok) { await supabaseBrowser().auth.signOut(); throw new Error(body.error || 'Could not load your account.'); }
+  void fetch('/api/account/signed-in', { method: 'POST' }).catch(() => {});   // Audit Trail: the sign-in (DB-7); never blocks signing in
   return body.user as User;
 }
 
