@@ -218,6 +218,7 @@ export async function POST(request: Request) {
     role: 'resident',
     status: 'Active',
     privacy_consent_at: now,
+    id_verified_at: now, id_verified_by: me.user.id,   // DB-11: Staff saw the person and their ID at the counter (migration 21)
     ...(validIdPath ? { valid_id_path: validIdPath } : {}),
   }).eq('id', userId);
 

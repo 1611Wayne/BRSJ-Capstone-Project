@@ -1,5 +1,6 @@
 'use client';
 import { InspectionForm } from './InspectionForm';
+import { ApplicantAccountCheck } from './ApplicantAccountCheck';
 import { useEffect, useState } from 'react';import { useRouter } from 'next/navigation';import Link from 'next/link';import { XCircle, CheckCircle2, FileText, Eye, LockKeyhole } from 'lucide-react';
 import { usePortal } from './PortalProvider';import { Modal } from './Modal';import { Field,ErrorMessage,Notice } from './Field';import { FeeTable } from './FeeTable';import { StatusBadge } from './StatusBadge';import { DocumentPreview } from './DocumentPreview';import { ReplaceDocuments } from './ReplaceDocuments';import { revenueCategories } from '@/data/revenueCodeData';import { formatPeso } from '@/data/revenueCodeData';import { activeSchedule,requirements } from '@/lib/workflow';import type { UploadedDocument } from '@/types';
 export function AssessmentPage({reference}:{reference:string}){
@@ -40,7 +41,7 @@ export function AssessmentPage({reference}:{reference:string}){
      <dl className="form-grid mt-5">{Object.entries({Applicant:a.applicant,...(business?{'Business Subcategory':a.businessSubcategory||'Business Clearance only'}:{}),'Business Name':business?a.businessName:'—','Business / Property Location':a.businessLocation,'Application Type':a.applicationType,'Ownership Type':a.ownership,'Property Owner':a.propertyOwner||'—',...(a.hasEmployees!==undefined?{'Employees':a.hasEmployees?(a.employeeCount!=null?`Yes (${a.employeeCount})`:'Yes'):'No'}:{})}).map(([k,v])=><div key={k}><dt className="text-xs text-slate-500">{k}</dt><dd className="text-sm font-semibold mt-1">{v}</dd></div>)}</dl>
     </div>
     <div className="content-card p-6">
-     <div className="flex flex-wrap justify-between items-center gap-3"><h2 className="font-bold text-brand-ink">Requirements Review</h2><span className="text-xs font-semibold text-slate-600">{verifiedCount} of {requiredDocs.length} required documents verified</span></div>
+     {a.residentId&&<ApplicantAccountCheck residentId={a.residentId}/>}<div className="flex flex-wrap justify-between items-center gap-3"><h2 className="font-bold text-brand-ink">Requirements Review</h2><span className="text-xs font-semibold text-slate-600">{verifiedCount} of {requiredDocs.length} required documents verified</span></div>
      <div role="status" className={`mt-4 rounded-md border p-4 ${allVerified?'border-green-200 bg-green-50 text-green-800':'border-amber-200 bg-amber-50 text-amber-900'}`}>
       <div className="flex items-start gap-3">{allVerified?<CheckCircle2 size={20} className="shrink-0"/>:<LockKeyhole size={20} className="shrink-0"/>}<div><p className="text-sm font-semibold">{allVerified?'Required documents verified':'Verification required before assessment'}</p><p className="text-xs mt-1 leading-5">{allVerified?'All required documents have been checked.':'Open each document, check its contents, then mark it Verified. Confirm Assessment stays disabled until every required document is verified.'}</p></div></div>
      </div>

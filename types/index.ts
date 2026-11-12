@@ -1,6 +1,6 @@
 export type UserRole = 'resident' | 'staff' | 'admin';
 export type ApplicationStatus = 'Draft' | 'Pending Assessment' | 'Awaiting OR' | 'For Checking' | 'Ready for Download' | 'Closed - Cleared' | 'Under Review' | 'Void' | 'Rejected';
-export interface User { id: string; firstName: string; lastName: string; email: string; password: string; role: UserRole; status: 'Active' | 'Inactive'; createdAt: string; contact: string; address: string; validId?: UploadedDocument; privacyConsentAt?: string;
+export interface User { id: string; firstName: string; lastName: string; email: string; password: string; role: UserRole; status: 'Active' | 'Inactive'; createdAt: string; contact: string; address: string; validId?: UploadedDocument; privacyConsentAt?: string; idVerifiedAt?: string; spamFlaggedAt?: string; spamReason?: string;
   // Real sign-in only: a resident who signed up by text and has not finished registering (name, address, ID, consent),
   // and whether an ID is already on file.
   needsProfile?: boolean; hasValidId?: boolean }

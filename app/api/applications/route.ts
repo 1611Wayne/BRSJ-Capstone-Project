@@ -5,6 +5,7 @@ import { supabaseAdmin } from '@/lib/supabase/server';
 import { currentUser } from '@/lib/server/currentUser';
 import { APPLICATION_SELECT, applicantColumns, toApplication } from '@/lib/server/applicationRows';
 import { persistTeamNotice } from '@/lib/server/teamNotifications';
+import { submissionBlock } from '@/lib/server/accountChecks';
 
 export const dynamic = 'force-dynamic';
 const BUCKET = 'application-documents';
@@ -110,6 +111,17 @@ export async function POST(request: Request) {
   try {
     transition(check, { type: 'saveApplication', reference: body.reference, draft: body.draft, application: { ...input, documents: docs.map(d => ({ ...d, status: 'Pending Review' as const })) } }, now);
   } catch (e) { return NextResponse.json({ error: (e as Error).message }, { status: 400 }); }
+
+  // DB-11 account checks (migration 21) on SUBMITTING (drafts are always fine): an unchecked resident may have one open
+  // request; a flagged account none. Staff submitting at the counter have seen the person, so that marks the ID checked.
+  if (!body.draft) {
+    const block = await submissionBlock(db, residentId, body.reference, isStaff);
+    if (block) return NextResponse.json({ error: block.error }, { status: block.status });
+    if (isStaff) {
+      const { data: marked } = await db.from('profiles').update({ id_verified_at: now, id_verified_by: actor.id }).eq('id', residentId).is('id_verified_at', null).select('id');
+      if (marked?.length) await db.from('audit_logs').insert({ user_id: actor.id, role: actor.role, action: 'Resident ID checked at the counter (walk-in)', application_id: null, reference_no: body.reference ?? null, new_value: { account: residentId } });
+    }
+  }
 
   // Create the draft row (the database gives it its reference number), or update the existing one.
   let appId: number, reference: string;

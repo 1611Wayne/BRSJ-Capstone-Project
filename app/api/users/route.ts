@@ -13,10 +13,11 @@ export const dynamic = 'force-dynamic';
 // them (migration 4) and they are managed outside the app. Decided 2026-11-12: Admin creates STAFF accounts only;
 // residents register themselves or at the Walk-in counter.
 
-const COLUMNS = 'id, first_name, last_name, email, contact_number, address, role, status, created_at';
+const COLUMNS = 'id, first_name, last_name, email, contact_number, address, role, status, created_at, id_verified_at, spam_flagged_at, spam_reason';
 type Row = Record<string, any>;
 const toUser = (p: Row): User => ({ id: p.id, firstName: p.first_name ?? '', lastName: p.last_name ?? '', email: p.email ?? '', password: '', role: p.role, status: p.status,
-  createdAt: p.created_at, contact: p.contact_number ?? '', address: p.address ?? '' });
+  createdAt: p.created_at, contact: p.contact_number ?? '', address: p.address ?? '',
+  ...(p.id_verified_at ? { idVerifiedAt: p.id_verified_at } : {}), ...(p.spam_flagged_at ? { spamFlaggedAt: p.spam_flagged_at, spamReason: p.spam_reason ?? '' } : {}) });   // DB-11 (migration 21)
 const fail = (error: string, status = 500) => NextResponse.json({ error }, { status });
 const REASONS = ['User created', 'User updated', 'Password reset', 'Account deactivated', 'Account activated'];
 const BANNED = '876000h';   // about 100 years: Supabase refuses sign-in until the ban is lifted with 'none'
