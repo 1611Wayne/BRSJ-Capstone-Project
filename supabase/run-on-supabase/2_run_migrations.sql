@@ -1,6 +1,6 @@
 -- STEP 2 of 3. THE MIGRATIONS. Paste ALL of this into the Supabase SQL Editor and click Run.
--- Generated 2026-10-18 from the migration files below (parts 10 and 11 added 2026-11-06, part 12 on 2026-11-08, part 13 on 2026-11-11, part 14 on 2026-11-12), unchanged except that migration 6 was made re-runnable.
--- If you already ran an earlier version of this script, run this one again: it is safe. Parts 10 (the original issue date of a withdrawn clearance), 11 (a daily cap on sign-in texts), 12 (inspection scheduling), 13 (Staff and Admin notices) and 14 (several fee versions on one day) are new.
+-- Generated 2026-10-18 from the migration files below (parts 10 and 11 added 2026-11-06, part 12 on 2026-11-08, part 13 on 2026-11-11, parts 14 and 15 on 2026-11-12), unchanged except that migration 6 was made re-runnable.
+-- If you already ran an earlier version of this script, run this one again: it is safe. Parts 10 (the original issue date of a withdrawn clearance), 11 (a daily cap on sign-in texts), 12 (inspection scheduling), 13 (Staff and Admin notices), 14 (several fee versions on one day) and 15 (no direct writes that skip the server) are new.
 -- Parts 6 and 7 are the security rules: who may read each table, and three private file buckets (IDs, documents, receipts).
 -- Run it as the default role (postgres). The editor may warn about "destructive operations" because the script drops and
 -- re-creates some CHECK rules: that is expected, confirm it.
@@ -18,7 +18,7 @@
 -- Afterwards, run STEP 3 (3_after_check.sql).
 
 -- ==========================================================================
--- PART 1 OF 14: 20261005000000_correct_clearance_types.sql
+-- PART 1 OF 15: 20261005000000_correct_clearance_types.sql
 -- ==========================================================================
 -- Correct the clearance_types catalog: 13 -> 9, confirmed with the real client
 -- Generated 2026-10-05. Depends on 20260923010000_seed_clearance_types.sql.
@@ -65,7 +65,7 @@ where name in (
 );
 
 -- ==========================================================================
--- PART 2 OF 14: 20261006000000_add_business_subcategory.sql
+-- PART 2 OF 15: 20261006000000_add_business_subcategory.sql
 -- ==========================================================================
 -- Add the Applicant's optional Ambulant / Lessor indication to applications
 -- Generated 2026-10-06. Depends on 20260922000000_init_schema.sql.
@@ -102,7 +102,7 @@ comment on column public.applications.business_subcategory is
   'Optional. What the Applicant indicated at intake for a Business Clearance: Ambulant or Lessor (Paupahan); NULL = Business Clearance only. A hint for Staff, not the final classification — that is decided at assessment.';
 
 -- ==========================================================================
--- PART 3 OF 14: 20261006010000_sync_schema_with_frontend.sql
+-- PART 3 OF 15: 20261006010000_sync_schema_with_frontend.sql
 -- ==========================================================================
 -- Sync the database with everything the frontend prototype has built since 2026-09-23
 -- Generated 2026-10-06. Depends on ALL of the earlier migrations, in particular
@@ -355,7 +355,7 @@ comment on column public.correction_requests.resident_id is
   'The Applicant who sent the request (the frontend''s requestedBy). The Staff who resolved it is resolved_by.';
 
 -- ==========================================================================
--- PART 4 OF 14: 20261016000000_receipt_confirmed_by.sql
+-- PART 4 OF 15: 20261016000000_receipt_confirmed_by.sql
 -- ==========================================================================
 -- Record WHO confirmed a release at the counter
 -- Generated 2026-10-16. Depends on 20260922000000_init_schema.sql (receipt_confirmations, profiles).
@@ -376,7 +376,7 @@ comment on column public.receipt_confirmations.confirmed_by is
   'The Staff member who recorded the release of the printed original at the counter. NULL = the Applicant confirmed receipt themselves.';
 
 -- ==========================================================================
--- PART 5 OF 14: 20261016010000_notifications.sql
+-- PART 5 OF 15: 20261016010000_notifications.sql
 -- ==========================================================================
 -- In-app notifications for Applicants
 -- Generated 2026-10-16. Depends on 20260922000000_init_schema.sql (profiles, applications).
@@ -422,7 +422,7 @@ comment on table public.notifications is
   'In-app notices for an Applicant (not SMS). Written by the server when Staff act on the Applicant''s application; the Applicant reads them and marks them read. An unread notice with the same dedupe_key is updated instead of repeated.';
 
 -- ==========================================================================
--- PART 6 OF 14: 20261017000000_rls_policies_remaining_tables.sql
+-- PART 6 OF 15: 20261017000000_rls_policies_remaining_tables.sql
 -- ==========================================================================
 -- RLS policies for the remaining tables (everything except profiles and applications, which have their own
 -- policies in 20260923020000). Generated 2026-10-17. Depends on all earlier migrations.
@@ -646,7 +646,7 @@ create trigger notifications_owner_only_marks_read
   for each row execute function public.notifications_owner_only_marks_read();
 
 -- ==========================================================================
--- PART 7 OF 14: 20261017010000_storage_buckets_and_policies.sql
+-- PART 7 OF 15: 20261017010000_storage_buckets_and_policies.sql
 -- ==========================================================================
 -- Storage: three PRIVATE buckets and who may read and upload into each. Generated 2026-10-17.
 -- Depends on 20261017000000_rls_policies_remaining_tables.sql (the helper functions).
@@ -783,7 +783,7 @@ with check (
 );
 
 -- ==========================================================================
--- PART 8 OF 14: 20261018000000_reference_numbers.sql
+-- PART 8 OF 15: 20261018000000_reference_numbers.sql
 -- ==========================================================================
 -- Request reference numbers made by the database: SJ-YYYY-######, one counter per year (Manila time), starting at 1.
 -- Generated 2026-10-18. Depends on 20261017000000_rls_policies_remaining_tables.sql.
@@ -836,7 +836,7 @@ grant execute on function public.next_reference_no() to authenticated, service_r
 alter table public.applications alter column reference_no set default public.next_reference_no();
 
 -- ==========================================================================
--- PART 9 OF 14: 20261018010000_sample_fee_schedules.sql
+-- PART 9 OF 15: 20261018010000_sample_fee_schedules.sql
 -- ==========================================================================
 -- SAMPLE fee data so Staff can test the assessment end to end. Generated 2026-10-18 from the prototype's own data
 -- (data/revenueCodeData.ts and data/mockFeeSchedules.ts), so the numbers are exactly the ones the prototype shows.
@@ -960,7 +960,7 @@ begin
 end $$;
 
 -- ==========================================================================
--- PART 10 OF 14: 20261106000000_clearance_revised_from.sql
+-- PART 10 OF 15: 20261106000000_clearance_revised_from.sql
 -- ==========================================================================
 -- Migration 14: keep a withdrawn clearance's original issue date on the application (IN PROGRESS, 2026-11-06).
 --
@@ -977,7 +977,7 @@ comment on column public.applications.clearance_revised_from is
   'Original issue date of a clearance withdrawn by an Admin correction; the next clearance is marked REVISED with it.';
 
 -- ==========================================================================
--- PART 11 OF 14: 20261106010000_sms_daily_cap.sql
+-- PART 11 OF 15: 20261106010000_sms_daily_cap.sql
 -- ==========================================================================
 -- Migration 15: a daily cap on sign-in texts (IN PROGRESS, 2026-11-06).
 --
@@ -1035,7 +1035,7 @@ revoke all on function public.claim_sms_send(text, integer, integer) from public
 grant execute on function public.claim_sms_send(text, integer, integer) to service_role;
 
 -- ==========================================================================
--- PART 12 OF 14: 20261108000000_inspection_scheduling.sql
+-- PART 12 OF 15: 20261108000000_inspection_scheduling.sql
 -- (its own begin; and commit; lines are left out here: this whole script already runs as one piece)
 -- ==========================================================================
 -- Migration 16: inspection scheduling (FT-9). Written by jayemm01 (PR #6, merged 2026-11-08) as
@@ -1070,7 +1070,7 @@ create index if not exists inspection_reports_pending_schedule_idx
   where status = 'Pending' and scheduled_at is not null;
 
 -- ==========================================================================
--- PART 13 OF 14: 20261111000000_team_notification_events.sql
+-- PART 13 OF 15: 20261111000000_team_notification_events.sql
 -- ==========================================================================
 -- Migration 17: in-app notices for Staff and Admin (FT-10) (IN PROGRESS, 2026-11-11).
 --
@@ -1095,7 +1095,7 @@ comment on table public.notifications is
   'In-app notices (not SMS). Applicants get notices about their own requests; Staff and Admin get team notices (new submission, correction requested, payment waiting, clearance waiting for release). Written only by the server; each person reads and marks read only their own. An unread notice with the same dedupe_key is updated instead of repeated.';
 
 -- ==========================================================================
--- PART 14 OF 14: 20261112000000_fee_versions_same_day.sql
+-- PART 14 OF 15: 20261112000000_fee_versions_same_day.sql
 -- ==========================================================================
 -- Migration 18: several fee schedule versions on the same effective date (IN PROGRESS, 2026-11-12).
 --
@@ -1125,3 +1125,73 @@ create index if not exists fee_schedules_lookup_idx
 
 comment on table public.fee_schedules is
   'Append-only version history. The row with the latest effective_date <= today (and, on the same date, the latest created_at), for a given (clearance_type, category, classification), is the active one — chosen in application code, not here. Several versions may share an effective date (migration 18).';
+
+-- ==========================================================================
+-- PART 15 OF 15: 20261112010000_close_direct_writes.sql
+-- ==========================================================================
+-- Migration 19: close the direct-write back doors (DB-6 part 2) (IN PROGRESS, 2026-11-12).
+--
+-- Every change to a request now goes through the app's server, which runs the shared rules (lib/workflow.ts) and writes
+-- the audit log, using the server key (that key is not bound by these rules). Some access rules from migrations 4 and
+-- 10 still let a SIGNED-IN person write directly with the public key (for example from the browser's developer tools),
+-- skipping those checks and the audit log. The app itself never writes these rows that way (checked 2026-11-12):
+--
+--  1. applications: "residents file own, staff and admin file for anyone" (insert) and "residents update own draft,
+--     staff and admin update any" (update). Staff could change any request's status or fees directly. Dropped.
+--  2. application_documents: "owner adds / changes / removes documents of their own draft". A resident could add,
+--     change or remove unreviewed document rows of their own draft without the server's file checks (type, size,
+--     the file really being in storage); marking a document Verified was already refused. Dropped.
+--  3. profiles: "residents update own profile, admin updates any". Registration (lib/supabase/register.ts) still needs
+--     a new resident to fill in their own address, mobile number and ID file right after signing up, so this is
+--     NARROWED: a person may only fill in those three when they are still empty. Everything else (name, email, status,
+--     consent, a changed address or number) goes through the server: Profile page (app/api/profile; a new number only
+--     after a text code), Admin User Management, Walk-in. The role guard from migration 4 stays.
+--
+-- Reading is unchanged. Marking one's own notices read (migration 10) is unchanged. File uploads (storage, migration 11)
+-- are unchanged. Re-runnable.
+
+-- 1. applications
+drop policy if exists "residents file own, staff and admin file for anyone" on public.applications;
+drop policy if exists "residents update own draft, staff and admin update any" on public.applications;
+
+-- 2. application_documents
+drop policy if exists "owner adds documents to their own draft" on public.application_documents;
+drop policy if exists "owner changes documents of their own draft" on public.application_documents;
+drop policy if exists "owner removes documents from their own draft" on public.application_documents;
+
+-- 3. profiles: own row only, only three columns, and only to fill them in.
+drop policy if exists "residents update own profile, admin updates any" on public.profiles;
+drop policy if exists "people fill in their own profile" on public.profiles;
+create policy "people fill in their own profile"
+on public.profiles for update to authenticated
+using (id = auth.uid())
+with check (id = auth.uid());
+
+revoke update on public.profiles from anon, authenticated;
+grant update (address, contact_number, valid_id_path) on public.profiles to authenticated;
+
+create or replace function public.profiles_fill_in_only()
+returns trigger
+language plpgsql
+set search_path = public
+as $$
+begin
+  -- Only when a signed-in person changes their OWN row with the public key. The server key has no auth.uid().
+  if auth.uid() is not null and old.id = auth.uid() then
+    if (coalesce(old.address, '') <> '' and new.address is distinct from old.address)
+       or (old.contact_number is not null and new.contact_number is distinct from old.contact_number)
+       or (old.valid_id_path is not null and new.valid_id_path is distinct from old.valid_id_path) then
+      raise exception 'Change your profile on the Profile page.';
+    end if;
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists profiles_fill_in_only on public.profiles;
+create trigger profiles_fill_in_only
+  before update on public.profiles
+  for each row execute function public.profiles_fill_in_only();
+
+comment on policy "people fill in their own profile" on public.profiles is
+  'Registration only: a new resident fills in their own blank address, mobile number and ID file (column grants + trigger profiles_fill_in_only). Every other profile change goes through the server (migration 19).';

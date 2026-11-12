@@ -1,5 +1,6 @@
 // Supabase "Send SMS" Auth Hook — sends the real OTP text via Semaphore.
-// Generated 2026-09-23, revised 2026-09-24. Context: ../../../../CHANGES.md,
+// Generated 2026-09-23, revised 2026-09-24, 2026-11-06 (daily caps) and
+// 2026-11-12 (sends to sms.phone, so a number change reaches the NEW number). Context: ../../../../CHANGES.md,
 // "Semaphore Send SMS Hook" entry.
 //
 // WHAT THIS IS: whenever Supabase Auth needs to send someone a phone OTP
@@ -131,10 +132,10 @@ Deno.serve(async (req) => {
   // signed by Supabase, and — only once that passes — hands back the user and
   // the OTP it wants sent.
   let user: { phone: string };
-  let sms: { otp: string };
+  let sms: { otp: string; phone?: string };
   try {
     const wh = new Webhook(hookSecret.replace('v1,whsec_', ''));
-    ({ user, sms } = wh.verify(payload, headers) as { user: { phone: string }; sms: { otp: string } });
+    ({ user, sms } = wh.verify(payload, headers) as { user: { phone: string }; sms: { otp: string; phone?: string } });
   } catch (error) {
     console.error(
       'send-sms-hook: signature check failed — SEND_SMS_HOOK_SECRET most likely does not match the secret Supabase shows for this hook (copy it again, whole, including the v1,whsec_ start).',
@@ -143,16 +144,23 @@ Deno.serve(async (req) => {
     return respond(403, 'Signature verification failed.');
   }
 
+  // Where the code goes (REVISION 2026-11-12): Supabase puts the destination in
+  // sms.phone. For a sign-in that is the account's number; when a resident CHANGES
+  // their number (Profile page) it is the NEW number, while user.phone is still
+  // the old one (checked in Supabase's auth source, internal/api/phone.go). Older
+  // Supabase versions sent no sms.phone, hence the fallback.
+  const to = sms.phone || user.phone;
+
   // Philippine mobile numbers only (Semaphore is a Philippine service, and the
   // portal is for one barangay); anything else is refused before it costs credit.
-  if (!/^\+?639\d{9}$/.test(user.phone)) {
+  if (!/^\+?639\d{9}$/.test(to ?? '')) {
     console.error('send-sms-hook: refused a number that is not a Philippine mobile number.');
     return respond(400, 'Only Philippine mobile numbers (09...) can receive sign-in codes.');
   }
 
   try {
-    await claimSend(user.phone.replace(/^\+/, ''));
-    await sendViaSemaphore(user.phone, sms.otp);
+    await claimSend(to.replace(/^\+/, ''));
+    await sendViaSemaphore(to, sms.otp);
     console.log('send-sms-hook: code handed to Semaphore.');
     return respond(200);
   } catch (error) {

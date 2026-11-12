@@ -34,6 +34,7 @@ with c as (
   union all select 24, 'inspection scheduling (inspection_reports.scheduled_at)', (select count(*) from information_schema.columns where table_schema = 'public' and table_name = 'inspection_reports' and column_name = 'scheduled_at')::text, '1'
   union all select 25, 'Staff and Admin notice kinds allowed (submission_received ... release_pending)', (select (pg_get_constraintdef(oid) like '%release_pending%' and pg_get_constraintdef(oid) like '%submission_received%')::text from pg_constraint where conname = 'notifications_event_check' and conrelid = 'public.notifications'::regclass), 'true'
   union all select 26, 'several fee versions per day allowed (no unique rule on fee_schedules; lookup index)', (select ((select count(*) from pg_constraint where conrelid = 'public.fee_schedules'::regclass and contype = 'u') = 0 and (select count(*) from pg_indexes where indexname = 'fee_schedules_lookup_idx') = 1)::text), 'true'
+  union all select 27, 'no direct writes that skip the server (applications and documents: no write rules; profiles: fill-in only)', (select ((select count(*) from pg_policies where schemaname = 'public' and tablename in ('applications', 'application_documents') and cmd in ('INSERT', 'UPDATE', 'DELETE', 'ALL')) = 0 and (select count(*) from pg_policies where schemaname = 'public' and tablename = 'profiles' and cmd = 'UPDATE') = 1 and (select count(*) from pg_trigger where tgname = 'profiles_fill_in_only') = 1)::text), 'true'
 )
 select n, item, expected, actual, (expected = actual) as ok from c
 union all
