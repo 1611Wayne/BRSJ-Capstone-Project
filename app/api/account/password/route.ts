@@ -27,9 +27,12 @@ export async function POST(request: Request) {
   if (password.length < 8) return NextResponse.json({ error: 'Use at least 8 characters.' }, { status: 400 });
   if (password.length > 72) return NextResponse.json({ error: 'Use at most 72 characters.' }, { status: 400 });
 
+  // Changed AS THE PERSON (their own session), not with the server key: Supabase then keeps this session and signs out
+  // only their other ones. With the server key it signs out every session, this one too (auth source,
+  // models.UpdatePassword with no session id; found 2026-11-12 by the page guard), leaving them signed out.
+  const { error } = await supabaseForRequest().auth.updateUser({ password });
+  if (error) return NextResponse.json({ error: /same|different from the old/i.test(error.message) ? 'Choose a password different from your old one.' : 'The password was not changed: ' + error.message }, { status: 400 });
   const db = supabaseAdmin();
-  const { error } = await db.auth.admin.updateUserById(me.user.id, { password });
-  if (error) return NextResponse.json({ error: 'The password was not changed: ' + error.message }, { status: 400 });
   await db.from('audit_logs').insert({ user_id: me.user.id, role: me.user.role, action: `Password changed (forgot password, ${via})`, application_id: null, reference_no: null,
     new_value: { account: me.user.id } });
   return NextResponse.json({ ok: true });
