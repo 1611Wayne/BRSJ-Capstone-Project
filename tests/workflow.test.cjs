@@ -1238,8 +1238,10 @@ test('SE-4 database lookup deduplicates file and record views and writes again a
   const event={action,actor,applicationId:42,reference:ref,...(action==='file_view'?{objectPath:'42/id.pdf'}:{})};
   assert.equal(await sensitivePersist.logSensitiveView(db,{...event,at:base}),true);
   assert.equal(await sensitivePersist.logSensitiveView(db,{...event,at:new Date(base.getTime()+299999)}),false);
+  if(action==='file_view')assert.equal(await sensitivePersist.logSensitiveView(db,{...event,applicationId:43,at:new Date(base.getTime()+1000)}),true);
   assert.equal(await sensitivePersist.logSensitiveView(db,{...event,at:new Date(base.getTime()+300001)}),true);
  }
- assert.equal(inserted.length,4);assert.deepEqual(inserted.filter(row=>row.action==='file_view').map(row=>row.new_value),[{objectPath:'42/id.pdf'},{objectPath:'42/id.pdf'}]);
+ assert.equal(inserted.length,5);assert.deepEqual(inserted.filter(row=>row.action==='file_view').map(row=>row.application_id),[42,43,42]);
+ assert.deepEqual(inserted.filter(row=>row.action==='file_view').map(row=>row.new_value),[{objectPath:'42/id.pdf'},{objectPath:'42/id.pdf'},{objectPath:'42/id.pdf'}]);
  assert.ok(inserted.every(row=>!JSON.stringify(row).includes('signed.example')));
 });

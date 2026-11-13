@@ -45,6 +45,7 @@ export async function logSensitiveView(
   let query = db.from('audit_logs').select('created_at')
     .eq('user_id', event.actor.id)
     .eq('action', event.action)
+    .eq('application_id', event.applicationId)
     .gte('created_at', new Date(now.getTime() - SENSITIVE_VIEW_DEDUPE_WINDOW_MS).toISOString());
   if (event.action === 'file_view') {
     if (!event.objectPath) throw new Error('A file view requires an object path.');
