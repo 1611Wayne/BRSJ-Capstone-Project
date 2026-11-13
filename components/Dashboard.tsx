@@ -1,6 +1,6 @@
 'use client';
 import Link from 'next/link';
-import { MessageSquare, ClipboardCheck, ReceiptText, Archive, CircleCheck, ClipboardList, Gauge, Star, Clock3, TrendingUp, BarChart2 } from 'lucide-react';
+import { MessageSquare, ClipboardCheck, ReceiptText, Archive, CircleCheck, ClipboardList, Gauge, Star, Clock3, TrendingUp, BarChart2, Hourglass } from 'lucide-react';
 import { usePortal } from './PortalProvider';
 import { StatCard } from './StatCard';
 import { ApplicationTable } from './ApplicationTable';
@@ -10,6 +10,8 @@ import { processingSeconds, paymentCheckSeconds, mmss, SLA_SECONDS, feedbackSumm
 import { WhatsNew } from './NotificationInbox';
 import { MonthlyReversions } from './MonthlyReversions';
 import { useDbAudits } from './useDbAudits';
+import { useNow } from './useNow';
+import { staffOverdue, WAITING_LIMIT_HOURS } from '@/lib/waiting';
 import { UpcomingInspections } from './UpcomingInspections';
 import type { UserRole } from '@/types';
 import { isSensitiveViewAction } from '@/lib/sensitiveViews';
@@ -116,6 +118,9 @@ export function Dashboard({ role }: { role: UserRole }) {
   const ratings = apps.flatMap(a => a.feedback ? [a.feedback.rating] : []);
   const feedback = feedbackSummary(apps);
 
+  const now = useNow();
+  const overdue = now === undefined ? undefined : apps.filter(a => staffOverdue(a, now)).length;
+
   const metrics = [
     { label: 'Pending Assessment', value: apps.filter(a => a.status === 'Pending Assessment').length, icon: ClipboardCheck },
     { label: 'For Checking', value: apps.filter(a => a.status === 'For Checking').length, icon: ClipboardCheck },
@@ -157,6 +162,10 @@ export function Dashboard({ role }: { role: UserRole }) {
       {/* Stat cards */}
       <div className="grid sm:grid-cols-2 md:grid-cols-4 gap-4 mt-9">
         {metrics.map(m => <StatCard key={m.label} {...m} />)}
+        {/* Staff and Admin: requests waiting on Staff past the limit; opens the list filtered to them, longest waiting first. */}
+        {role !== 'resident' && <Link href={`/${role}/${role === 'admin' ? 'transactions' : 'applications'}?waiting=overdue`} className={`block rounded-[inherit] ${overdue ? 'ring-2 ring-red-300' : ''}`} aria-label={`Waiting over ${WAITING_LIMIT_HOURS} hours: ${overdue ?? '…'} ${overdue === 1 ? 'request' : 'requests'}. Open the list.`}>
+          <StatCard label={`Waiting over ${WAITING_LIMIT_HOURS} hours`} value={overdue ?? '—'} icon={Hourglass} />
+        </Link>}
         {role === 'admin' && <>
           <StatCard label="Requests Within SLA" value={checks.length ? Math.round(checks.filter(t => t <= SLA_SECONDS).length / checks.length * 100) + '%' : '—'} icon={Gauge} />
           <StatCard label="Average Processing Time" value={times.length ? mmss(times.reduce((a, b) => a + b, 0) / times.length) : '—'} icon={Clock3} />

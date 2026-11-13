@@ -1267,3 +1267,46 @@ test('SE-4 database lookup deduplicates file and record views and writes again a
  assert.deepEqual(inserted.filter(row=>row.action==='file_view').map(row=>row.new_value),[{objectPath:'42/id.pdf'},{objectPath:'42/id.pdf'},{objectPath:'42/id.pdf'}]);
  assert.ok(inserted.every(row=>!JSON.stringify(row).includes('signed.example')));
 });
+
+// Waiting times (extra, agreed 2026-11-14): how long an open request has waited since its last activity, and on whom.
+const { waiting, staffOverdue, lastActivity, waitingLabel, WAITING_LIMIT_HOURS } = require('../lib/waiting.ts');
+const H = 3_600_000;
+const plain = (over = {}) => ({ ...structuredClone(mockApplications[0]), assessment: undefined, receipt: undefined, clearance: undefined, confirmation: undefined, feedback: undefined, paymentVerification: undefined, rejection: undefined, corrections: undefined, simulatedPayment: undefined, receiptPhoto: undefined,
+  documents: [{ requirement: 'Valid ID', name: 'id.png', size: 1, type: 'image/png', status: 'Pending Review' }], dateRequested: at, status: 'Pending Assessment', ...over });
+
+test('waiting: a request pending assessment waits on Staff and is over the limit after 24 hours', () => {
+ assert.equal(WAITING_LIMIT_HOURS, 24);
+ const a = plain(), t = Date.parse(at);
+ const early = waiting(a, t + 23 * H); assert.equal(early.on, 'Staff'); assert.equal(early.overdue, false); assert.equal(staffOverdue(a, t + 23 * H), false);
+ const late = waiting(a, t + 24 * H); assert.equal(late.overdue, true); assert.equal(staffOverdue(a, t + 25 * H), true);
+ assert.equal(waitingLabel(late.hours), '1 day');
+});
+
+test('waiting: the clock restarts at the latest activity (assessment, payment sent, payment checked, clearance)', () => {
+ const t = Date.parse(at), iso = h => new Date(t + h * H).toISOString();
+ const assessed = plain({ status: 'Awaiting OR', assessment: { items: [], total: 0, category: 'x', classification: 'x', assessedBy: 'S', assessedAt: iso(10), scheduleId: 'x' } });
+ assert.equal(lastActivity(assessed), iso(10));
+ const w = waiting(assessed, t + 40 * H); assert.equal(w.on, 'Applicant'); assert.equal(w.overdue, true);
+ assert.equal(staffOverdue(assessed, t + 40 * H), false, 'waiting on the Applicant is not counted as Staff overdue');
+ const sent = { ...assessed, status: 'For Checking', paymentVerification: { status: 'Pending', submittedAt: iso(30) } };
+ assert.equal(waiting(sent, t + 40 * H).on, 'Staff'); assert.equal(waiting(sent, t + 40 * H).overdue, false);
+ assert.equal(staffOverdue(sent, t + 55 * H), true);
+ const ready = { ...sent, status: 'Ready for Download', paymentVerification: { status: 'Verified', submittedAt: iso(30), checkedAt: iso(31) }, clearance: { issueDate: '2026-09-08', generatedAt: iso(31) } };
+ assert.equal(waiting(ready, t + 40 * H).hours, 9);
+});
+
+test('waiting: a document sent back waits on the Applicant; an open correction waits on Staff, even when Rejected', () => {
+ const t = Date.parse(at);
+ const sentBack = plain({ documents: [{ requirement: 'Valid ID', name: 'id.png', size: 1, type: 'image/png', status: 'Needs Replacement', reviewedAt: at }] });
+ assert.equal(waiting(sentBack, t + 30 * H).on, 'Applicant'); assert.equal(staffOverdue(sentBack, t + 30 * H), false);
+ const rejected = plain({ status: 'Rejected', rejection: { reason: 'x', rejectedBy: 'S', timestamp: at } });
+ assert.equal(waiting(rejected, t + 30 * H), undefined, 'a rejected request has no clock');
+ const asked = { ...rejected, corrections: [{ id: 'c1', message: 'wrong name', requestedBy: 'R', requestedAt: new Date(t + 2 * H).toISOString(), status: 'Open' }] };
+ const w = waiting(asked, t + 30 * H); assert.equal(w.on, 'Staff'); assert.equal(w.hours, 28); assert.equal(staffOverdue(asked, t + 30 * H), true);
+});
+
+test('waiting: drafts, closed and void requests have no clock; labels read naturally', () => {
+ for (const status of ['Draft', 'Closed - Cleared', 'Void']) assert.equal(waiting(plain({ status }), Date.parse(at) + 99 * H), undefined, status);
+ assert.equal(waitingLabel(0.5), 'under 1 hour'); assert.equal(waitingLabel(1), '1 hour'); assert.equal(waitingLabel(5.9), '5 hours'); assert.equal(waitingLabel(49), '2 days');
+});
+
