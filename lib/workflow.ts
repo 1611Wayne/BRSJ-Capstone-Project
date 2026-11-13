@@ -4,6 +4,8 @@ import { fullName } from '@/data/mockUsers';
 import { canScheduleInspection, inspectionCalendarDate, validInspectionTimestamp } from '@/lib/inspections';
 import type { AppNotification, NotificationEvent } from '@/types';
 import { teamNotice } from '@/lib/teamNotifications';
+import { validRecordRequestId } from '@/lib/personalRecords';
+import type { PersonalRecordsRequest } from '@/types';
 // An Applicant's notifications, newest first.
 export const notificationsFor = (state: PortalState, userId?: string): AppNotification[] =>
   (state.notifications ?? []).filter(n => n.userId === userId).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
@@ -67,6 +69,9 @@ export type Command =
   | { type: 'sessionUser'; user: User }
   | { type: 'loadApplications'; applications: Application[]; replaceOwn?: boolean; replaceAll?: boolean; requestedAt?: number }   // requestedAt: when a reload asked the server (see PortalProvider)
   | { type: 'loadNotifications'; notifications: AppNotification[] }
+  | { type: 'loadRecordRequests'; requests: PersonalRecordsRequest[] }
+  | { type: 'requestRecords'; id: string; message: string }
+  | { type: 'answerRecords'; id: string; response: string; includeSummary: boolean }
   | { type: 'loadAudits'; audits: AuditLog[]; reference?: string }
   | { type: 'loadSchedules'; schedules: FeeSchedule[] }
   | { type: 'loadUsers'; users: User[] }
@@ -135,6 +140,27 @@ export function transition(state: PortalState, command: Command, now = new Date(
     s.users.push(command.user); log('Resident registered', command.user.id); return s;
   }
   requireThat(actor, 'Please log in to continue.');
+  if (command.type === 'loadRecordRequests') {
+    requireThat(actor.role !== 'resident' || command.requests.every(r => r.residentId === actor.id), 'These records requests belong to someone else.');
+    s.recordRequests = [...command.requests]; return s;
+  }
+  if (command.type === 'requestRecords') {
+    requireThat(actor.role === 'resident', 'Only an Applicant can request their own records.');
+    requireThat(validRecordRequestId(command.id), 'The request identifier is invalid.');
+    requireThat(typeof command.message === 'string' && command.message.trim() && command.message.trim().length <= 2000, 'Describe the records you need in 1 to 2,000 characters.');
+    requireThat(!(s.recordRequests ?? []).some(r => r.id === command.id), 'This request has already been submitted.');
+    s.recordRequests = [{ id: command.id, residentId: actor.id, requestedBy: fullName(actor), message: command.message.trim(), requestedAt: now, status: 'Pending' }, ...(s.recordRequests ?? [])];
+    log('Personal records copy requested', 'RR-' + command.id, '', 'Pending'); return s;
+  }
+  if (command.type === 'answerRecords') {
+    requireThat(actor.role === 'staff' || actor.role === 'admin', 'Only Staff or Admin can answer records requests.');
+    const request = s.recordRequests?.find(r => r.id === command.id);
+    requireThat(request && request.status === 'Pending', 'This records request is missing or has already been answered.');
+    requireThat(typeof command.response === 'string' && command.response.trim() && command.response.trim().length <= 4000, 'Enter an office response in 1 to 4,000 characters.');
+    requireThat(typeof command.includeSummary === 'boolean', 'Choose whether to include the records summary.');
+    s.recordRequests = s.recordRequests!.map(r => r.id === command.id ? { ...r, status: 'Answered', response: command.response.trim(), respondedAt: now, respondedBy: fullName(actor), includeSummary: command.includeSummary } : r);
+    log('Personal records request answered', 'RR-' + command.id, 'Pending', 'Answered'); return s;
+  }
   if (command.type === 'loadAudits') {
     requireThat(actor.role === 'admin' || (actor.role === 'staff' && command.reference), 'Only Admin can load all logs; Staff must select a transaction.');
     requireThat(!command.reference || command.audits.every(a => a.reference === command.reference), 'These logs belong to another transaction.');

@@ -1,0 +1,70 @@
+// FT-18: request, office response, approved summary, ownership and SE-6 wording in sample mode.
+require('../tests/register-ts.cjs');
+const assert = require('node:assert/strict'), fs = require('node:fs');
+const { chromium } = require('playwright');
+const { mockUsers } = require('../data/mockUsers.ts');
+const { mockApplications } = require('../data/mockApplications.ts');
+const { mockFeeSchedules } = require('../data/mockFeeSchedules.ts');
+const BASE = process.env.E2E_BASE || 'http://localhost:3100', CHANNEL = process.env.E2E_CHANNEL ?? 'msedge', KEY = 'san-jose-prototype-v2';
+const foreignId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+const seed = { users: mockUsers, applications: mockApplications, schedules: mockFeeSchedules, audits: [], notifications: [], currentUserId: 'resident-maria', recordRequests: [
+  { id: foreignId, residentId: 'resident-juan', requestedBy: 'Juan Dela Cruz', message: 'JUAN-PRIVATE-REQUEST', requestedAt: new Date().toISOString(), status: 'Pending' }
+] };
+let count = 0;
+const check = (name, value) => { assert.ok(value, name); count++; console.log('PASS ' + name); };
+(async () => {
+  const browser = await chromium.launch({ ...(CHANNEL ? { channel: CHANNEL } : {}), headless: true });
+  try {
+    const page = await browser.newPage({ viewport: { width: 1440, height: 1100 } }), errors = [];
+    page.on('pageerror', e => errors.push(e.message));
+    await page.addInitScript(([key, value]) => { if (!sessionStorage.getItem(key)) sessionStorage.setItem(key, value); }, [KEY, JSON.stringify(seed)]);
+    const switchUser = id => page.evaluate(([key, id]) => { const s = JSON.parse(sessionStorage.getItem(key)); s.currentUserId = id; sessionStorage.setItem(key, JSON.stringify(s)); }, [KEY, id]);
+    await page.goto(BASE + '/resident/profile');
+    const section = page.getByRole('region', { name: 'Request a copy of my records' }); await section.waitFor();
+    check('Profile provides a request screen for the signed-in Applicant', await section.getByRole('button', { name: 'Send records request' }).count() === 1);
+    check('Applicant cannot see another person request', !(await section.innerText()).includes('JUAN-PRIVATE-REQUEST'));
+    check('retention is explicitly awaiting confirmation and request does not delete', (await section.innerText()).includes('still confirming') && (await section.innerText()).includes('does not delete'));
+    check('empty records requests cannot be sent', await section.getByRole('button', { name: 'Send records request' }).isDisabled());
+    await section.getByLabel('Which records do you need?', { exact: false }).fill('MARIA-COPY-REQUEST: my applications, receipts and uploaded files.');
+    await section.getByRole('button', { name: 'Send records request' }).click();
+    const own = await page.evaluate(key => JSON.parse(sessionStorage.getItem(key)).recordRequests.find(r => r.residentId === 'resident-maria'), KEY);
+    check('submitted request belongs to Maria and starts Pending', own.status === 'Pending' && own.requestedBy === 'Maria Clara');
+    check('summary cannot be downloaded before an office response', await section.getByRole('button', { name: 'Download my records summary (JSON)' }).count() === 0);
+    await page.reload(); await section.waitFor();
+    check('pending request survives reload', (await section.innerText()).includes('MARIA-COPY-REQUEST'));
+    await switchUser('staff-maria'); await page.goto(BASE + '/staff/records-requests');
+    await page.getByRole('heading', { name: 'Records Requests', exact: true }).waitFor();
+    check('Staff navigation exposes the records queue', await page.getByRole('navigation', { name: 'staff navigation' }).getByRole('link', { name: 'Records Requests', exact: true }).count() === 1);
+    const card = page.getByRole('article', { name: 'Records request ' + own.id, exact: true });
+    await card.getByLabel('Office response', { exact: false }).fill('MARIA-OFFICE-RESPONSE: collect supporting files at the Monitoring Office. Your portal summary is available below.');
+    await card.getByRole('checkbox', { name: /Make their current profile/ }).check();
+    await card.getByRole('button', { name: 'Send response', exact: true }).click();
+    check('answered request leaves the Pending queue', await card.count() === 0);
+    await page.getByLabel('Request status', { exact: false }).selectOption('Answered');
+    await card.waitFor();
+    check('Staff answer is retained with author and no overwrite form', (await card.innerText()).includes('MARIA-OFFICE-RESPONSE') && (await card.innerText()).includes('Maria Staff') && await card.locator('textarea').count() === 0);
+    await switchUser('admin'); await page.goto(BASE + '/admin/records-requests');
+    await page.getByRole('heading', { name: 'Records Requests', exact: true }).waitFor();
+    const other = page.getByRole('article', { name: 'Records request ' + foreignId, exact: true });
+    await other.getByLabel('Office response', { exact: false }).fill('JUAN-OFFICE-RESPONSE: please clarify the dates required.');
+    await other.getByRole('button', { name: 'Send response', exact: true }).click();
+    check('Admin can also answer without approving a summary', await other.count() === 0);
+    await switchUser('resident-maria'); await page.goto(BASE + '/resident/profile'); await section.waitFor();
+    check('Maria sees only her own office response', (await section.innerText()).includes('MARIA-OFFICE-RESPONSE') && !(await section.innerText()).includes('JUAN-OFFICE-RESPONSE'));
+    const downloadEvent = page.waitForEvent('download');
+    await section.getByRole('button', { name: 'Download my records summary (JSON)' }).click();
+    const download = await downloadEvent, summary = JSON.parse(fs.readFileSync(await download.path(), 'utf8'));
+    check('approved JSON summary contains only Maria applications', summary.profile.name === 'Maria Clara' && summary.applications.length > 0 && summary.applications.every(a => mockApplications.find(x => x.reference === a.reference)?.residentId === 'resident-maria'));
+    check('summary omits account passwords and private file pointers', !JSON.stringify(summary).includes('resident123') && summary.applications.every(a => a.documents.every(d => !('url' in d) && !('path' in d))));
+    check('summary scope explains supporting files are separate', summary.scope.includes('Uploaded files') && summary.scope.includes('separately'));
+    await switchUser('resident-juan'); await page.goto(BASE + '/resident/profile'); await section.waitFor();
+    check('Juan sees his response and no Maria request', (await section.innerText()).includes('JUAN-OFFICE-RESPONSE') && !(await section.innerText()).includes('MARIA-COPY-REQUEST'));
+    check('office can answer without making a summary downloadable', await section.getByRole('button', { name: 'Download my records summary (JSON)' }).count() === 0);
+    await page.setViewportSize({ width: 390, height: 844 });
+    check('mobile records request screen has no horizontal overflow', await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+    const audits = await page.evaluate(key => JSON.parse(sessionStorage.getItem(key)).audits, KEY);
+    check('request and response actions are in the audit trail', audits.some(a => a.action === 'Personal records copy requested') && audits.filter(a => a.action === 'Personal records request answered').length === 2);
+    check('no browser errors', errors.length === 0);
+  } finally { await browser.close(); }
+  console.log(`\n${count}/${count} checks passed`);
+})().catch(e => { console.error('SCRIPT ERROR', e.stack); process.exit(1); });
