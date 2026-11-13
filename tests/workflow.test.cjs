@@ -9,6 +9,7 @@ const { monthlyRows, monthlyCollectionReport, processingSeconds, paymentCheckSec
 const { transactionMilestones, transactionEvents, transactionDateLabel } = require('../lib/transactionLog.ts');
 const { auditRecord } = require('../lib/auditRecords.ts');
 const { decideSensitiveView } = require('../lib/sensitiveViews.ts');
+const { coalesceInFlight, createInFlightRequestCache } = require('../lib/inFlightRequests.ts');
 const { clearanceTypes } = require('../data/clearanceTypes.ts');
 const { makePDF } = require('../lib/downloads.ts');
 const state = (id = 'resident-maria') => structuredClone({users:mockUsers,applications:mockApplications,schedules:mockFeeSchedules,audits:[],currentUserId:id});
@@ -48,6 +49,27 @@ test('SE-4 skips duplicate file or record views only inside five minutes',()=>{
  assert.equal(duplicate.shouldLog,false);assert.equal(duplicate.allowed,true);
  const later=decideSensitiveView({action:'record_view',role:'admin',isAuthorized:true,lastEventAt:new Date(now-300001).toISOString(),now});
  assert.equal(later.shouldLog,true);assert.equal(later.allowed,false);
+});
+
+test('in-flight coalescing shares same-key work and runs different keys independently',async()=>{
+ const requests=new Map();let calls=0,release;
+ const gate=new Promise(resolve=>{release=resolve;});
+ const work=key=>coalesceInFlight(requests,key,async()=>{calls++;await gate;return key;});
+ const first=work('same'),replay=work('same'),other=work('other');
+ assert.equal(first,replay);release();
+ assert.deepEqual(await Promise.all([first,replay,other]),['same','same','other']);
+ assert.equal(calls,2);
+});
+
+test('in-flight request cache reuses a pending promise and permits a later retry',async()=>{
+ const cache=createInFlightRequestCache();let calls=0,release;
+ const gate=new Promise(resolve=>{release=resolve;});
+ const first=cache.getOrCreate('receipt-photos|path',async()=>{calls++;await gate;return 'signed-url';});
+ const replay=cache.getOrCreate('receipt-photos|path',async()=>{calls++;return 'unexpected';});
+ assert.equal(first,replay);release();
+ assert.equal(await first,'signed-url');assert.equal(await replay,'signed-url');assert.equal(calls,1);
+ assert.equal(await cache.getOrCreate('receipt-photos|path',async()=>{calls++;return 'next-open';}),'next-open');
+ assert.equal(calls,2);
 });
 
 test('FT-10 notifies only active Staff/Admin on submission, never drafts or failed submissions',()=>{

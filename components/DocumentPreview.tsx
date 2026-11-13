@@ -2,15 +2,24 @@
 import { useEffect, useState } from 'react';
 import { Modal } from './Modal';import type { UploadedDocument } from '@/types';import { downloadBlob,makePDF } from '@/lib/downloads';
 import { useSupabaseAuth } from '@/lib/supabase/config';
+import { createInFlightRequestCache } from '@/lib/inFlightRequests';
 
 // Shows a document through the authenticated signing route; prototype records keep the sample download.
+const signedUrlRequests = createInFlightRequestCache<string>();
+
 export function DocumentPreview({document,onClose,reference,bucket='application-documents'}:{document:UploadedDocument;onClose:()=>void;reference:string;bucket?:'application-documents'|'receipt-photos'|'valid-ids'}) {
  const [signed,setSigned]=useState<string>(),[error,setError]=useState('');
  useEffect(()=>{
   if(document.url||!document.path||!useSupabaseAuth)return;
   let cancelled=false;
-  fetch('/api/files/signed-url',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({bucket,path:document.path,reference})})
-   .then(async response=>{const result=await response.json();if(!response.ok||!result.signedUrl)throw new Error(result.error||'no link');if(!cancelled)setSigned(result.signedUrl);})
+  const path=document.path;
+  signedUrlRequests.getOrCreate(JSON.stringify([bucket,path]),async()=>{
+   const response=await fetch('/api/files/signed-url',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({bucket,path,reference})});
+   const result=await response.json() as {signedUrl?:string;error?:string};
+   if(!response.ok||!result.signedUrl)throw new Error(result.error||'no link');
+   return result.signedUrl;
+  })
+   .then(url=>{if(!cancelled)setSigned(url);})
    .catch(e=>{if(!cancelled)setError('This file could not be opened: '+(e as Error).message);});
   return()=>{cancelled=true;};
  },[document.url,document.path,bucket,reference]);
