@@ -11,6 +11,8 @@ pages, click the buttons and read what is on screen. They are the checks that we
 | `team-notifications.cjs` | Staff/Admin submission, correction, payment and release inboxes, role links, badges, read persistence, privacy and mobile layout |
 | `verify-page.cjs` | The public verification page finds a clearance released through the receipt-photo flow |
 | `staff-queue.cjs` | The Staff queue and dashboard: the renamed upload screen, the Rejected and Correction Requests tabs, the open-correction count |
+| `spam-handling.cjs` | Spam rejection explanations, Staff/Admin default visibility, explicit status filters, open corrections and Applicant access |
+| `records-requests.cjs` | Applicant records requests, Staff/Admin responses, approved summary downloads, ownership, reload persistence and retention wording |
 | `admin-reversion.cjs` | Void entries excluded from daily rows and CSV; Admin clearance type and fee corrections, audit snapshots, and Staff reassessment |
 | `feedback-summary.cjs` | Admin feedback counts for all star ratings, common comment words, empty and rating-only feedback, mobile layout, and Staff visibility |
 | `transaction-log.cjs` | Document review times, full transaction history after reload, Admin reversion history, and monthly reversion counts by Admin in Manila time |

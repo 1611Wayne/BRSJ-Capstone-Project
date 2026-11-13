@@ -56,4 +56,8 @@ export interface MonthlyCollectionRow extends ReportRecord { date: string; subca
 // unread notice about the same thing (a flagged document gets its Staff note added to the same notice instead of a second one).
 export type NotificationEvent = 'documents_flagged' | 'application_returned' | 'correction_resolved' | 'assessment_ready' | 'payment_returned' | 'clearance_ready' | 'submission_received' | 'correction_requested' | 'payment_pending' | 'release_pending';
 export interface AppNotification { id: string; userId: string; reference: string; event: NotificationEvent; message: string; createdAt: string; readAt?: string; key?: string }
-export interface PortalState { users: User[]; applications: Application[]; schedules: FeeSchedule[]; audits: AuditLog[]; notifications: AppNotification[]; currentUserId: string | null }
+export interface PersonalRecordsRequest {
+  id: string; residentId: string; requestedBy: string; message: string; requestedAt: string; status: 'Pending' | 'Answered';
+  response?: string; respondedAt?: string; respondedBy?: string; includeSummary?: boolean;
+}
+export interface PortalState { users: User[]; applications: Application[]; schedules: FeeSchedule[]; audits: AuditLog[]; notifications: AppNotification[]; currentUserId: string | null; recordRequests?: PersonalRecordsRequest[] }

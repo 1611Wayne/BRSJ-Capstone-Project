@@ -8,7 +8,7 @@ const list = 'list-disc pl-5 mt-2 space-y-1';
 export function PrivacyNotice() {
   return <section id="privacy" className="content-card p-6 mt-6">
     <h2 className="text-xl font-bold">Privacy Notice</h2>
-    <p className="text-xs text-slate-500 mt-1">Last updated: 6 November 2026</p>
+    <p className="text-xs text-slate-500 mt-1">Last updated: 13 November 2026</p>
     {!useSupabaseAuth && <p className="mt-3 border bg-slate-50 p-3 text-sm">This copy of the portal is a demonstration. It uses fictional records that stay in this browser tab, and closing the tab clears them. Use sample information only.</p>}
     <p className="mt-3">Barangay San Jose, Rodriguez, Rizal runs this portal and is responsible for your personal information. This notice explains what we collect, why we need it, who can see it, and your rights under the Data Privacy Act of 2012 (Republic Act No. 10173).</p>
 
@@ -56,7 +56,7 @@ export function PrivacyNotice() {
     </ul>
 
     <h3 className={heading}>How long we keep it</h3>
-    <p className="mt-2">We keep your records only as long as the barangay needs them to meet legal, audit and government record-keeping requirements, including the rules of the National Archives of the Philippines. Your uploaded files stay in online storage until they are moved to the barangay&apos;s office computer as part of its monthly records. Records and files that are no longer required are securely disposed of.</p>
+    <p className="mt-2">The barangay is still confirming its retention and disposal schedule. Records may need to be kept for legal, audit and public-records duties, including applicable National Archives requirements. Asking for a copy does not delete records or change those duties. Contact the Monitoring Office for retention or deletion questions.</p>
 
     <h3 className={heading}>Your rights</h3>
     <p className="mt-2">Under the Data Privacy Act, you have the right to:</p>
@@ -70,6 +70,7 @@ export function PrivacyNotice() {
     </ul>
 
     <h3 className={heading}>How to reach us</h3>
+    <p className="mt-2">To request a copy of your own records online, sign in and open <a className="underline" href="/resident/profile#record-copy-requests">Profile: Request a copy of my records</a>. Staff or Admin will respond there with access or collection instructions. A profile and application summary may be made available; supporting files and other office-held records are handled separately.</p>
     <p className="mt-2">To use any of these rights or to ask about this notice, visit the Monitoring Office at the Barangay Hall, San Jose, Rodriguez, Rizal, Monday to Friday, 8:00 AM to 5:00 PM, and ask for the barangay&apos;s Data Protection Officer.</p>
   </section>;
 }
