@@ -1,6 +1,6 @@
 -- STEP 2 of 3. THE MIGRATIONS. Paste ALL of this into the Supabase SQL Editor and click Run.
--- Generated 2026-10-18 from the migration files below (parts 10 and 11 added 2026-11-06, part 12 on 2026-11-08, part 13 on 2026-11-11, parts 14 and 15 on 2026-11-12, parts 16, 17 and 18 on 2026-11-13), unchanged except that migration 6 was made re-runnable.
--- If you already ran an earlier version of this script, run this one again: it is safe. Parts 10 (the original issue date of a withdrawn clearance), 11 (a daily cap on sign-in texts), 12 (inspection scheduling), 13 (Staff and Admin notices), 14 (several fee versions on one day), 15 (no direct writes that skip the server), 16 (the audit log can only grow), 17 (ID checks and spam flags) and 18 (Staff and Admin open files only through the server, so every opening is logged) are new.
+-- Generated 2026-10-18 from the migration files below (parts 10 and 11 added 2026-11-06, part 12 on 2026-11-08, part 13 on 2026-11-11, parts 14 and 15 on 2026-11-12, parts 16, 17 and 18 on 2026-11-13, part 19 on 2026-11-14), unchanged except that migration 6 was made re-runnable.
+-- If you already ran an earlier version of this script, run this one again: it is safe. Parts 10 (the original issue date of a withdrawn clearance), 11 (a daily cap on sign-in texts), 12 (inspection scheduling), 13 (Staff and Admin notices), 14 (several fee versions on one day), 15 (no direct writes that skip the server), 16 (the audit log can only grow), 17 (ID checks and spam flags), 18 (Staff and Admin open files only through the server, so every opening is logged) and 19 (the records-requests table: a resident asks for a copy of their records) are new.
 -- Parts 6 and 7 are the security rules: who may read each table, and three private file buckets (IDs, documents, receipts).
 -- Run it as the default role (postgres). The editor may warn about "destructive operations" because the script drops and
 -- re-creates some CHECK rules: that is expected, confirm it.
@@ -18,7 +18,7 @@
 -- Afterwards, run STEP 3 (3_after_check.sql).
 
 -- ==========================================================================
--- PART 1 OF 18: 20261005000000_correct_clearance_types.sql
+-- PART 1 OF 19: 20261005000000_correct_clearance_types.sql
 -- ==========================================================================
 -- Correct the clearance_types catalog: 13 -> 9, confirmed with the real client
 -- Generated 2026-10-05. Depends on 20260923010000_seed_clearance_types.sql.
@@ -65,7 +65,7 @@ where name in (
 );
 
 -- ==========================================================================
--- PART 2 OF 18: 20261006000000_add_business_subcategory.sql
+-- PART 2 OF 19: 20261006000000_add_business_subcategory.sql
 -- ==========================================================================
 -- Add the Applicant's optional Ambulant / Lessor indication to applications
 -- Generated 2026-10-06. Depends on 20260922000000_init_schema.sql.
@@ -102,7 +102,7 @@ comment on column public.applications.business_subcategory is
   'Optional. What the Applicant indicated at intake for a Business Clearance: Ambulant or Lessor (Paupahan); NULL = Business Clearance only. A hint for Staff, not the final classification — that is decided at assessment.';
 
 -- ==========================================================================
--- PART 3 OF 18: 20261006010000_sync_schema_with_frontend.sql
+-- PART 3 OF 19: 20261006010000_sync_schema_with_frontend.sql
 -- ==========================================================================
 -- Sync the database with everything the frontend prototype has built since 2026-09-23
 -- Generated 2026-10-06. Depends on ALL of the earlier migrations, in particular
@@ -355,7 +355,7 @@ comment on column public.correction_requests.resident_id is
   'The Applicant who sent the request (the frontend''s requestedBy). The Staff who resolved it is resolved_by.';
 
 -- ==========================================================================
--- PART 4 OF 18: 20261016000000_receipt_confirmed_by.sql
+-- PART 4 OF 19: 20261016000000_receipt_confirmed_by.sql
 -- ==========================================================================
 -- Record WHO confirmed a release at the counter
 -- Generated 2026-10-16. Depends on 20260922000000_init_schema.sql (receipt_confirmations, profiles).
@@ -376,7 +376,7 @@ comment on column public.receipt_confirmations.confirmed_by is
   'The Staff member who recorded the release of the printed original at the counter. NULL = the Applicant confirmed receipt themselves.';
 
 -- ==========================================================================
--- PART 5 OF 18: 20261016010000_notifications.sql
+-- PART 5 OF 19: 20261016010000_notifications.sql
 -- ==========================================================================
 -- In-app notifications for Applicants
 -- Generated 2026-10-16. Depends on 20260922000000_init_schema.sql (profiles, applications).
@@ -422,7 +422,7 @@ comment on table public.notifications is
   'In-app notices for an Applicant (not SMS). Written by the server when Staff act on the Applicant''s application; the Applicant reads them and marks them read. An unread notice with the same dedupe_key is updated instead of repeated.';
 
 -- ==========================================================================
--- PART 6 OF 18: 20261017000000_rls_policies_remaining_tables.sql
+-- PART 6 OF 19: 20261017000000_rls_policies_remaining_tables.sql
 -- ==========================================================================
 -- RLS policies for the remaining tables (everything except profiles and applications, which have their own
 -- policies in 20260923020000). Generated 2026-10-17. Depends on all earlier migrations.
@@ -646,7 +646,7 @@ create trigger notifications_owner_only_marks_read
   for each row execute function public.notifications_owner_only_marks_read();
 
 -- ==========================================================================
--- PART 7 OF 18: 20261017010000_storage_buckets_and_policies.sql
+-- PART 7 OF 19: 20261017010000_storage_buckets_and_policies.sql
 -- ==========================================================================
 -- Storage: three PRIVATE buckets and who may read and upload into each. Generated 2026-10-17.
 -- Depends on 20261017000000_rls_policies_remaining_tables.sql (the helper functions).
@@ -783,7 +783,7 @@ with check (
 );
 
 -- ==========================================================================
--- PART 8 OF 18: 20261018000000_reference_numbers.sql
+-- PART 8 OF 19: 20261018000000_reference_numbers.sql
 -- ==========================================================================
 -- Request reference numbers made by the database: SJ-YYYY-######, one counter per year (Manila time), starting at 1.
 -- Generated 2026-10-18. Depends on 20261017000000_rls_policies_remaining_tables.sql.
@@ -836,7 +836,7 @@ grant execute on function public.next_reference_no() to authenticated, service_r
 alter table public.applications alter column reference_no set default public.next_reference_no();
 
 -- ==========================================================================
--- PART 9 OF 18: 20261018010000_sample_fee_schedules.sql
+-- PART 9 OF 19: 20261018010000_sample_fee_schedules.sql
 -- ==========================================================================
 -- SAMPLE fee data so Staff can test the assessment end to end. Generated 2026-10-18 from the prototype's own data
 -- (data/revenueCodeData.ts and data/mockFeeSchedules.ts), so the numbers are exactly the ones the prototype shows.
@@ -960,7 +960,7 @@ begin
 end $$;
 
 -- ==========================================================================
--- PART 10 OF 18: 20261106000000_clearance_revised_from.sql
+-- PART 10 OF 19: 20261106000000_clearance_revised_from.sql
 -- ==========================================================================
 -- Migration 14: keep a withdrawn clearance's original issue date on the application (IN PROGRESS, 2026-11-06).
 --
@@ -977,7 +977,7 @@ comment on column public.applications.clearance_revised_from is
   'Original issue date of a clearance withdrawn by an Admin correction; the next clearance is marked REVISED with it.';
 
 -- ==========================================================================
--- PART 11 OF 18: 20261106010000_sms_daily_cap.sql
+-- PART 11 OF 19: 20261106010000_sms_daily_cap.sql
 -- ==========================================================================
 -- Migration 15: a daily cap on sign-in texts (IN PROGRESS, 2026-11-06).
 --
@@ -1035,7 +1035,7 @@ revoke all on function public.claim_sms_send(text, integer, integer) from public
 grant execute on function public.claim_sms_send(text, integer, integer) to service_role;
 
 -- ==========================================================================
--- PART 12 OF 18: 20261108000000_inspection_scheduling.sql
+-- PART 12 OF 19: 20261108000000_inspection_scheduling.sql
 -- (its own begin; and commit; lines are left out here: this whole script already runs as one piece)
 -- ==========================================================================
 -- Migration 16: inspection scheduling (FT-9). Written by jayemm01 (PR #6, merged 2026-11-08) as
@@ -1070,7 +1070,7 @@ create index if not exists inspection_reports_pending_schedule_idx
   where status = 'Pending' and scheduled_at is not null;
 
 -- ==========================================================================
--- PART 13 OF 18: 20261111000000_team_notification_events.sql
+-- PART 13 OF 19: 20261111000000_team_notification_events.sql
 -- ==========================================================================
 -- Migration 17: in-app notices for Staff and Admin (FT-10) (IN PROGRESS, 2026-11-11).
 --
@@ -1095,7 +1095,7 @@ comment on table public.notifications is
   'In-app notices (not SMS). Applicants get notices about their own requests; Staff and Admin get team notices (new submission, correction requested, payment waiting, clearance waiting for release). Written only by the server; each person reads and marks read only their own. An unread notice with the same dedupe_key is updated instead of repeated.';
 
 -- ==========================================================================
--- PART 14 OF 18: 20261112000000_fee_versions_same_day.sql
+-- PART 14 OF 19: 20261112000000_fee_versions_same_day.sql
 -- ==========================================================================
 -- Migration 18: several fee schedule versions on the same effective date (IN PROGRESS, 2026-11-12).
 --
@@ -1127,7 +1127,7 @@ comment on table public.fee_schedules is
   'Append-only version history. The row with the latest effective_date <= today (and, on the same date, the latest created_at), for a given (clearance_type, category, classification), is the active one — chosen in application code, not here. Several versions may share an effective date (migration 18).';
 
 -- ==========================================================================
--- PART 15 OF 18: 20261112010000_close_direct_writes.sql
+-- PART 15 OF 19: 20261112010000_close_direct_writes.sql
 -- ==========================================================================
 -- Migration 19: close the direct-write back doors (DB-6 part 2) (IN PROGRESS, 2026-11-12).
 --
@@ -1197,7 +1197,7 @@ comment on policy "people fill in their own profile" on public.profiles is
   'Registration only: a new resident fills in their own blank address, mobile number and ID file (column grants + trigger profiles_fill_in_only). Every other profile change goes through the server (migration 19).';
 
 -- ==========================================================================
--- PART 16 OF 18: 20261113000000_audit_log_append_only.sql
+-- PART 16 OF 19: 20261113000000_audit_log_append_only.sql
 -- ==========================================================================
 -- Migration 20: the audit log can only grow (DB-7) (IN PROGRESS, 2026-11-13).
 --
@@ -1264,7 +1264,7 @@ comment on table public.audit_logs is
   'Append-only audit trail (migration 20): entries can be added, never edited or deleted, by any role including the server key. The only allowed change is the database clearing application_id or user_id when that request or account is deleted.';
 
 -- ==========================================================================
--- PART 17 OF 18: 20261113010000_account_checks.sql
+-- PART 17 OF 19: 20261113010000_account_checks.sql
 -- ==========================================================================
 -- Migration 21: account checks before real use (DB-11) (IN PROGRESS, 2026-11-13).
 --
@@ -1297,7 +1297,7 @@ comment on column public.profiles.id_verified_at is 'When Staff confirmed this r
 comment on column public.profiles.spam_flagged_at is 'When Staff or Admin flagged this account as spam (null = not flagged). A flagged account cannot submit new requests until Admin clears it.';
 
 -- ==========================================================================
--- PART 18 OF 18: 20261113020000_staff_file_reads_through_server.sql
+-- PART 18 OF 19: 20261113020000_staff_file_reads_through_server.sql
 -- ==========================================================================
 -- Migration 22: Staff and Admin open files only through the server, so every opening is logged (SE-4) (IN PROGRESS, 2026-11-13).
 -- Asked for in Angelo's PR #8 ("Not in this PR"). RUN IT ONLY AFTER PR #8 IS IN THE CODE EVERYONE RUNS: older code
@@ -1362,3 +1362,66 @@ using (
 -- ---------------------------------------------------------------------------
 create index if not exists audit_logs_view_lookup_idx
   on public.audit_logs (user_id, action, application_id, created_at desc);
+
+-- ==========================================================================
+-- PART 19 OF 19: 20261114000000_personal_record_requests.sql
+-- ==========================================================================
+-- Migration 23: the table behind "ask for a copy of my records" (FT-18, RA 10173 right of access) (IN PROGRESS, 2026-11-14).
+-- jayemm01's PR #10 (merged into main 2026-11-13) added the screens and app/api/record-requests, but no table, so on the
+-- real project the Records Requests pages say "Records requests are currently unavailable". This creates it exactly as
+-- the code reads and writes it (lib/server/recordRequests.ts, app/api/record-requests/route.ts).
+--
+-- HOW IT IS USED
+--   A resident asks (Profile page): the server inserts a Pending row (id = a uuid made by the browser, request_text).
+--   Staff or Admin answer (Records Requests page): the server sets Answered, response_text, responded_at, responded_by and
+--   include_summary, only if the row is still Pending (compare-and-set, so two officers cannot overwrite each other).
+--   With include_summary, the resident can download a summary of their profile and requests (the download is logged).
+-- WHO MAY DO WHAT
+--   Read: the resident their own requests; Staff and Admin all of them. (The app reads with the server key anyway.)
+--   Write: nobody from a user session. Every insert and answer goes through the server (as for applications since
+--   migration 19), which checks the rules in lib/workflow.ts and writes the audit entry.
+-- Profiles are never hard-deleted; like applications, a request blocks deleting its resident (on delete restrict). The
+-- DB-12 test clean-up must delete a test resident's records requests first.
+-- Re-runnable.
+
+create table if not exists public.personal_record_requests (
+  id uuid primary key,
+  resident_id uuid not null,
+  request_text text not null,
+  requested_at timestamptz not null default now(),
+  status text not null default 'Pending',
+  response_text text,
+  responded_at timestamptz,
+  responded_by uuid,
+  include_summary boolean not null default false,
+  -- The app joins the names through these two constraint names, so they are spelled out.
+  constraint personal_record_requests_resident_id_fkey foreign key (resident_id) references public.profiles(id) on delete restrict,
+  constraint personal_record_requests_responded_by_fkey foreign key (responded_by) references public.profiles(id) on delete set null,
+  constraint personal_record_requests_status_check check (status in ('Pending', 'Answered')),
+  constraint personal_record_requests_request_length check (char_length(btrim(request_text)) between 1 and 2000),
+  constraint personal_record_requests_response_length check (response_text is null or char_length(btrim(response_text)) between 1 and 4000),
+  -- Pending has no answer yet; Answered always has its text and time.
+  constraint personal_record_requests_answer_complete check (
+    (status = 'Pending' and response_text is null and responded_at is null)
+    or (status = 'Answered' and response_text is not null and responded_at is not null)
+  )
+);
+
+create index if not exists personal_record_requests_resident_idx on public.personal_record_requests (resident_id, requested_at desc);
+create index if not exists personal_record_requests_requested_at_idx on public.personal_record_requests (requested_at desc, id);
+
+alter table public.personal_record_requests enable row level security;
+
+drop policy if exists "residents read own records requests, staff and admin read all" on public.personal_record_requests;
+create policy "residents read own records requests, staff and admin read all"
+on public.personal_record_requests for select to authenticated
+using (resident_id = auth.uid() or public.requester_role() in ('staff', 'admin'));
+
+-- No insert, update or delete rule: with row level security on, a user session cannot write. Taking the rights away as
+-- well makes that plain (the server key is not affected).
+revoke insert, update, delete, truncate on public.personal_record_requests from anon, authenticated;
+grant select on public.personal_record_requests to authenticated;
+grant all on public.personal_record_requests to service_role;
+
+comment on table public.personal_record_requests is
+  'A resident''s request for a copy of the records the barangay holds about them (RA 10173), and the office''s answer (FT-18, migration 23). Written only by the server (app/api/record-requests).';
