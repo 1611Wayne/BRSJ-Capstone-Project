@@ -190,7 +190,8 @@ export async function POST(request: Request) {
   }
   if (body.step !== 'create') {
     // The first logged entry of a request shows no old status (it is new); decided here, never by the browser.
-    const { count } = await db.from('audit_logs').select('id', { count: 'exact', head: true }).eq('application_id', appId);
+    const { count } = await db.from('audit_logs').select('id', { count: 'exact', head: true })
+      .eq('application_id', appId).neq('action', 'file_view').neq('action', 'record_view');
     await db.from('audit_logs').insert({ user_id: actor.id, role: actor.role, action: body.draft ? 'Draft saved' : 'Application submitted', application_id: appId, reference_no: reference, old_value: count ? oldStatus : null, new_value: newStatus });
   }
 

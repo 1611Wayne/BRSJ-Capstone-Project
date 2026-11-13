@@ -2,12 +2,13 @@ import { NextResponse } from 'next/server';
 import { currentUser } from '@/lib/server/currentUser';
 import { supabaseAdmin } from '@/lib/supabase/server';
 import { auditRecord } from '@/lib/auditRecords';
+import { SENSITIVE_VIEW_ACTIONS } from '@/lib/sensitiveViews';
 
 export const dynamic = 'force-dynamic';
 
 // Admin loads audit history for reports and the dashboard. Staff may read an accessible transaction's history.
 // Optional filters, so a screen reads only what it shows: since / until (ISO times, inclusive), reversion=1 (reversions
-// only) and limit=N (the newest N entries). Without filters Admin gets every entry.
+// only), view=changes|views, and limit=N (the newest N entries). Changes are the default.
 export async function GET(request: Request) {
   const me = await currentUser(); if ('error' in me) return me.error;
   if (me.user.role === 'resident') return NextResponse.json({ error: 'Only Staff and Admin can read transaction logs.' }, { status: 403 });
@@ -15,8 +16,9 @@ export async function GET(request: Request) {
   const reference = params.get('reference');
   if (me.user.role === 'staff' && !reference) return NextResponse.json({ error: 'Select a transaction to read its log.' }, { status: 403 });
   const since = params.get('since'), until = params.get('until'), reversionOnly = params.get('reversion') === '1';
+  const view = params.get('view') ?? 'changes';
   const limit = params.has('limit') ? Math.floor(Number(params.get('limit'))) : 0;
-  if ((since && !Number.isFinite(Date.parse(since))) || (until && !Number.isFinite(Date.parse(until))) || !(limit >= 0 && limit <= 500)) {
+  if ((since && !Number.isFinite(Date.parse(since))) || (until && !Number.isFinite(Date.parse(until))) || !['changes', 'views'].includes(view) || !(limit >= 0 && limit <= 500)) {
     return NextResponse.json({ error: 'The log filter is not valid.' }, { status: 400 });
   }
   const db = supabaseAdmin();
@@ -30,6 +32,9 @@ export async function GET(request: Request) {
     if (since) query = query.gte('created_at', new Date(since).toISOString());
     if (until) query = query.lte('created_at', new Date(until).toISOString());
     if (reversionOnly) query = query.eq('reversion', true);
+    query = view === 'views'
+      ? query.in('action', [...SENSITIVE_VIEW_ACTIONS])
+      : query.neq('action', 'file_view').neq('action', 'record_view');
     return query;
   };
   try {

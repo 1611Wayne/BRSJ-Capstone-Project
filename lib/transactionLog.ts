@@ -1,4 +1,5 @@
 import type { Application, AuditLog } from '@/types';
+import { isSensitiveViewAction } from '@/lib/sensitiveViews';
 
 export const transactionDateLabel = (timestamp?: string) => timestamp
   ? new Date(timestamp).toLocaleString('en-PH', { timeZone: 'Asia/Manila', dateStyle: 'medium', timeStyle: 'medium' }) : '—';
@@ -23,7 +24,7 @@ export function transactionMilestones(a: Application) {
 }
 
 export function transactionEvents(a: Application, audits: AuditLog[]) {
-  const events = audits.filter(log => log.reference === a.reference).slice().reverse().map(log => ({
+  const events = audits.filter(log => log.reference === a.reference && !isSensitiveViewAction(log.action)).slice().reverse().map(log => ({
     id: log.id, timestamp: log.timestamp, user: log.user, action: log.action, reason: log.reason,
   }));
   for (const milestone of transactionMilestones(a)) {

@@ -121,6 +121,8 @@ test('transaction log preserves repeated stages and reversions with exact times,
  assert.equal(events.filter(e=>e.action==='Requirements reviewed').length,2);
  assert.ok(events.some(e=>e.action==='Mark Under Review'&&e.reason==='Review again'&&e.timestamp==='2026-09-07T03:01:18.000Z'));
  assert.equal(events.some(e=>e.action==='Other request'),false);
+ const views=[...s.audits,{...s.audits[0],id:'view-file',action:'file_view',reference:ref},{...s.audits[0],id:'view-record',action:'record_view',reference:ref}];
+ assert.ok(transactionEvents(app(s),views).every(event=>!['file_view','record_view'].includes(event.action)));
  assert.deepEqual(events.map(e=>Date.parse(e.timestamp)),events.map(e=>Date.parse(e.timestamp)).sort((a,b)=>a-b));
  const fresh=transactionMilestones(app(state()));
  assert.equal(fresh.find(m=>m.stage==='Document Review Time').timestamp,undefined);
@@ -140,6 +142,7 @@ test('monthly reversion counts group actions by Admin identity and Manila month'
   {...entry('5','a','Same Name','Edit Fields','2026-11-10T01:00:00.000Z'),reversion:false},
   {...entry('6','a','Same Name','Edit Fields','2026-11-10T01:00:00.000Z'),role:'staff'},
   entry('7','a','Same Name','Assessment confirmed','2026-11-10T01:00:00.000Z'),
+  entry('8','a','Same Name','file_view','2026-11-10T01:00:00.000Z'),
  ];
  const rows=monthlyReversions(audits,'2026-11');
  assert.deepEqual(rows,[{adminId:'a',admin:'Same Name',edits:1,voids:1,reviews:0,total:2},{adminId:'b',admin:'Same Name',edits:0,voids:0,reviews:1,total:1}]);
@@ -877,16 +880,18 @@ test('staff can create and submit walk-in application on behalf of a resident wi
 
 // Exercise the audit endpoint with a fake database: no Supabase connection or real records are used.
 const Module = require('node:module');
-let auditApiActor, auditApiRows = [], auditApiApplication, auditApiCalls;
+let auditApiActor, auditApiRows = [], auditApiApplication, auditApiCalls, auditApiFilters;
 const fakeAuditDb = {
  from(table) {
-  auditApiCalls.push(table);let start=0,end=999,reference;
+  auditApiCalls.push(table);let start=0,end=999,reference,allowedActions,excludedActions=[];
   const query={
    select(){return query},order(){return query},range(a,b){start=a;end=b;return query},
-   eq(field,value){if(field==='reference_no')reference=value;return query},in(){return query},
+   eq(field,value){if(field==='reference_no')reference=value;return query},
+   in(field,values){if(field==='action'){allowedActions=values;auditApiFilters.push(['in',values])}return query},
+   neq(field,value){if(field==='action'){excludedActions.push(value);auditApiFilters.push(['neq',value])}return query},
    async maybeSingle(){return {data:auditApiApplication,error:null}},
    then(resolve,reject){
-    const data=table==='profiles'?[{id:'admin-id',first_name:'Admin',last_name:'One'}]:auditApiRows.filter(row=>!reference||row.reference_no===reference).slice(start,end+1);
+    const data=table==='profiles'?[{id:'admin-id',first_name:'Admin',last_name:'One'}]:auditApiRows.filter(row=>(!reference||row.reference_no===reference)&&(!allowedActions||allowedActions.includes(row.action))&&!excludedActions.includes(row.action)).slice(start,end+1);
     return Promise.resolve({data,error:null}).then(resolve,reject);
    },
   };return query;
@@ -914,7 +919,7 @@ test('audit endpoint denies resident access and unscoped Staff reads before quer
 });
 
 test('audit endpoint reads every page for Admin and scopes Staff transaction history',async()=>{
- auditApiCalls=[];auditApiActor={role:'admin'};
+ auditApiCalls=[];auditApiFilters=[];auditApiActor={role:'admin'};
  auditApiRows=Array.from({length:1001},(_,index)=>({id:index+1,timestamp:at,user_id:'admin-id',role:'admin',action:'Edit Fields',reference_no:index===1000?'other':ref,reversion:true}));
  let response=await auditEndpoint.GET(new Request('http://localhost/api/audits'));
  assert.equal(response.status,200);let body=await response.json();
@@ -923,6 +928,22 @@ test('audit endpoint reads every page for Admin and scopes Staff transaction his
  auditApiActor={role:'staff'};auditApiApplication={id:1,status:'Pending Assessment',staff_encoder_id:null};
  response=await auditEndpoint.GET(new Request('http://localhost/api/audits?reference='+ref));body=await response.json();
  assert.equal(response.status,200);assert.equal(body.audits.length,1000);assert.ok(body.audits.every(row=>row.reference===ref));
+});
+
+test('audit endpoint filters views and changes in the database, defaulting to changes',async()=>{
+ auditApiActor={role:'admin'};auditApiCalls=[];auditApiFilters=[];
+ auditApiRows=[
+  {id:1,timestamp:at,user_id:'admin-id',role:'admin',action:'file_view',reference_no:ref},
+  {id:2,timestamp:at,user_id:'admin-id',role:'admin',action:'record_view',reference_no:ref},
+  {id:3,timestamp:at,user_id:'admin-id',role:'admin',action:'Edit Fields',reference_no:ref},
+ ];
+ let response=await auditEndpoint.GET(new Request('http://localhost/api/audits?view=views'));let body=await response.json();
+ assert.equal(response.status,200);assert.deepEqual(body.audits.map(row=>row.action),['file_view','record_view']);
+ assert.deepEqual(auditApiFilters,[['in',['file_view','record_view']]]);
+ auditApiFilters=[];response=await auditEndpoint.GET(new Request('http://localhost/api/audits'));body=await response.json();
+ assert.equal(response.status,200);assert.deepEqual(body.audits.map(row=>row.action),['Edit Fields']);
+ assert.deepEqual(auditApiFilters,[['neq','file_view'],['neq','record_view']]);
+ response=await auditEndpoint.GET(new Request('http://localhost/api/audits?view=everything'));assert.equal(response.status,400);
 });
 
 test('Admin log loads collect database entries newest first and drop sample ones; schedules load only for Staff and Admin',()=>{

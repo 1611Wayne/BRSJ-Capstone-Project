@@ -1,7 +1,12 @@
 export type SensitiveViewAction = 'file_view' | 'record_view';
 export type SensitiveViewRole = 'resident' | 'staff' | 'admin';
 
+export const SENSITIVE_VIEW_ACTIONS: readonly SensitiveViewAction[] = ['file_view', 'record_view'];
 export const SENSITIVE_VIEW_DEDUPE_WINDOW_MS = 5 * 60 * 1000;
+
+export function isSensitiveViewAction(action: string): action is SensitiveViewAction {
+  return SENSITIVE_VIEW_ACTIONS.includes(action as SensitiveViewAction);
+}
 
 export function decideSensitiveView(input: {
   action: SensitiveViewAction | 'list_view';

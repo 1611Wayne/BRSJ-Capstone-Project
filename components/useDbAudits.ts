@@ -4,8 +4,8 @@ import { usePortal } from './PortalProvider';
 import { isRealAccount, useSupabaseAuth } from '@/lib/supabase/config';
 import { loadAudits, type AuditQuery } from '@/lib/supabase/applications';
 
-// Real sign-in mode: an Admin screen loads only the slice of the audit log it shows (a date range, reversions, the newest
-// entries) into the screens' state, again whenever that slice changes. Does nothing in prototype mode. Returns an error text.
+// Real sign-in mode: an Admin screen loads only the slice of the audit log it shows (dates, reversions, view category,
+// newest entries) into screen state whenever that slice changes. Does nothing in prototype mode. Returns an error text.
 export function useDbAudits(query: AuditQuery | null) {
   const { user, act } = usePortal();
   const [error, setError] = useState('');

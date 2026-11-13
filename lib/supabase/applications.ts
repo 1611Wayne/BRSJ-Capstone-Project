@@ -1,8 +1,8 @@
 import type { AppNotification, Application, ApplicationInput, AuditLog, FeeSchedule, UploadedDocument } from '@/types';
 import { supabaseBrowser } from './browser';
 
-// One transaction's log (a reference), or Admin's filtered history: since / until (ISO times), reversions only, the newest N.
-export type AuditQuery = { since?: string; until?: string; reversion?: boolean; limit?: number };
+// One transaction's log (a reference), or Admin's filtered history: dates, reversions, view category, and newest N.
+export type AuditQuery = { since?: string; until?: string; reversion?: boolean; view?: 'changes' | 'views'; limit?: number };
 export async function loadAudits(query?: string | AuditQuery): Promise<AuditLog[]> {
   const q = typeof query === 'string' ? { reference: query } : query ?? {};
   const params = new URLSearchParams(Object.entries(q).flatMap(([key, value]) => value === undefined || value === false ? [] : [[key, value === true ? '1' : String(value)]]));

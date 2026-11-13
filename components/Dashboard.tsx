@@ -12,6 +12,7 @@ import { MonthlyReversions } from './MonthlyReversions';
 import { useDbAudits } from './useDbAudits';
 import { UpcomingInspections } from './UpcomingInspections';
 import type { UserRole } from '@/types';
+import { isSensitiveViewAction } from '@/lib/sensitiveViews';
 
 /* ── helpers ─────────────────────────────────────────────── */
 function last14Days(anchorDate: Date = new Date()): string[] {
@@ -108,7 +109,7 @@ function LineChart({ days, data, label, unit = '' }: { days: string[]; data: (nu
 /* ── Main Dashboard ───────────────────────────────────────── */
 export function Dashboard({ role }: { role: UserRole }) {
   const { state, user } = usePortal();
-  const activityError = useDbAudits(role === 'admin' ? { limit: 8 } : null);   // Recent Activity, real sign-in mode
+  const activityError = useDbAudits(role === 'admin' ? { limit: 8, view: 'changes' } : null);   // Recent Activity, real sign-in mode
   const apps = state.applications.filter(a => (role !== 'resident' || a.residentId === user?.id) && a.status !== 'Draft');
   const times = apps.map(processingSeconds).filter((n): n is number => n !== null);
   const checks = apps.map(paymentCheckSeconds).filter((n): n is number => n !== null);
@@ -256,7 +257,7 @@ export function Dashboard({ role }: { role: UserRole }) {
       {/* Recent activity / applications table */}
       {role === 'staff' && <UpcomingInspections />}
       {role === 'admin'
-        ? <><h2 className="text-xl font-bold text-brand-ink mt-10 mb-5">Recent Activity</h2>{activityError && <p role="alert" className="text-sm text-red-700 mb-3">{activityError}</p>}<ReportTable headers={['Time', 'User', 'Action', 'Reference']} rows={state.audits.slice(0, 8).map(a => [dateLabel(a.timestamp), a.user, a.action, a.reference])} /></>
+        ? <><h2 className="text-xl font-bold text-brand-ink mt-10 mb-5">Recent Activity</h2>{activityError && <p role="alert" className="text-sm text-red-700 mb-3">{activityError}</p>}<ReportTable headers={['Time', 'User', 'Action', 'Reference']} rows={state.audits.filter(a => !isSensitiveViewAction(a.action)).slice(0, 8).map(a => [dateLabel(a.timestamp), a.user, a.action, a.reference])} /></>
         : <><h2 className="text-xl font-bold text-brand-ink mt-10 mb-5">Recent Applications</h2><ApplicationTable applications={apps.slice(0, 5)} role={role} /><div className="text-right mt-5"><Link href={'/' + role + '/applications'} className="text-sm text-brand-primary underline">View all applications →</Link></div></>
       }
     </div>
