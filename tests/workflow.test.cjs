@@ -1133,3 +1133,92 @@ test('FT-10 notification GET and mark-read stay scoped to the authenticated user
   assert.deepEqual(teamNotificationCalls,[['eq','user_id',role+'-id'],['is','read_at',null]]);
  }
 });
+
+let sensitiveActor,sensitiveLogError,sensitiveLogged=[],sensitiveSigned=[],sensitiveMembership=true;
+const sensitiveApplication={id:42,resident_id:'resident-id',status:'Pending Assessment',staff_encoder_id:null,reference_no:ref};
+const sensitiveDb={
+ from(table){
+  const filters={};
+  const query={
+   select(){return query},eq(column,value){filters[column]=value;return query},
+   async maybeSingle(){
+    if(table==='applications')return {data:sensitiveApplication,error:null};
+    if(table==='application_documents')return {data:sensitiveMembership&&filters.storage_path==='42/id.pdf'?{storage_path:'42/id.pdf'}:null,error:null};
+    if(table==='official_receipts')return {data:null,error:null};
+    if(table==='profiles')return {data:sensitiveMembership&&filters.valid_id_path==='resident-id/id.jpg'?{valid_id_path:'resident-id/id.jpg'}:null,error:null};
+    return {data:null,error:null};
+   },
+  };
+  return query;
+ },
+ storage:{from(bucket){return {async createSignedUrl(path,expiresIn){sensitiveSigned.push({bucket,path,expiresIn});return {data:{signedUrl:'https://signed.example/private'},error:null}}}}},
+};
+let signedUrlEndpoint,recordViewEndpoint,sensitivePersist;
+try{
+ Module._load=function(request,parent,...rest){
+  if(request==='@/lib/server/currentUser')return {currentUser:async()=>({user:sensitiveActor})};
+  if(request==='@/lib/server/persist')return {logSensitiveView:async(_db,event)=>{sensitiveLogged.push(event);if(sensitiveLogError)throw sensitiveLogError;return true}};
+  if(request==='@/lib/supabase/server')return {supabaseAdmin:()=>sensitiveDb};
+  if(request==='server-only')return {};
+  return originalLoad.call(this,request,parent,...rest);
+ };
+ signedUrlEndpoint=require('../app/api/files/signed-url/route.ts');
+ recordViewEndpoint=require('../app/api/applications/[reference]/view/route.ts');
+ sensitivePersist=require('../lib/server/persist.ts');
+}finally{Module._load=originalLoad;}
+
+test('SE-4 signed URL route logs Staff opens before signing and fails closed on log errors',async()=>{
+ sensitiveActor={id:'staff-id',role:'staff'};sensitiveLogError=null;sensitiveLogged=[];sensitiveSigned=[];
+ const request=()=>new Request('http://localhost/api/files/signed-url',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({bucket:'application-documents',path:'42/id.pdf',reference:ref})});
+ let response=await signedUrlEndpoint.POST(request());let body=await response.json();
+ assert.equal(response.status,200);assert.equal(body.signedUrl,'https://signed.example/private');
+ assert.deepEqual(sensitiveLogged.map(event=>[event.action,event.objectPath,event.applicationId]),[['file_view','42/id.pdf',42]]);
+ assert.deepEqual(sensitiveSigned,[{bucket:'application-documents',path:'42/id.pdf',expiresIn:300}]);
+ sensitiveLogError=new Error('audit insert failed');sensitiveLogged=[];sensitiveSigned=[];
+ response=await signedUrlEndpoint.POST(request());body=await response.json();
+ assert.equal(response.status,500);assert.equal(body.signedUrl,undefined);assert.deepEqual(sensitiveSigned,[]);
+});
+
+test('SE-4 signed URL route permits only an authenticated resident own-file path without logging',async()=>{
+ sensitiveActor={id:'resident-id',role:'resident'};sensitiveLogError=null;sensitiveLogged=[];sensitiveSigned=[];
+ const request=(reference=ref,path='42/id.pdf')=>new Request('http://localhost/api/files/signed-url',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({bucket:'application-documents',path,reference})});
+ let response=await signedUrlEndpoint.POST(request());assert.equal(response.status,200);assert.equal(sensitiveLogged.length,0);
+ sensitiveActor={id:'other-resident',role:'resident'};response=await signedUrlEndpoint.POST(request());
+ assert.equal(response.status,403);assert.equal(sensitiveSigned.length,1);
+});
+
+test('SE-4 record view route logs Staff opens but validates resident ownership without logging',async()=>{
+ sensitiveActor={id:'admin-id',role:'admin'};sensitiveLogged=[];sensitiveLogError=null;
+ let response=await recordViewEndpoint.POST(new Request('http://localhost/api/applications/'+ref+'/view',{method:'POST'}),{params:{reference:ref}});
+ assert.equal(response.status,200);assert.deepEqual(sensitiveLogged.map(event=>event.action),['record_view']);
+ sensitiveActor={id:'resident-id',role:'resident'};sensitiveLogged=[];
+ response=await recordViewEndpoint.POST(new Request('http://localhost/api/applications/'+ref+'/view',{method:'POST'}),{params:{reference:ref}});
+ assert.equal(response.status,200);assert.equal((await response.json()).logged,false);assert.equal(sensitiveLogged.length,0);
+});
+
+test('SE-4 database lookup deduplicates file and record views and writes again after five minutes',async()=>{
+ const entries=[],inserted=[];let insertError=null;
+ const db={from(table){
+  let filters={},cutoff='',containsValue;
+  const query={
+   select(){return query},eq(column,value){filters[column]=value;return query},gte(_column,value){cutoff=value;return query},
+   contains(_column,value){containsValue=value;return query},order(){return query},limit(){return query},
+   async maybeSingle(){
+    const data=entries.filter(row=>row.user_id===filters.user_id&&row.action===filters.action&&row.created_at>=cutoff
+     &&(filters.application_id===undefined||row.application_id===filters.application_id)
+     &&(!containsValue||row.new_value.objectPath===containsValue.objectPath)).sort((a,b)=>b.created_at.localeCompare(a.created_at))[0];
+    return {data:data?{created_at:data.created_at}:null,error:null};
+   },
+   async insert(row){if(insertError)return {error:insertError};for(const item of Array.isArray(row)?row:[row]){entries.push(item);inserted.push(item)}return {error:null}},
+  };return query;
+ }};
+ const base=new Date(at),actor={id:'staff-id',role:'staff'};
+ for(const action of ['file_view','record_view']){
+  const event={action,actor,applicationId:42,reference:ref,...(action==='file_view'?{objectPath:'42/id.pdf'}:{})};
+  assert.equal(await sensitivePersist.logSensitiveView(db,{...event,at:base}),true);
+  assert.equal(await sensitivePersist.logSensitiveView(db,{...event,at:new Date(base.getTime()+299999)}),false);
+  assert.equal(await sensitivePersist.logSensitiveView(db,{...event,at:new Date(base.getTime()+300001)}),true);
+ }
+ assert.equal(inserted.length,4);assert.deepEqual(inserted.filter(row=>row.action==='file_view').map(row=>row.new_value),[{objectPath:'42/id.pdf'},{objectPath:'42/id.pdf'}]);
+ assert.ok(inserted.every(row=>!JSON.stringify(row).includes('signed.example')));
+});

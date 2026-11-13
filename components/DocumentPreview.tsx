@@ -2,18 +2,18 @@
 import { useEffect, useState } from 'react';
 import { Modal } from './Modal';import type { UploadedDocument } from '@/types';import { downloadBlob,makePDF } from '@/lib/downloads';
 import { useSupabaseAuth } from '@/lib/supabase/config';
-import { supabaseBrowser } from '@/lib/supabase/browser';
 
-// Shows a document. A file stored in the private bucket (it has a path) is opened through a short-lived signed link,
-// which the bucket's rules give only to its owner, Staff and Admin. Prototype records keep the sample download.
-export function DocumentPreview({document,onClose,bucket='application-documents'}:{document:UploadedDocument;onClose:()=>void;bucket?:string}) {
+// Shows a document through the authenticated signing route; prototype records keep the sample download.
+export function DocumentPreview({document,onClose,reference,bucket='application-documents'}:{document:UploadedDocument;onClose:()=>void;reference:string;bucket?:'application-documents'|'receipt-photos'|'valid-ids'}) {
  const [signed,setSigned]=useState<string>(),[error,setError]=useState('');
  useEffect(()=>{
   if(document.url||!document.path||!useSupabaseAuth)return;
   let cancelled=false;
-  supabaseBrowser().storage.from(bucket).createSignedUrl(document.path,300).then(({data,error})=>{if(cancelled)return;if(error||!data)setError('This file could not be opened: '+(error?.message||'no link'));else setSigned(data.signedUrl);});
+  fetch('/api/files/signed-url',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({bucket,path:document.path,reference})})
+   .then(async response=>{const result=await response.json();if(!response.ok||!result.signedUrl)throw new Error(result.error||'no link');if(!cancelled)setSigned(result.signedUrl);})
+   .catch(e=>{if(!cancelled)setError('This file could not be opened: '+(e as Error).message);});
   return()=>{cancelled=true;};
- },[document.url,document.path,bucket]);
+ },[document.url,document.path,bucket,reference]);
  const url=document.url||signed;
  return <Modal title={document.requirement} onClose={onClose}><p className="text-sm my-4 break-all">{document.name}</p>
   {url?(document.type==='application/pdf'?<iframe title={document.requirement} src={url} className="w-full h-[400px] border"/>:<img src={url} alt={document.requirement} className="max-h-[400px] mx-auto object-contain"/>)

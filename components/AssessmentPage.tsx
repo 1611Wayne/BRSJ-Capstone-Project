@@ -85,7 +85,7 @@ export function AssessmentPage({reference}:{reference:string}){
     <Link href={'/staff/applications/'+reference} className="text-sm underline block mt-4">View transaction details</Link>
    </div>
   </div>
-  {preview&&<DocumentPreview document={preview} onClose={()=>setPreview(undefined)}/>}
+  {preview&&<DocumentPreview document={preview} reference={reference} onClose={()=>setPreview(undefined)}/>}
   {assessed!==null&&<Modal compact title="Application Assessed" onClose={()=>router.push('/staff/dashboard')}>
    <div role="status" className="text-center mt-4"><CheckCircle2 size={40} className="text-green-600 mx-auto" aria-hidden="true"/>
     <p className="text-sm mt-3"><strong>{reference}</strong> is assessed at <strong>{formatPeso(assessed)}</strong>. The Applicant is notified to pay at the Treasury.</p>
