@@ -1,6 +1,7 @@
 import 'server-only';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { AppNotification, AuditLog, User } from '@/types';
+import { decideSensitiveView, SENSITIVE_VIEW_DEDUPE_WINDOW_MS, type SensitiveViewAction } from '@/lib/sensitiveViews';
 
 // The prototype writes audit values as plain text or as JSON text; the database column is jsonb (SCHEMA_MAP trap 1).
 // JSON text is stored as the JSON it describes; plain text as a JSON string; empty as NULL.
@@ -18,6 +19,65 @@ export async function persistAudits(db: SupabaseClient, audits: AuditLog[], acto
   }));
   const { error } = await db.from('audit_logs').insert(rows);
   if (error) throw new Error('The change was saved, but the audit log was not: ' + error.message);
+}
+
+export async function logSensitiveView(
+  db: SupabaseClient,
+  event: {
+    action: SensitiveViewAction;
+    actor: Pick<User, 'id' | 'role'>;
+    applicationId: number;
+    reference: string;
+    objectPath?: string;
+    at?: Date;
+  },
+): Promise<boolean> {
+  const now = event.at ?? new Date();
+  const decisionInput = {
+    action: event.action,
+    role: event.actor.role,
+    isAuthorized: true,
+    now: now.getTime(),
+  };
+  const initialDecision = decideSensitiveView(decisionInput);
+  if (!initialDecision.shouldLog) return false;
+
+  let query = db.from('audit_logs').select('created_at')
+    .eq('user_id', event.actor.id)
+    .eq('action', event.action)
+    .gte('created_at', new Date(now.getTime() - SENSITIVE_VIEW_DEDUPE_WINDOW_MS).toISOString());
+  if (event.action === 'file_view') {
+    if (!event.objectPath) throw new Error('A file view requires an object path.');
+    query = query.contains('new_value', { objectPath: event.objectPath });
+  } else {
+    query = query.eq('application_id', event.applicationId);
+  }
+  const { data: recent, error: lookupError } = await query
+    .order('created_at', { ascending: false }).limit(1).maybeSingle();
+  if (lookupError) throw new Error('Could not check recent view events: ' + lookupError.message);
+
+  const recentDecision = decideSensitiveView({ ...decisionInput, lastEventAt: recent?.created_at });
+  if (!recentDecision.shouldLog) return false;
+
+  const { error: insertError } = await db.from('audit_logs').insert({
+    user_id: event.actor.id,
+    role: event.actor.role,
+    action: event.action,
+    application_id: event.applicationId,
+    reference_no: event.reference,
+    old_value: null,
+    new_value: event.action === 'file_view' ? { objectPath: event.objectPath } : {},
+    reason: null,
+    reversion: false,
+    created_at: now.toISOString(),
+  });
+  const finalDecision = decideSensitiveView({
+    ...decisionInput,
+    lastEventAt: recent?.created_at,
+    logWriteSucceeded: !insertError,
+  });
+  if (!finalDecision.allowed) throw new Error('The view was not logged: ' + insertError?.message);
+  return true;
 }
 
 // Unread notices of one Applicant for one request, in the reducer's shape (ids prefixed so they map back to rows).

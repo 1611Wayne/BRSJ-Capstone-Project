@@ -8,12 +8,47 @@ const { mockFeeSchedules } = require('../data/mockFeeSchedules.ts');
 const { monthlyRows, monthlyCollectionReport, processingSeconds, paymentCheckSeconds, mmss, dailyOrApplications, feedbackSummary, monthlyReversions } = require('../data/mockReports.ts');
 const { transactionMilestones, transactionEvents, transactionDateLabel } = require('../lib/transactionLog.ts');
 const { auditRecord } = require('../lib/auditRecords.ts');
+const { decideSensitiveView } = require('../lib/sensitiveViews.ts');
 const { clearanceTypes } = require('../data/clearanceTypes.ts');
 const { makePDF } = require('../lib/downloads.ts');
 const state = (id = 'resident-maria') => structuredClone({users:mockUsers,applications:mockApplications,schedules:mockFeeSchedules,audits:[],currentUserId:id});
 const at = '2026-09-07T02:30:12.000Z', ref = 'SJ-2026-000123';
 const app = s => s.applications.find(a=>a.reference===ref);
 const role = (s,id) => ({...s,currentUserId:id});
+
+test('SE-4 decision logs authorized Staff and Admin file views only after a successful insert',()=>{
+ const now=Date.parse(at);
+ for(const actorRole of ['staff','admin']){
+  const pending=decideSensitiveView({action:'file_view',role:actorRole,isAuthorized:true,now});
+  assert.equal(pending.shouldLog,true);assert.equal(pending.allowed,false);
+  const saved=decideSensitiveView({action:'file_view',role:actorRole,isAuthorized:true,now,logWriteSucceeded:true});
+  assert.equal(saved.shouldLog,true);assert.equal(saved.allowed,true);
+ }
+});
+
+test('SE-4 allows a resident own-file view without logging, but denies another user file',()=>{
+ const now=Date.parse(at);
+ const own=decideSensitiveView({action:'file_view',role:'resident',isAuthorized:true,now});
+ assert.equal(own.shouldLog,false);assert.equal(own.allowed,true);
+ const other=decideSensitiveView({action:'file_view',role:'resident',isAuthorized:false,now});
+ assert.equal(other.shouldLog,false);assert.equal(other.allowed,false);
+});
+
+test('SE-4 list views are not logged and a failed Staff audit write is denied',()=>{
+ const now=Date.parse(at);
+ const list=decideSensitiveView({action:'list_view',role:'staff',isAuthorized:true,now});
+ assert.equal(list.shouldLog,false);assert.equal(list.allowed,true);
+ const failed=decideSensitiveView({action:'file_view',role:'staff',isAuthorized:true,now,logWriteSucceeded:false});
+ assert.equal(failed.shouldLog,true);assert.equal(failed.allowed,false);
+});
+
+test('SE-4 skips duplicate file or record views only inside five minutes',()=>{
+ const now=Date.parse(at);
+ const duplicate=decideSensitiveView({action:'file_view',role:'staff',isAuthorized:true,lastEventAt:new Date(now-299999).toISOString(),now});
+ assert.equal(duplicate.shouldLog,false);assert.equal(duplicate.allowed,true);
+ const later=decideSensitiveView({action:'record_view',role:'admin',isAuthorized:true,lastEventAt:new Date(now-300001).toISOString(),now});
+ assert.equal(later.shouldLog,true);assert.equal(later.allowed,false);
+});
 
 test('FT-10 notifies only active Staff/Admin on submission, never drafts or failed submissions',()=>{
  const s=state();s.users.push({...s.users.find(u=>u.role==='staff'),id:'inactive-staff',status:'Inactive'});
