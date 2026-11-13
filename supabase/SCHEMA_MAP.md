@@ -126,14 +126,16 @@ A **Missing placeholder with no file** is a real row: when Staff correct an entr
 
 Wiring notes: the server writes these when Staff act (review, reject, resolve, assess, return payment, verify payment); an Applicant reads their own rows and marks them read (RLS policies are still to be written: `user_id = auth.uid()`). SMS is not stored here; if it is added, it should send the same events.
 
-### Files → Storage (three PRIVATE buckets, migration 11)
+### Files → Storage (three PRIVATE buckets, migration 11; read rules narrowed by migration 22)
 | Bucket | Path | Database column | Who may read | Who may upload |
 |---|---|---|---|---|
-| `valid-ids` | `<profile uuid>/<file>` | `profiles.valid_id_path` | the owner of the folder; Staff; Admin | the owner into their own folder; Staff; Admin (a walk-in Applicant) |
-| `application-documents` | `<application id>/<file>` | `application_documents.storage_path` | the owner of the application; Staff; Admin | the owner while the request is Draft, Pending Assessment or Under Review; Staff; Admin |
-| `receipt-photos` | `<application id>/<file>` | `official_receipts.receipt_photo_path` | the owner of the application; Staff; Admin | the owner while Awaiting OR; Staff; Admin (at the counter) |
+| `valid-ids` | `<profile uuid>/<file>` | `profiles.valid_id_path` | the owner of the folder (Staff and Admin: through the server only) | the owner into their own folder; Staff; Admin (a walk-in Applicant) |
+| `application-documents` | `<application id>/<file>` | `application_documents.storage_path` | the owner of the application (Staff and Admin: through the server only) | the owner while the request is Draft, Pending Assessment or Under Review; Staff; Admin |
+| `receipt-photos` | `<application id>/<file>` | `official_receipts.receipt_photo_path` | the owner of the application (Staff and Admin: through the server only) | the owner while Awaiting OR; Staff; Admin (at the counter) |
 
 All three: 5 MB per file; PDF, JPG or PNG only; no public URL (open a file with a short-lived signed link). Objects are **write-once** from a user session (no update or delete rule): use a NEW file name for every upload (for example a timestamp prefix), so a replaced document or receipt keeps its earlier file. Uploading a file changes no record: the server still writes the table row, the status and the audit log.
+
+**Staff and Admin open files only through the server (SE-4, migration 22 `20261113020000_staff_file_reads_through_server.sql`, run kit part 18, after-check 30).** `app/api/files/signed-url` checks the file belongs to the request, writes a `file_view` entry in `audit_logs` (object path only, once per person, file and request per 5 minutes) and only then returns a 5-minute link; opening a request's details writes a `record_view` (`app/api/applications/[reference]/view`). Since migration 22 the storage read rules allow only the owner, so a Staff or Admin login cannot sign a link directly and skip the log. Index `audit_logs_view_lookup_idx` (user_id, action, application_id, created_at desc) serves the 5-minute look-up. Known limit: two server copies could each log the same view once (best-effort dedupe).
 
 ### Who may read and write each table (migration 10)
 Reading is scoped: an Applicant sees only rows of their own application (and their own notices); Staff and Admin see what their screens need; signed-out users see nothing. **Writing through a user session is closed on every table** except two things the Applicant needs: the files of their OWN DRAFT (`application_documents`: add, replace, remove; never Verified, no reviewer, no Staff note) and marking their OWN notices read (`notifications`; a trigger lets only `read_at` change, and only from empty). Everything else (assessment, payment check, clearance, confirmation, history, audit, notices, fee schedule) is written by the Next.js server routes with the service-role key, which bypasses these rules, so that the status rules and the audit log cannot be skipped. Exceptions in migration 4 (already run, not edited): Staff and Admin can update any application directly; review that when the frontend is connected.
