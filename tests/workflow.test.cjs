@@ -1346,3 +1346,105 @@ test('FT-17 existing account flag is audited, requires a reason and can only be 
  assert.equal(response.status,200);assert.equal(body.check.spamFlaggedAt,null);assert.equal(abuseAudit.at(-1).action,'Spam flag cleared');
  abuseRole='staff';assert.equal((await abuseEndpoint.POST(request('flag','test'))).status,404);
 });
+
+
+const recordId='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',otherRecordId='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+test('FT-18 record requests are owned by the Applicant, answered once by Staff/Admin and audited without copying message text',()=>{
+ const before=state(),s=transition(before,{type:'requestRecords',id:recordId,message:'  My application and receipt copies  '},at);
+ const request=s.recordRequests[0];assert.equal(request.residentId,'resident-maria');assert.equal(request.status,'Pending');assert.equal(request.message,'My application and receipt copies');
+ assert.equal(before.recordRequests,undefined);assert.equal(s.audits[0].newValue,'Pending');assert.ok(!JSON.stringify(s.audits).includes(request.message));
+ assert.throws(()=>transition(s,{type:'requestRecords',id:recordId,message:'Duplicate'},at),/already been submitted/);
+ assert.throws(()=>transition(before,{type:'requestRecords',id:'bad',message:'Copy'},at),/identifier/);
+ assert.throws(()=>transition(before,{type:'requestRecords',id:recordId,message:' '.repeat(2)},at),/Describe/);
+ assert.throws(()=>transition(state('staff-maria'),{type:'requestRecords',id:recordId,message:'Someone else'},at),/Only an Applicant/);
+ assert.throws(()=>transition(s,{type:'answerRecords',id:recordId,response:'Copy',includeSummary:true},at),/Only Staff or Admin/);
+ assert.throws(()=>transition(role(s,'admin'),{type:'answerRecords',id:recordId,response:'x'.repeat(4001),includeSummary:true},at),/office response/);
+ const answered=transition(role(s,'staff-maria'),{type:'answerRecords',id:recordId,response:' Collect supporting files at the office. ',includeSummary:true},at);
+ assert.equal(answered.recordRequests[0].respondedBy,'Maria Staff');assert.equal(answered.recordRequests[0].response,'Collect supporting files at the office.');assert.equal(request.status,'Pending');
+ assert.throws(()=>transition(role(answered,'admin'),{type:'answerRecords',id:recordId,response:'Overwrite',includeSummary:false},at),/already been answered/);
+ assert.throws(()=>transition(state('resident-juan'),{type:'loadRecordRequests',requests:answered.recordRequests},at),/someone else/);
+});
+
+test('FT-18 summary exports only owned, explicitly selected fields after an office response',()=>{
+ const {personalRecordSummary,RECORDS_RETENTION_TEXT}=require('../lib/personalRecords.ts');const s=state(),user={...s.users.find(u=>u.id==='resident-maria'),password:'SECRET-PASSWORD',spamReason:'INTERNAL-SECURITY-REASON'};
+ const request={id:recordId,residentId:user.id,status:'Answered',includeSummary:true};
+ const own={...app(s),documents:[{requirement:'ID',name:'id.pdf',size:12,type:'application/pdf',status:'Verified',path:'PRIVATE-STORAGE-PATH',url:'SECRET-SIGNED-URL'}]};
+ const summary=personalRecordSummary(user,[own,{...own,residentId:'resident-juan',reference:'OTHER-PERSON'}],request,at),json=JSON.stringify(summary);
+ assert.equal(summary.applications.length,1);assert.equal(summary.generatedAt,at);
+ for(const secret of ['SECRET-PASSWORD','INTERNAL-SECURITY-REASON','PRIVATE-STORAGE-PATH','SECRET-SIGNED-URL','OTHER-PERSON'])assert.ok(!json.includes(secret));
+ assert.equal(summary.applications[0].documents[0].filename,'id.pdf');
+ assert.throws(()=>personalRecordSummary(user,[own],{...request,status:'Pending'},at),/not available/);
+ assert.throws(()=>personalRecordSummary(user,[own],{...request,includeSummary:false},at),/not available/);
+ assert.throws(()=>personalRecordSummary(user,[own],{...request,residentId:'resident-juan'},at),/not available/);
+ assert.match(RECORDS_RETENTION_TEXT,/still confirming/);assert.match(RECORDS_RETENTION_TEXT,/does not delete/);
+});
+
+let recordsEndpoint,recordsActor,recordsRows=[],recordsApps=[],recordsCalls=[],recordsFailure=false,recordsAuditFailure=false,recordsRace=false;
+const recordsDb={from(table){const filters=[];let update;
+ const matches=row=>filters.every(([key,value])=>row[key]===value);
+ const rows=()=>table==='personal_record_requests'?recordsRows:table==='applications'?recordsApps:[];
+ const q={select(){return q},eq(key,value){filters.push([key,value]);recordsCalls.push(['eq',table,key,value]);return q},order(){return q},
+  async range(start,end){recordsCalls.push(['range',table]);return {data:rows().filter(matches).slice(start,end+1),error:recordsFailure?{message:'missing table'}:null}},
+  async maybeSingle(){const row=rows().find(matches);if(update&&recordsRace)return {data:null,error:null};if(row&&update){Object.assign(row,update);row.responder={first_name:recordsActor.firstName,last_name:recordsActor.lastName};}return {data:row??null,error:recordsFailure?{message:'missing table'}:null}},
+  update(value){update=value;return q},
+  async insert(value){recordsCalls.push(['insert',table,value]);if(table==='audit_logs')return {error:recordsAuditFailure?{message:'audit offline'}:null};
+   if(recordsFailure)return {error:{message:'missing table'}};
+   if(recordsRows.some(r=>r.id===value.id))return {error:{code:'23505'}};
+   recordsRows.push({...value,requester:{first_name:recordsActor.firstName,last_name:recordsActor.lastName}});return {error:null};}
+ };return q}};
+try{
+ Module._load=function(request,parent,...rest){
+  if(request==='server-only')return {};
+  if(request==='@/lib/server/currentUser')return {currentUser:async()=>({user:recordsActor})};
+  if(request==='@/lib/supabase/server')return {supabaseAdmin:()=>recordsDb};
+  return originalLoad.call(this,request,parent,...rest);
+ };
+ recordsEndpoint=require('../app/api/record-requests/route.ts');
+}finally{Module._load=originalLoad;}
+const recordPost=body=>new Request('http://localhost/api/record-requests',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});
+const recordActor=role=>({...mockUsers.find(u=>u.role===role),id:role==='resident'?'resident-maria':role+'-id'});
+const recordRow=(id,residentId='resident-maria',extra={})=>({id,resident_id:residentId,request_text:'Copy my records',requested_at:at,status:'Pending',include_summary:false,requester:{first_name:'Maria',last_name:'Clara'},...extra});
+
+test('FT-18 server list is scoped to the authenticated Applicant; Staff/Admin can read the queue',async()=>{
+ recordsRows=[recordRow(recordId),recordRow(otherRecordId,'resident-juan')];recordsCalls=[];recordsFailure=false;recordsActor=recordActor('resident');
+ let response=await recordsEndpoint.GET(new Request('http://localhost/api/record-requests?residentId=resident-juan'));let body=await response.json();
+ assert.equal(response.status,200);assert.equal(body.requests.length,1);assert.equal(body.requests[0].residentId,'resident-maria');assert.equal(response.headers.get('cache-control'),'no-store');
+ assert.ok(recordsCalls.some(c=>c[0]==='eq'&&c[2]==='resident_id'&&c[3]==='resident-maria'));
+ for(const role of ['staff','admin']){recordsActor=recordActor(role);response=await recordsEndpoint.GET(new Request('http://localhost/api/record-requests'));assert.equal((await response.json()).requests.length,2);}
+ recordsFailure=true;response=await recordsEndpoint.GET(new Request('http://localhost/api/record-requests'));assert.equal(response.status,503);recordsFailure=false;
+});
+
+test('FT-18 server create ignores forged owner, timestamps and summary approval',async()=>{
+ recordsRows=[];recordsCalls=[];recordsActor=recordActor('resident');recordsFailure=false;recordsAuditFailure=false;
+ const body={action:'request',id:recordId,message:'My receipts',residentId:'resident-juan',requestedAt:'2000-01-01',includeSummary:true,status:'Answered'};
+ let response=await recordsEndpoint.POST(recordPost(body));const result=await response.json();assert.equal(response.status,200);
+ assert.equal(result.request.residentId,'resident-maria');assert.equal(recordsRows[0].include_summary,false);assert.equal(recordsRows[0].status,'Pending');assert.notEqual(recordsRows[0].requested_at,'2000-01-01');
+ assert.ok(recordsCalls.some(c=>c[0]==='insert'&&c[1]==='audit_logs'));
+ assert.equal((await recordsEndpoint.POST(recordPost(body))).status,409);
+ recordsActor=recordActor('staff');assert.equal((await recordsEndpoint.POST(recordPost({...body,id:otherRecordId}))).status,403);
+ recordsActor=recordActor('resident');assert.equal((await recordsEndpoint.POST(recordPost({action:'answer',id:recordId,response:'Own answer',includeSummary:true}))).status,403);
+ assert.equal((await recordsEndpoint.POST(recordPost({...body,id:otherRecordId,message:'x'.repeat(2001)}))).status,400);
+});
+
+test('FT-18 office answers enforce role and pending status, including concurrent response protection',async()=>{
+ recordsRows=[recordRow(recordId)];recordsActor=recordActor('staff');recordsRace=false;
+ let response=await recordsEndpoint.POST(recordPost({action:'answer',id:recordId,response:'Collect the files at the Monitoring Office.',includeSummary:true,respondedBy:'forged'}));
+ assert.equal(response.status,200);assert.equal(recordsRows[0].responded_by,'staff-id');assert.equal(recordsRows[0].include_summary,true);
+ assert.equal((await recordsEndpoint.POST(recordPost({action:'answer',id:recordId,response:'Overwrite',includeSummary:false}))).status,409);
+ recordsRows=[recordRow(recordId)];recordsRace=true;recordsActor=recordActor('admin');
+ assert.equal((await recordsEndpoint.POST(recordPost({action:'answer',id:recordId,response:'Another response',includeSummary:false}))).status,409);recordsRace=false;
+ assert.equal(recordsRows[0].status,'Pending');
+});
+
+test('FT-18 download is owner-only, office-approved, redacted, no-store and audit-gated',async()=>{
+ recordsActor=recordActor('resident');recordsCalls=[];recordsRows=[recordRow(recordId,'resident-juan',{status:'Answered',include_summary:true})];recordsAuditFailure=false;
+ const get=()=>recordsEndpoint.GET(new Request('http://localhost/api/record-requests?copy='+recordId));
+ assert.equal((await get()).status,404);assert.ok(!recordsCalls.some(c=>c[0]==='range'&&c[1]==='applications'));
+ recordsRows=[recordRow(recordId)];assert.equal((await get()).status,409);
+ recordsRows=[recordRow(recordId,'resident-maria',{status:'Answered',include_summary:false})];assert.equal((await get()).status,409);
+ recordsRows[0].include_summary=true;recordsApps=[{...inspectionDbRow,reference_no:'MY-REFERENCE',resident_id:'resident-maria'},{...inspectionDbRow,reference_no:'OTHER-REFERENCE',resident_id:'resident-juan'}];
+ const response=await get();assert.equal(response.status,200);const text=await response.text();assert.ok(text.includes('MY-REFERENCE'));assert.ok(!text.includes('OTHER-REFERENCE'));assert.ok(!text.includes(recordsActor.password));
+ assert.equal(response.headers.get('cache-control'),'no-store');assert.match(response.headers.get('content-disposition'),/attachment/);
+ recordsAuditFailure=true;assert.equal((await get()).status,500);recordsAuditFailure=false;
+ recordsActor=recordActor('staff');assert.equal((await get()).status,403);
+});

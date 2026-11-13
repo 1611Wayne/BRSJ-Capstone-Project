@@ -1,4 +1,5 @@
 'use client';
+import { RecordCopyRequests } from '@/components/RecordCopyRequests';
 import { useEffect, useState } from 'react';import { usePortal } from '@/components/PortalProvider';import { Field,ErrorMessage,Notice } from '@/components/Field';import { isRealAccount, useSupabaseAuth } from '@/lib/supabase/config';import { supabaseBrowser } from '@/lib/supabase/browser';import { mobileForms } from '@/lib/phone';import { placeholderEmail } from '@/lib/accountEmail';import type { User } from '@/types';
 
 // A resident's own Profile (decided 2026-11-12). The address they change themselves. A new mobile number is saved only
@@ -79,5 +80,6 @@ export default function ProfilePage(){
    </form>}
   </div>
   {real&&!placeholderEmail(user.email)&&<p className="text-xs text-slate-600 mt-6">Want a new password? Sign out, then use &quot;Forgot password?&quot; on the Login page.</p>}
+  <RecordCopyRequests />
  </div>;
 }
