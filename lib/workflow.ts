@@ -76,7 +76,7 @@ export type Command =
   | { type: 'replaceDocument'; reference: string; document: UploadedDocument }
   | { type: 'inspection'; reference: string; report: InspectionReport }
   | { type: 'assess'; reference: string; category: string; classification: string; amounts?: number[] }
-  | { type: 'reject'; reference: string; reason: string }
+  | { type: 'reject'; reference: string; reason: string; category?: 'standard' | 'spam' }
   | { type: 'requestCorrection'; reference: string; message: string }
   | { type: 'editApplication'; reference: string; changes: ApplicationEdits }
   | { type: 'resolveCorrection'; reference: string; note?: string }
@@ -300,12 +300,14 @@ export function transition(state: PortalState, command: Command, now = new Date(
   }
   if (command.type === 'reject') {
     requireThat(actor.role === 'staff' || actor.role === 'admin', 'Only Staff or Admin can reject an application.');
-    requireThat(command.reason.trim(), 'A rejection reason is required.');
+    requireThat(typeof command.reason === 'string' && command.reason.trim(), 'A rejection reason is required.');
+    requireThat(command.category === undefined || command.category === 'standard' || command.category === 'spam', 'Select a valid rejection category.');
     requireThat(['Pending Assessment', 'Under Review'].includes(a.status), 'Only applications pending assessment or under review can be rejected.');
+    const reason = (command.category === 'spam' ? 'Spam / abuse: ' : '') + command.reason.trim();
     a.status = 'Rejected';
-    a.rejection = { reason: command.reason.trim(), rejectedBy: fullName(actor), timestamp: now };
-    log('Application rejected', reference, original.status, 'Rejected', command.reason);
-    notify(a.residentId, reference, 'application_returned', `Your application was returned: ${command.reason.trim().replace(/[.!?\s]+$/, '')}. Tell us what to correct using the box on your application page.`);
+    a.rejection = { reason, rejectedBy: fullName(actor), timestamp: now };
+    log('Application rejected', reference, original.status, 'Rejected', reason);
+    notify(a.residentId, reference, 'application_returned', `Your application was returned: ${reason.replace(/[.!?\s]+$/, '')}. Tell us what to correct using the box on your application page.`);
   }
   // Correction requests. A rejected application is returned to the Applicant (it stays Rejected until Staff reopen it by
   // resolving the request). The Applicant never edits entries directly: they describe the mistake, Staff change it.

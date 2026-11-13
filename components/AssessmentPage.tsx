@@ -14,7 +14,7 @@ export function AssessmentPage({reference}:{reference:string}){
  const [assessed,setAssessed]=useState<number|null>(null);
  useEffect(()=>{if(assessed===null)return;const t=setTimeout(()=>router.push('/staff/dashboard'),3000);return()=>clearTimeout(t);},[assessed,router]);
  // Reject state
- const [showReject,setShowReject]=useState(false),[rejectReason,setRejectReason]=useState('');
+ const [showReject,setShowReject]=useState(false),[rejectReason,setRejectReason]=useState(''),[rejectCategory,setRejectCategory]=useState<'standard'|'spam'>('standard');
  if(!a)return <div className="p-8">Application Not Found</div>;const business=a.clearanceType==='Business Clearance';const current=revenueCategories.find(c=>c.name===category)!;const schedule=activeSchedule(state.schedules,a.clearanceType,business?category:'',business?classification:'');const editable=a.status==='Pending Assessment'||(a.status==='Under Review'&&!a.receipt);
  const feeAmounts=schedule?(feeDraft?.scheduleId===schedule.id?feeDraft.amounts:a.assessment?.scheduleId===schedule.id?a.assessment.items.map(item=>item.amount.toFixed(2)):schedule.items.map(item=>item.amount.toFixed(2))):[];
  const validAmounts=feeAmounts.every(value=>/^\d+(\.\d{1,2})?$/.test(value)&&Number.isFinite(Number(value))&&Number.isSafeInteger(Math.round(Number(value)*100)));
@@ -75,10 +75,10 @@ export function AssessmentPage({reference}:{reference:string}){
     {/* Inline rejection form */}
     {showReject&&<div className="mt-3 border border-red-200 bg-red-50 rounded-md p-4">
      <p className="text-sm font-semibold text-red-800 mb-2">Reject this application</p>
-     <Field label="Reason for Rejection *"><textarea className="textarea-field min-h-[70px]" placeholder="State the reason clearly so the resident can address it." value={rejectReason} onChange={e=>setRejectReason(e.target.value)}/></Field>
+     <Field label="Rejection category"><select className="select-field mb-3" value={rejectCategory} onChange={e=>setRejectCategory(e.target.value as 'standard'|'spam')}><option value="standard">Documents or application details</option><option value="spam">Spam or abuse</option></select></Field>{rejectCategory==='spam'&&<p className="text-sm text-red-800 mb-3">Describe the spam or abuse clearly. This rejects this request only. Account flags are managed separately by Staff and Admin.</p>}<Field label="Reason for Rejection *"><textarea className="textarea-field min-h-[70px]" placeholder="State the reason clearly so the resident can address it." value={rejectReason} onChange={e=>setRejectReason(e.target.value)}/></Field>
      <div className="flex gap-2 mt-3">
-      <button type="button" className="secondary-btn flex-1" onClick={()=>{setShowReject(false);setRejectReason('');}}>Cancel</button>
-      <button type="button" className="flex-1 bg-red-600 hover:bg-red-700 text-white rounded px-4 py-2 text-sm font-semibold transition-colors" onClick={()=>{try{act({type:'reject',reference,reason:rejectReason});setShowReject(false);setMessage('Application has been rejected.');setError('');}catch(e){setError((e as Error).message);}}}disabled={!rejectReason.trim()}>Confirm Rejection</button>
+      <button type="button" className="secondary-btn flex-1" onClick={()=>{setShowReject(false);setRejectReason('');setRejectCategory('standard');}}>Cancel</button>
+      <button type="button" className="flex-1 bg-red-600 hover:bg-red-700 text-white rounded px-4 py-2 text-sm font-semibold transition-colors" onClick={()=>{try{act({type:'reject',reference,reason:rejectReason,category:rejectCategory});setShowReject(false);setMessage('Application has been rejected.');setError('');}catch(e){setError((e as Error).message);}}}disabled={!rejectReason.trim()}>Confirm Rejection</button>
      </div>
     </div>}
 

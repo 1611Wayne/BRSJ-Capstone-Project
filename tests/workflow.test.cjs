@@ -1267,3 +1267,82 @@ test('SE-4 database lookup deduplicates file and record views and writes again a
  assert.deepEqual(inserted.filter(row=>row.action==='file_view').map(row=>row.new_value),[{objectPath:'42/id.pdf'},{objectPath:'42/id.pdf'},{objectPath:'42/id.pdf'}]);
  assert.ok(inserted.every(row=>!JSON.stringify(row).includes('signed.example')));
 });
+
+
+test('FT-17 spam rejection records a canonical reason in the application, audit and Applicant notice',()=>{
+ const s=state('staff-maria'),before=structuredClone(s);
+ const next=transition(s,{type:'reject',reference:ref,category:'spam',reason:'  Repeated abusive submissions  '},at);
+ assert.equal(app(next).rejection.reason,'Spam / abuse: Repeated abusive submissions');
+ assert.equal(next.audits[0].reason,app(next).rejection.reason);
+ assert.ok(notificationsFor(next,'resident-maria')[0].message.includes(app(next).rejection.reason));
+ assert.deepEqual(s,before);assert.equal(next.users.find(u=>u.id==='resident-maria').spamFlaggedAt,undefined);
+ assert.throws(()=>transition(s,{type:'reject',reference:ref,category:'spam',reason:' '},at),/reason is required/);
+ assert.throws(()=>transition(s,{type:'reject',reference:ref,category:'invalid',reason:'test'},at),/valid rejection category/);
+ assert.throws(()=>transition(state(),{type:'reject',reference:ref,category:'spam',reason:'test'},at),/Only Staff or Admin/);
+ const ordinary=transition(s,{type:'reject',reference:ref,reason:'Missing document'},at);
+ assert.equal(app(ordinary).rejection.reason,'Missing document');
+});
+
+test('FT-17 defaults hide Rejected and Void, but explicit filters and open corrections remain reachable',()=>{
+ const {matchesApplicationStatus}=require('../lib/applicationVisibility.ts');const base=app(state());
+ for(const status of ['Rejected','Void']){
+  const a={...base,status};assert.equal(matchesApplicationStatus(a,'',false),false);
+  assert.equal(matchesApplicationStatus(a,'',true),true);assert.equal(matchesApplicationStatus(a,status,false),true);
+ }
+ const rejected={...base,status:'Rejected',corrections:[{id:'c',status:'Open'}]};
+ assert.equal(matchesApplicationStatus(rejected,'Correction Requests',false),true);
+ assert.equal(matchesApplicationStatus({...rejected,corrections:[{id:'c',status:'Resolved'}]},'Correction Requests',false),false);
+ assert.equal(matchesApplicationStatus(base,'',false),true);
+ assert.equal(matchesApplicationStatus(base,'Awaiting OR',false),false);
+});
+
+test('FT-17 retains DB-11 submission rules: spam block and one open request until ID verification',async()=>{
+ let submissionBlock;
+ try{Module._load=function(request,parent,...rest){if(request==='server-only')return {};return originalLoad.call(this,request,parent,...rest)};({submissionBlock}=require('../lib/server/accountChecks.ts'));}finally{Module._load=originalLoad;}
+ let profile={id_verified_at:null,id_verified_by:null,spam_flagged_at:null,spam_flagged_by:null,spam_reason:null},count=1,error=null,calls=[];
+ const db={from(table){const q={select(){return q},eq(column,value){calls.push(['eq',column,value]);return q},in(column,value){calls.push(['in',column,value]);return q},neq(column,value){calls.push(['neq',column,value]);return q},
+ async maybeSingle(){return {data:profile,error}},then(resolve,reject){return Promise.resolve({count,error}).then(resolve,reject)}
+ };return q}};
+ const block=()=>submissionBlock(db,'resident-id','current-draft',false);
+ assert.equal((await block()).status,409);assert.ok(calls.some(c=>c[0]==='neq'&&c[1]==='reference_no'&&c[2]==='current-draft'));
+ assert.ok(calls.find(c=>c[0]==='in')[2].includes('Rejected'));assert.ok(!calls.find(c=>c[0]==='in')[2].includes('Void'));
+ count=0;assert.equal(await block(),null);count=10;
+ profile={...profile,id_verified_at:at};assert.equal(await block(),null);
+ profile={...profile,id_verified_at:null};assert.equal(await submissionBlock(db,'resident-id',undefined,true),null);
+ profile={...profile,spam_flagged_at:at};assert.equal((await block()).status,403);
+ assert.equal((await submissionBlock(db,'resident-id',undefined,true)).status,403);
+ profile={...profile,spam_flagged_at:null};error={message:'offline'};assert.equal((await block()).status,500);
+});
+
+
+let abuseEndpoint,abuseActor,abuseCheck={},abuseAudit=[],abuseRole='resident';
+const abuseResident='11111111-1111-4111-8111-111111111111';
+const abuseDb={from(table){let columns='';const q={select(value){columns=value;return q},eq(){return q},in(){return q},
+ async maybeSingle(){return {data:columns==='id, role'?{id:abuseResident,role:abuseRole}:abuseCheck,error:null}},
+ update(value){abuseCheck={...abuseCheck,...value};return q},async insert(value){abuseAudit.push(value);return {error:null}},
+ then(resolve,reject){return Promise.resolve({data:table==='profiles'?[{id:'staff-id',first_name:'Maria',last_name:'Staff'}]:[],error:null}).then(resolve,reject)}
+ };return q}};
+try{
+ Module._load=function(request,parent,...rest){
+  if(request==='server-only')return {};
+  if(request==='@/lib/server/currentUser')return {currentUser:async()=>({user:abuseActor})};
+  if(request==='@/lib/supabase/server')return {supabaseAdmin:()=>abuseDb};
+  return originalLoad.call(this,request,parent,...rest);
+ };
+ abuseEndpoint=require('../app/api/residents/check/route.ts');
+}finally{Module._load=originalLoad;}
+
+test('FT-17 existing account flag is audited, requires a reason and can only be cleared by Admin',async()=>{
+ abuseActor={id:'resident-id',role:'resident'};abuseRole='resident';abuseAudit=[];
+ const request=(action,reason='')=>new Request('http://localhost/api/residents/check',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({residentId:abuseResident,action,reason})});
+ assert.equal((await abuseEndpoint.POST(request('flag','test'))).status,403);
+ abuseActor={id:'staff-id',role:'staff'};assert.equal((await abuseEndpoint.POST(request('flag'))).status,400);
+ assert.equal((await abuseEndpoint.POST(request('unflag'))).status,403);
+ abuseCheck={id_verified_at:null,id_verified_by:null,spam_flagged_at:null,spam_flagged_by:null,spam_reason:null};
+ let response=await abuseEndpoint.POST(request('flag','Repeated abusive requests'));let body=await response.json();
+ assert.equal(response.status,200);assert.ok(body.check.spamFlaggedAt);assert.equal(body.check.spamReason,'Repeated abusive requests');
+ assert.equal(abuseAudit.at(-1).action,'Account flagged as spam');assert.equal(abuseAudit.at(-1).reason,'Repeated abusive requests');
+ abuseActor={id:'admin-id',role:'admin'};response=await abuseEndpoint.POST(request('unflag'));body=await response.json();
+ assert.equal(response.status,200);assert.equal(body.check.spamFlaggedAt,null);assert.equal(abuseAudit.at(-1).action,'Spam flag cleared');
+ abuseRole='staff';assert.equal((await abuseEndpoint.POST(request('flag','test'))).status,404);
+});
