@@ -50,8 +50,6 @@ export async function logSensitiveView(
   if (event.action === 'file_view') {
     if (!event.objectPath) throw new Error('A file view requires an object path.');
     query = query.contains('new_value', { objectPath: event.objectPath });
-  } else {
-    query = query.eq('application_id', event.applicationId);
   }
   const { data: recent, error: lookupError } = await query
     .order('created_at', { ascending: false }).limit(1).maybeSingle();
