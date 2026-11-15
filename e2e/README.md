@@ -32,6 +32,10 @@ Each script prints PASS or FAIL for every check, then "N/N checks passed", and e
 
 ## Notes
 
+- `staff-reports.cjs` checks FT-21 Staff report navigation, filtering, CSV/print, parity with Admin reports and role restrictions.
+
+- `business-verification.cjs` checks FT-19 exact public business-name matching, restricted result fields, excluded records and reference-verification navigation.
+
 - The checks build their starting state with the app's own rules (`lib/workflow.ts`), so they stay correct when the rules change; when a screen's wording changes, update the matching text in the script.
 - They use the production build (`next start`), not `next dev`.
 - They do not touch Supabase: the prototype keeps its data in the browser tab.

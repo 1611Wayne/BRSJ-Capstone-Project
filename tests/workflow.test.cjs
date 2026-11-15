@@ -15,6 +15,30 @@ const { makePDF } = require('../lib/downloads.ts');
 const state = (id = 'resident-maria') => structuredClone({users:mockUsers,applications:mockApplications,schedules:mockFeeSchedules,audits:[],currentUserId:id});
 const at = '2026-09-07T02:30:12.000Z', ref = 'SJ-2026-000123';
 const app = s => s.applications.find(a=>a.reference===ref);
+test('FT-19 exact business search limits public fields and excludes unissued and simulated records',()=>{
+ const {searchSampleBusinesses,businessSearchPattern}=require('../lib/businessVerification.ts');
+ const base={...app(state()),businessName:'Store %_ Test',clearanceType:'Business Clearance',status:'Closed - Cleared',clearance:{issueDate:'2026-11-15'},receipt:{orNumber:'SECRET'}};
+ const records=[base,...['Draft','Pending Assessment','Rejected','Awaiting OR','For Checking'].map(status=>({...base,status})),{...base,simulatedPayment:{amount:400}},{...base,clearance:undefined},{...base,receipt:undefined}];
+ const found=searchSampleBusinesses(records,' store %_ test ');assert.equal(found.length,1);
+ assert.deepEqual(Object.keys(found[0]).sort(),['businessName','clearanceType','issueDate','reference','status'].sort());
+ assert.equal(searchSampleBusinesses(records,'Store').length,0);assert.equal(searchSampleBusinesses(records,'').length,0);
+ assert.equal(businessSearchPattern('%_\\'),String.raw`\%\_\\`);
+ for(const status of ['Void','Under Review'])assert.equal(searchSampleBusinesses([{...base,status}],base.businessName)[0].status,status);
+ assert.equal(searchSampleBusinesses(Array.from({length:30},(_,i)=>({...base,reference:String(i)})),base.businessName).length,20);
+});
+test('FT-19 public API uses escaped exact queries, bounded results, redaction and safe errors',async()=>{
+ const Mod=require('node:module'),load=Mod._load;let endpoint,dbError=false;const calls=[];
+ const row={business_name:'Store %_',reference_no:'SJ-2026-000999',status:'Closed - Cleared',clearance_types:{name:'Business Clearance'},clearances:{issue_date:'2026-11-15'},official_receipts:{or_number:'PRIVATE'},simulated_payments:[],address:'PRIVATE ADDRESS'};
+ const query={};for(const method of ['select','ilike','eq','in','is','order','limit'])query[method]=(...args)=>{calls.push([method,...args]);return query;};
+ query.then=(resolve,reject)=>Promise.resolve({data:[row,{...row,business_name:'Other'}, {...row,status:'Rejected'},{...row,simulated_payments:[{reference_number:'SIM'}]}],error:dbError?{message:'PRIVATE DATABASE ERROR'}:null}).then(resolve,reject);
+ try{Mod._load=function(request,parent,...rest){if(request==='@/lib/supabase/server')return {supabaseConfigured:()=>true,supabaseAdmin:()=>({from:()=>query})};return load.call(this,request,parent,...rest);};endpoint=require('../app/api/verify/route.ts');}finally{Mod._load=load;}
+ const get=name=>endpoint.GET(new Request('http://localhost/api/verify?businessName='+encodeURIComponent(name)));
+ assert.equal((await get('')).status,400);assert.equal((await get('x'.repeat(161))).status,400);assert.equal(calls.length,0);
+ const response=await get('Store %_'),body=await response.json();assert.equal(body.results.length,1);assert.equal(response.headers.get('cache-control'),'no-store');
+ assert.deepEqual(Object.keys(body.results[0]).sort(),['businessName','clearanceType','issueDate','reference','status'].sort());assert.ok(!JSON.stringify(body).includes('PRIVATE'));
+ assert.ok(calls.some(c=>c[0]==='ilike'&&c[2]===String.raw`Store \%\_`));assert.ok(calls.some(c=>c[0]==='limit'&&c[1]===20));
+ dbError=true;const failed=await get('Store %_');assert.equal(failed.status,503);assert.ok(!(await failed.text()).includes('PRIVATE'));
+});
 const role = (s,id) => ({...s,currentUserId:id});
 
 test('SE-4 decision logs authorized Staff and Admin file views only after a successful insert',()=>{

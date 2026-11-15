@@ -10,7 +10,7 @@ import { useSupabaseAuth } from '@/lib/supabase/config';
 import { supabaseBrowser } from '@/lib/supabase/browser';
 const menus={
  resident:[['dashboard','Dashboard',LayoutDashboard],['apply','Apply for Clearance',FileText],['applications','My Applications',FolderOpen],['notifications','Notifications',Bell],['profile','Profile',User]],
- staff:[['dashboard','Dashboard',LayoutDashboard],['records-requests','Records Requests',ClipboardList],['notifications','Notifications',Bell],['applications','Applications Queue',ClipboardList],['assessment','Assessment & Evaluation',FileText],['walk-in','New Walk-in Application',UserPlus],['or-entry','Upload Receipt for Applicant',ReceiptText],['transactions','Processed Transactions',History],['or-logs','OR Logs',ReceiptText]],
+ staff:[['dashboard','Dashboard',LayoutDashboard],['records-requests','Records Requests',ClipboardList],['notifications','Notifications',Bell],['applications','Applications Queue',ClipboardList],['assessment','Assessment & Evaluation',FileText],['walk-in','New Walk-in Application',UserPlus],['or-entry','Upload Receipt for Applicant',ReceiptText],['transactions','Processed Transactions',History],['or-logs','OR Logs',ReceiptText],['reports','Reports',BarChart3]],
  admin:[['dashboard','Dashboard',LayoutDashboard],['records-requests','Records Requests',ClipboardList],['notifications','Notifications',Bell],['transactions','Transactions',ClipboardList],['fee-configuration','Fee Configuration',Settings],['transaction-reversion','Transaction Reversion',Undo2],['reports','Reports',BarChart3],['users','User Management',Users],['audit-trail','Audit Trail',History]]
 } as const;
 export function Sidebar({role}:{role:UserRole}) {
