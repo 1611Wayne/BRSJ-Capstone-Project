@@ -1,0 +1,2 @@
+import { Reports } from '@/components/Reports';
+export default function Page() { return <Reports kind="monthly"/>; }
