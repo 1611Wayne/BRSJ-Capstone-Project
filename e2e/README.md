@@ -32,6 +32,8 @@ Each script prints PASS or FAIL for every check, then "N/N checks passed", and e
 
 ## Notes
 
+- `reversion-filter.cjs` checks FT-24 clearance-type filtering alongside date/Admin/action filters, historical type handling, CSV and print.
+
 - `staff-reports.cjs` checks FT-21 Staff report navigation, filtering, CSV/print, parity with Admin reports and role restrictions.
 
 - `business-verification.cjs` checks FT-19 exact public business-name matching, restricted result fields, excluded records and reference-verification navigation.
