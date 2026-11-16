@@ -15,6 +15,15 @@ const { makePDF } = require('../lib/downloads.ts');
 const state = (id = 'resident-maria') => structuredClone({users:mockUsers,applications:mockApplications,schedules:mockFeeSchedules,audits:[],currentUserId:id});
 const at = '2026-09-07T02:30:12.000Z', ref = 'SJ-2026-000123';
 const app = s => s.applications.find(a=>a.reference===ref);
+test('FT-24 reversion types use historical snapshots with safe legacy fallbacks',()=>{
+ const {reversionClearanceType}=require('../lib/reversionReports.ts');
+ const applications=[{reference:ref,clearanceType:'Electrical Clearance'}];
+ const entry={reference:ref,newValue:JSON.stringify({clearanceType:'Building Clearance'}),oldValue:JSON.stringify({clearanceType:'Business Clearance'})};
+ assert.equal(reversionClearanceType(entry,applications),'Building Clearance');
+ assert.equal(reversionClearanceType({...entry,newValue:'Void'},applications),'Business Clearance');
+ for(const value of ['Void','null','{}','{broken','[]','{"clearanceType":5}'])assert.equal(reversionClearanceType({reference:ref,newValue:value},applications),'Electrical Clearance');
+ assert.equal(reversionClearanceType({reference:'unknown'},applications),'');
+});
 test('FT-19 exact business search limits public fields and excludes unissued and simulated records',()=>{
  const {searchSampleBusinesses,businessSearchPattern}=require('../lib/businessVerification.ts');
  const base={...app(state()),businessName:'Store %_ Test',clearanceType:'Business Clearance',status:'Closed - Cleared',clearance:{issueDate:'2026-11-15'},receipt:{orNumber:'SECRET'}};

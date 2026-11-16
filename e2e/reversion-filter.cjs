@@ -1,0 +1,27 @@
+require('../tests/register-ts.cjs');
+const assert=require('node:assert/strict'),fs=require('node:fs');
+const {chromium}=require('playwright');
+const {mockApplications}=require('../data/mockApplications.ts');
+const {mockUsers}=require('../data/mockUsers.ts');
+const {mockFeeSchedules}=require('../data/mockFeeSchedules.ts');
+const BASE=process.env.E2E_BASE||'http://localhost:3100';
+const entry=(id,type,user='Admin San Jose',action='Edit Fields',timestamp='2026-09-06T02:00:00Z')=>({id,timestamp,user,role:'admin',reference:id,action,reason:id,oldValue:'Closed - Cleared',newValue:JSON.stringify({clearanceType:type}),reversion:true});
+const audits=[entry('building','Building Clearance'),entry('business','Business Clearance'),entry('other-admin','Building Clearance','Other Admin'),entry('other-action','Building Clearance','Admin San Jose','Void Transaction'),entry('outside','Building Clearance','Admin San Jose','Edit Fields','2025-01-01T00:00:00Z'),{...entry('unknown',''),newValue:'Void'}];
+const seed={users:mockUsers,applications:[...mockApplications,{...mockApplications[0],reference:'building',clearanceType:'Electrical Clearance'}],schedules:mockFeeSchedules,audits,notifications:[],currentUserId:'admin'};
+let count=0;const check=(label,ok)=>{assert.ok(ok,label);count++;console.log('PASS '+label);};
+(async()=>{
+ const channel=process.env.E2E_CHANNEL??'msedge';const browser=await chromium.launch({...(channel?{channel}:{}),headless:true});
+ try{const page=await browser.newPage();await page.addInitScript(seed=>{sessionStorage.setItem('san-jose-prototype-v2',JSON.stringify(seed));window.print=()=>{window.__printed=true;};},seed);
+ await page.goto(BASE+'/admin/reports/reversion-audit');await page.getByRole('heading',{name:'Reversion Audit Report',exact:true}).waitFor();
+ const table=page.locator('tbody');check('All Clearance Types retains legacy entries',await table.locator('tr').count()===5);
+ await page.getByLabel(/^Clearance Type/).selectOption('Building Clearance');check('selection waits for Apply Filter',await table.locator('tr').count()===5);
+ await page.getByRole('button',{name:'Apply Filter',exact:true}).click();check('type filter uses saved type rather than later transaction type',await table.locator('tr').count()===3&&(await table.innerText()).includes('building')&&!(await table.innerText()).includes('business'));
+ await page.getByLabel(/^Admin/).selectOption('Admin San Jose');await page.getByLabel(/^Action/).selectOption('Edit Fields');await page.getByRole('button',{name:'Apply Filter',exact:true}).click();
+ check('type combines with existing Admin action and date filters',await table.locator('tr').count()===1&&(await table.innerText()).includes('building'));
+ const pending=page.waitForEvent('download');await page.getByRole('button',{name:'Export',exact:true}).click();const download=await pending;const csv=fs.readFileSync(await download.path(),'utf8');
+ check('CSV contains only filtered rows',csv.includes('building')&&!csv.includes('business')&&!csv.includes('other-admin')&&!csv.includes('outside'));
+ await page.getByRole('button',{name:'Print',exact:true}).click();check('print uses filtered table',await page.evaluate(()=>window.__printed)&&await table.locator('tr').count()===1);
+ await page.getByLabel(/^Clearance Type/).selectOption('TODA Clearance');await page.getByRole('button',{name:'Apply Filter',exact:true}).click();check('unmatched type displays empty state',(await table.innerText()).includes('No records match your filters'));
+ await page.getByLabel(/^Clearance Type/).selectOption('');await page.getByLabel(/^Admin/).selectOption('');await page.getByLabel(/^Action/).selectOption('');await page.getByRole('button',{name:'Apply Filter',exact:true}).click();check('All Clearance Types restores rows',await table.locator('tr').count()===5);
+ }finally{await browser.close();}console.log(`${count}/${count} checks passed`);
+})().catch(e=>{console.error('SCRIPT ERROR',e);process.exitCode=1;});
