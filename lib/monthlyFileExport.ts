@@ -40,6 +40,25 @@ export function manilaMonthRange(month: string) {
   };
 }
 
+export function currentManilaMonth(now = new Date()) {
+  if (!Number.isFinite(now.getTime())) throw new Error('Current date is invalid.');
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Asia/Manila',
+    year: 'numeric',
+    month: '2-digit',
+  }).formatToParts(now);
+  const year = parts.find(part => part.type === 'year')?.value;
+  const monthNumber = parts.find(part => part.type === 'month')?.value;
+  if (!year || !monthNumber) throw new Error('Could not determine the current Manila month.');
+  return `${year}-${monthNumber}`;
+}
+
+export function isAllowedMonthlyExportMonth(month: string, now = new Date()) {
+  try { manilaMonthRange(month); } catch { return false; }
+  if (!Number.isFinite(now.getTime())) return false;
+  return month >= '2025-01' && month <= currentManilaMonth(now);
+}
+
 export function isInManilaMonth(timestamp: string, range: { from: string; until: string }) {
   const value = Date.parse(timestamp);
   return Number.isFinite(value) && value >= Date.parse(range.from) && value < Date.parse(range.until);

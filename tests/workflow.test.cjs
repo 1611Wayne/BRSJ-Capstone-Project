@@ -12,7 +12,7 @@ const { decideSensitiveView } = require('../lib/sensitiveViews.ts');
 const { coalesceInFlight, createInFlightRequestCache } = require('../lib/inFlightRequests.ts');
 const { clearanceTypes } = require('../data/clearanceTypes.ts');
 const { makePDF } = require('../lib/downloads.ts');
-const { MAX_BYTES_PER_PART, buildMonthlyManifest, canExportMonthlyFiles, isInManilaMonth, manilaMonthRange, mapStoragePath, splitMonthlyExportParts } = require('../lib/monthlyFileExport.ts');
+const { MAX_BYTES_PER_PART, buildMonthlyManifest, canExportMonthlyFiles, isAllowedMonthlyExportMonth, isInManilaMonth, manilaMonthRange, mapStoragePath, splitMonthlyExportParts } = require('../lib/monthlyFileExport.ts');
 const state = (id = 'resident-maria') => structuredClone({users:mockUsers,applications:mockApplications,schedules:mockFeeSchedules,audits:[],currentUserId:id});
 const at = '2026-09-07T02:30:12.000Z', ref = 'SJ-2026-000123';
 const app = s => s.applications.find(a=>a.reference===ref);
@@ -465,6 +465,17 @@ test('monthly file export uses Manila half-open month boundaries',()=>{
  assert.throws(()=>manilaMonthRange('2026-13'),/YYYY-MM/);
 });
 
+test('monthly export accepts only 2025-01 through the current Manila month',()=>{
+ const now=new Date('2026-11-17T13:25:00.000Z');
+ assert.equal(isAllowedMonthlyExportMonth('2024-12',now),false);
+ assert.equal(isAllowedMonthlyExportMonth('2025-01',now),true);
+ assert.equal(isAllowedMonthlyExportMonth('2026-11',now),true);
+ assert.equal(isAllowedMonthlyExportMonth('2026-12',now),false);
+ assert.equal(isAllowedMonthlyExportMonth('2026-10',new Date('2026-10-31T15:59:59.999Z')),true);
+ assert.equal(isAllowedMonthlyExportMonth('2026-11',new Date('2026-10-31T15:59:59.999Z')),false);
+ assert.equal(isAllowedMonthlyExportMonth('2026-11',new Date('2026-10-31T16:00:00.000Z')),true);
+});
+
 test('monthly export maps buckets to references and builds a dated, name-free manifest',()=>{
  const refs=new Map([[42,'SJ-2026-000042']]);
  const files=buildMonthlyManifest('2026-11',[
@@ -506,12 +517,14 @@ test('monthly export role gate allows only Staff and Admin',()=>{
 
 test('monthly export returns no signed URLs when the audit insert fails',async()=>{
 const Module=require('node:module'),load=Module._load,events=[];let auditRow,auditError={message:'database rejected'};
+const { currentManilaMonth }=require('../lib/monthlyFileExport.ts');
+const month=currentManilaMonth(),createdAt=manilaMonthRange(month).from;
 const query=(data)=>({select(){return this;},not(){return this;},order(){return this;},range:async()=>({data,error:null})});
 const db={
  from(table){
   if(table==='applications')return query([{
-   id:42,reference_no:'SJ-2026-000042',date_requested:'2026-11-30T15:30:00Z',
-   application_documents:[{storage_path:'42/document.pdf',file_size:2048,uploaded_at:'2026-11-30T15:30:00Z'}],
+   id:42,reference_no:'SJ-2026-000042',date_requested:createdAt,
+   application_documents:[{storage_path:'42/document.pdf',file_size:2048,uploaded_at:createdAt}],
    official_receipts:null,payment_verifications:null,
   }]);
   if(table==='profiles')return query([]);
@@ -534,18 +547,18 @@ try{
  endpoint=require('../app/api/files/monthly-export/route.ts');
 }finally{Module._load=load;}
 const response=await endpoint.POST(new Request('http://localhost/api/files/monthly-export',{
- method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({month:'2026-11',part:1}),
+ method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({month,part:1}),
 }));
 const text=await response.text();
 assert.equal(response.status,503);assert.ok(!text.includes('private-signed-url'));assert.ok(!text.includes('42/document.pdf'));
 assert.deepEqual(events,['audit']);
 assert.equal(auditRow.action,'files_exported');assert.equal(auditRow.user_id,'staff-id');assert.equal(auditRow.role,'staff');
-assert.deepEqual(auditRow.new_value,{month:'2026-11',part:1,parts:1,file_count:1});
+assert.deepEqual(auditRow.new_value,{month,part:1,parts:1,file_count:1});
 assert.equal(JSON.stringify(auditRow.new_value).includes('SJ-2026-000042'),false);
 
 auditError=null;events.length=0;
 const successful=await endpoint.POST(new Request('http://localhost/api/files/monthly-export',{
- method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({month:'2026-11',part:1}),
+ method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({month,part:1}),
 }));
 assert.equal(successful.status,200);assert.deepEqual(events,['audit','signed-urls']);
 });

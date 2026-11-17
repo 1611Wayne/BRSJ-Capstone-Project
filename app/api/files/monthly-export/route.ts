@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { canExportMonthlyFiles, buildMonthlyManifest, EXPORT_BUCKETS, manilaMonthRange, MAX_BYTES_PER_PART, MAX_VALID_ID_BYTES, splitMonthlyExportParts, type ExportCandidate } from '@/lib/monthlyFileExport';
+import { canExportMonthlyFiles, buildMonthlyManifest, EXPORT_BUCKETS, isAllowedMonthlyExportMonth, MAX_BYTES_PER_PART, MAX_VALID_ID_BYTES, splitMonthlyExportParts, type ExportCandidate } from '@/lib/monthlyFileExport';
 import { currentUser } from '@/lib/server/currentUser';
 import { supabaseAdmin } from '@/lib/supabase/server';
 
@@ -115,7 +115,7 @@ export async function POST(request: Request) {
     return fail('Choose a valid month and export part.');
   }
   const month = body.month, partNumber = Number(body.part);
-  try { manilaMonthRange(month); } catch { return fail('Choose a valid month in YYYY-MM format.'); }
+  if (!isAllowedMonthlyExportMonth(month)) return fail('Choose a month from 2025-01 through the current Manila month.');
 
   const db = supabaseAdmin();
   let candidates: ExportCandidate[], applicationReferences: Map<number, string>;
