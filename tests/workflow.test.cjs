@@ -12,6 +12,7 @@ const { decideSensitiveView } = require('../lib/sensitiveViews.ts');
 const { coalesceInFlight, createInFlightRequestCache } = require('../lib/inFlightRequests.ts');
 const { clearanceTypes } = require('../data/clearanceTypes.ts');
 const { makePDF } = require('../lib/downloads.ts');
+const { MAX_BYTES_PER_PART, buildMonthlyManifest, canExportMonthlyFiles, manilaMonthRange, mapStoragePath, splitMonthlyExportParts } = require('../lib/monthlyFileExport.ts');
 const state = (id = 'resident-maria') => structuredClone({users:mockUsers,applications:mockApplications,schedules:mockFeeSchedules,audits:[],currentUserId:id});
 const at = '2026-09-07T02:30:12.000Z', ref = 'SJ-2026-000123';
 const app = s => s.applications.find(a=>a.reference===ref);
@@ -454,6 +455,53 @@ test('Admin can revise OR number, date, and amount together with an assessment c
  assert.equal(a.assessment.total,amountPaid);assert.equal(a.status,'Pending Assessment');
  assert.equal(corrected.audits[0].reason,data.reason);assert.equal(corrected.audits[0].reversion,true);
  assert.deepEqual(JSON.parse(corrected.audits[0].newValue).receipt,a.receipt);
+});
+
+test('monthly file export uses Manila half-open month boundaries',()=>{
+ const range=manilaMonthRange('2026-11');
+ assert.deepEqual(range,{from:'2026-10-31T16:00:00.000Z',until:'2026-11-30T16:00:00.000Z'});
+ assert.equal(Date.parse('2026-11-30T15:59:00.000Z')>=Date.parse(range.from)&&Date.parse('2026-11-30T15:59:00.000Z')<Date.parse(range.until),true);
+ assert.equal(Date.parse('2026-11-30T16:00:00.000Z')>=Date.parse(range.from)&&Date.parse('2026-11-30T16:00:00.000Z')<Date.parse(range.until),false);
+ assert.throws(()=>manilaMonthRange('2026-13'),/YYYY-MM/);
+});
+
+test('monthly export maps buckets to references and builds a dated, name-free manifest',()=>{
+ const refs=new Map([[42,'SJ-2026-000042']]);
+ const files=buildMonthlyManifest('2026-11',[
+  {bucket:'application-documents',path:'42/1700000000000-id.pdf',createdAt:'2026-11-30T15:59:00.000Z',sizeLimit:2048},
+  {bucket:'receipt-photos',path:'42/1700000000001-receipt.jpg',createdAt:'2026-10-31T16:00:00.000Z',sizeLimit:4096},
+  {bucket:'valid-ids',path:'00000000-0000-4000-8000-000000000001/1700000000002-id.jpg',createdAt:'2026-11-01T00:00:00.000Z',sizeLimit:5*1024*1024},
+  {bucket:'application-documents',path:'42/1700000000003-next.pdf',createdAt:'2026-11-30T16:00:00.000Z',sizeLimit:10},
+ ],refs);
+ assert.equal(files.length,3);
+ assert.deepEqual(files.map(f=>[f.reference,f.fileType,f.bucket,f.path,f.createdDate]),[
+  ['SJ-2026-000042','Receipt photo','receipt-photos','42/1700000000001-receipt.jpg','2026-11-01'],
+  ['','Valid ID','valid-ids','00000000-0000-4000-8000-000000000001/1700000000002-id.jpg','2026-11-01'],
+  ['SJ-2026-000042','Application document','application-documents','42/1700000000000-id.pdf','2026-11-30'],
+ ]);
+ assert.equal(mapStoragePath('valid-ids','00000000-0000-4000-8000-000000000001/id.jpg',refs).reference,'');
+ assert.deepEqual(mapStoragePath('receipt-photos','42/photo.jpg',refs),{reference:'SJ-2026-000042',fileType:'Receipt photo'});
+ assert.equal(mapStoragePath('application-documents','../photo.jpg',refs),undefined);
+ assert.ok(!JSON.stringify(files).includes('resident'));
+});
+
+test('monthly export parts enforce both the 100-file and 100-MB caps',()=>{
+ const base={reference:'SJ-2026-000042',fileType:'Application document',bucket:'application-documents',createdAt:'2026-11-01T00:00:00.000Z',createdDate:'2026-11-01'};
+ const countSplit=splitMonthlyExportParts(Array.from({length:101},(_,i)=>({...base,path:`42/${i}.pdf`,sizeLimit:1})));
+ assert.deepEqual(countSplit.map(part=>part.length),[100,1]);
+ const byteSplit=splitMonthlyExportParts([
+  {...base,path:'42/60mb.pdf',sizeLimit:60_000_000},
+  {...base,path:'42/40mb.pdf',sizeLimit:40_000_000},
+  {...base,path:'42/1byte.pdf',sizeLimit:1},
+ ]);
+ assert.deepEqual(byteSplit.map(part=>part.reduce((sum,file)=>sum+file.sizeLimit,0)),[MAX_BYTES_PER_PART,1]);
+ assert.throws(()=>splitMonthlyExportParts([{...base,path:'42/oversize.pdf',sizeLimit:MAX_BYTES_PER_PART+1}]),/per-part size limit/);
+});
+
+test('monthly export role gate allows only Staff and Admin',()=>{
+ assert.equal(canExportMonthlyFiles('staff'),true);
+ assert.equal(canExportMonthlyFiles('admin'),true);
+ for(const role of ['resident','guest',null,undefined])assert.equal(canExportMonthlyFiles(role),false);
 });
 
 
