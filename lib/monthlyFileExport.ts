@@ -76,6 +76,7 @@ export function buildMonthlyManifest(
   const range = manilaMonthRange(month);
   const files: MonthlyExportFile[] = [];
   for (const candidate of candidates) {
+    if (!Number.isFinite(Date.parse(candidate.createdAt))) throw new Error('A file has no valid export date.');
     if (!isInManilaMonth(candidate.createdAt, range)) continue;
     if (!Number.isSafeInteger(candidate.sizeLimit) || candidate.sizeLimit <= 0 || candidate.sizeLimit > MAX_BYTES_PER_PART) {
       throw new Error('A file has an invalid size for export.');

@@ -12,7 +12,7 @@ const { decideSensitiveView } = require('../lib/sensitiveViews.ts');
 const { coalesceInFlight, createInFlightRequestCache } = require('../lib/inFlightRequests.ts');
 const { clearanceTypes } = require('../data/clearanceTypes.ts');
 const { makePDF } = require('../lib/downloads.ts');
-const { MAX_BYTES_PER_PART, buildMonthlyManifest, canExportMonthlyFiles, manilaMonthRange, mapStoragePath, splitMonthlyExportParts } = require('../lib/monthlyFileExport.ts');
+const { MAX_BYTES_PER_PART, buildMonthlyManifest, canExportMonthlyFiles, isInManilaMonth, manilaMonthRange, mapStoragePath, splitMonthlyExportParts } = require('../lib/monthlyFileExport.ts');
 const state = (id = 'resident-maria') => structuredClone({users:mockUsers,applications:mockApplications,schedules:mockFeeSchedules,audits:[],currentUserId:id});
 const at = '2026-09-07T02:30:12.000Z', ref = 'SJ-2026-000123';
 const app = s => s.applications.find(a=>a.reference===ref);
@@ -460,8 +460,8 @@ test('Admin can revise OR number, date, and amount together with an assessment c
 test('monthly file export uses Manila half-open month boundaries',()=>{
  const range=manilaMonthRange('2026-11');
  assert.deepEqual(range,{from:'2026-10-31T16:00:00.000Z',until:'2026-11-30T16:00:00.000Z'});
- assert.equal(Date.parse('2026-11-30T15:59:00.000Z')>=Date.parse(range.from)&&Date.parse('2026-11-30T15:59:00.000Z')<Date.parse(range.until),true);
- assert.equal(Date.parse('2026-11-30T16:00:00.000Z')>=Date.parse(range.from)&&Date.parse('2026-11-30T16:00:00.000Z')<Date.parse(range.until),false);
+ assert.equal(isInManilaMonth('2026-11-30T23:59:00+08:00',range),true);
+ assert.equal(isInManilaMonth('2026-12-01T00:00:00+08:00',range),false);
  assert.throws(()=>manilaMonthRange('2026-13'),/YYYY-MM/);
 });
 
@@ -502,6 +502,46 @@ test('monthly export role gate allows only Staff and Admin',()=>{
  assert.equal(canExportMonthlyFiles('staff'),true);
  assert.equal(canExportMonthlyFiles('admin'),true);
  for(const role of ['resident','guest',null,undefined])assert.equal(canExportMonthlyFiles(role),false);
+});
+
+test('monthly export returns no signed URLs when the audit insert fails',async()=>{
+const Module=require('node:module'),load=Module._load,events=[];let auditRow;
+const query=(data)=>({select(){return this;},not(){return this;},order(){return this;},range:async()=>({data,error:null})});
+const db={
+ from(table){
+  if(table==='applications')return query([{
+   id:42,reference_no:'SJ-2026-000042',date_requested:'2026-11-30T15:30:00Z',
+   application_documents:[{storage_path:'42/document.pdf',file_size:2048,uploaded_at:'2026-11-30T15:30:00Z'}],
+   official_receipts:null,payment_verifications:null,
+  }]);
+  if(table==='profiles')return query([]);
+  if(table==='audit_logs')return {insert:async row=>{events.push('audit');auditRow=row;return {error:{message:'database rejected'}};}};
+  throw new Error(`Unexpected table ${table}`);
+ },
+ storage:{from(bucket){return {createSignedUrls:async(paths,seconds)=>{
+  events.push('signed-urls');
+  assert.equal(bucket,'application-documents');assert.deepEqual(paths,['42/document.pdf']);assert.equal(seconds,600);
+  return {data:paths.map(path=>({path,signedUrl:'https://example.invalid/private-signed-url'})),error:null};
+ }};}},
+};
+let endpoint;
+try{
+ Module._load=function(request,parent,...rest){
+  if(request==='@/lib/server/currentUser')return {currentUser:async()=>({user:{id:'staff-id',role:'staff'}})};
+  if(request==='@/lib/supabase/server')return {supabaseAdmin:()=>db};
+  return load.call(this,request,parent,...rest);
+ };
+ endpoint=require('../app/api/files/monthly-export/route.ts');
+}finally{Module._load=load;}
+const response=await endpoint.POST(new Request('http://localhost/api/files/monthly-export',{
+ method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({month:'2026-11',part:1}),
+}));
+const text=await response.text();
+assert.equal(response.status,503);assert.ok(!text.includes('private-signed-url'));assert.ok(!text.includes('42/document.pdf'));
+assert.deepEqual(events,['signed-urls','audit']);
+assert.equal(auditRow.action,'files_exported');assert.equal(auditRow.user_id,'staff-id');assert.equal(auditRow.role,'staff');
+assert.deepEqual(auditRow.new_value,{month:'2026-11',part:1,parts:1,file_count:1});
+assert.equal(JSON.stringify(auditRow.new_value).includes('SJ-2026-000042'),false);
 });
 
 

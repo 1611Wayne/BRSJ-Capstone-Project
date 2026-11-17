@@ -30,6 +30,7 @@ let count=0;const check=(label,ok)=>{assert.ok(ok,label);count++;console.log('PA
  await page.getByRole('button',{name:'Print',exact:true}).click();check('Staff Print invokes browser print',await page.evaluate(()=>window.__printed===true));
  await page.getByRole('link',{name:'← Reports',exact:true}).click();await page.waitForURL(BASE+'/staff/reports');check('Daily back link stays in Staff portal',page.url().endsWith('/staff/reports'));
  await page.locator('.content-card').filter({has:page.getByRole('heading',{name:'Monthly Collection Report',exact:true})}).getByRole('link',{name:'View Report'}).click();
+ check('Sample mode disables monthly files ZIP with a clear message',await page.getByRole('button',{name:'Not available in sample mode',exact:true}).isDisabled());
  async function month(){await page.getByLabel(/^Month/).selectOption('09');await page.getByLabel(/^Year/).fill('2026');await page.getByRole('button',{name:'Apply Filter',exact:true}).click();}
  await month();check('Staff monthly daily breakdown includes saved fees',(await page.locator('table').innerText()).includes(date)&&(await page.locator('table').innerText()).includes('₱100.00'));
  await page.getByLabel(/^Report View/).selectOption('monthly');await page.getByRole('button',{name:'Apply Filter',exact:true}).click();

@@ -1,6 +1,8 @@
 import type { Application, FeeSchedule } from '@/types';
 import { dateLabel } from './workflow';
 import qrcode from 'qrcode-generator';
+import { Zip, ZipPassThrough } from 'fflate';
+import { MAX_BYTES_PER_PART, type MonthlyExportFile } from './monthlyFileExport';
 
 export function downloadBlob(name: string, blob: Blob) {
   const url = URL.createObjectURL(blob);
@@ -11,12 +13,88 @@ export function downloadBlob(name: string, blob: Blob) {
 }
 
 export function exportCSV(name: string, headers: string[], rows: (string | number)[][]) {
+  downloadBlob(name + '.csv', new Blob([csvText(headers, rows)], { type: 'text/csv;charset=utf-8' }));
+}
+
+export function csvText(headers: string[], rows: (string | number)[][]) {
   const cell = (value: string | number) => {
     let text = String(value);
     if (/^[=+@-]/.test(text)) text = "'" + text;
     return '"' + text.replace(/"/g, '""') + '"';
   };
-  downloadBlob(name + '.csv', new Blob(['\uFEFF' + [headers, ...rows].map(r => r.map(cell).join(',')).join('\r\n')], { type: 'text/csv;charset=utf-8' }));
+  return '\uFEFF' + [headers, ...rows].map(r => r.map(cell).join(',')).join('\r\n');
+}
+
+export type SignedMonthlyExportFile = Pick<MonthlyExportFile, 'bucket' | 'path' | 'reference' | 'fileType' | 'createdDate'> & {
+  signedUrl: string;
+};
+
+export async function downloadMonthlyFilePart(month: string, part: number, files: SignedMonthlyExportFile[]) {
+  const chunks: ArrayBuffer[] = [];
+  let resolveZip!: () => void, rejectZip!: (error: Error) => void;
+  const finished = new Promise<void>((resolve, reject) => { resolveZip = resolve; rejectZip = reject; });
+  const archive = new Zip((error, chunk, final) => {
+    if (error) { rejectZip(error); return; }
+    if (chunk.length) chunks.push(Uint8Array.from(chunk).buffer);
+    if (final) resolveZip();
+  });
+  const actualSizes: number[] = [];
+  let totalBytes = 0;
+  try {
+    for (const file of files) {
+      const response = await fetch(file.signedUrl, { cache: 'no-store' });
+      if (!response.ok) throw new Error('A file could not be downloaded. Request this part again.');
+      const entry = new ZipPassThrough(`${file.bucket}/${file.path}`);
+      archive.add(entry);
+      let fileBytes = 0;
+      const reader = response.body?.getReader();
+      if (reader) {
+        try {
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            const bytes = value ?? new Uint8Array();
+            if (totalBytes + bytes.length > MAX_BYTES_PER_PART) {
+              await reader.cancel();
+              throw new Error('This part exceeds the 100 MB download limit. Request it again.');
+            }
+            fileBytes += bytes.length;
+            totalBytes += bytes.length;
+            entry.push(bytes, false);
+          }
+        } finally {
+          reader.releaseLock();
+        }
+      } else {
+        const bytes = new Uint8Array(await response.arrayBuffer());
+        if (totalBytes + bytes.length > MAX_BYTES_PER_PART) throw new Error('This part exceeds the 100 MB download limit. Request it again.');
+        fileBytes = bytes.length;
+        totalBytes += bytes.length;
+        entry.push(bytes, false);
+      }
+      if (!fileBytes) throw new Error('A file was empty or incomplete. Request this part again.');
+      entry.push(new Uint8Array(), true);
+      actualSizes.push(fileBytes);
+    }
+
+    const manifestRows = files.map((file, index) => [
+      file.reference, file.fileType, file.bucket, file.path, file.createdDate, actualSizes[index],
+    ]);
+    const manifest = new ZipPassThrough('manifest.csv');
+    archive.add(manifest);
+    manifest.push(new TextEncoder().encode(csvText(
+      ['Reference', 'File Type', 'Bucket', 'Object Path', 'Created Date (Manila)', 'Size (bytes)'],
+      manifestRows,
+    )), true);
+    archive.end();
+    await finished;
+  } catch (error) {
+    archive.terminate();
+    throw error;
+  }
+
+  const name = `monthly-files-${month}-part-${String(part).padStart(3, '0')}.zip`;
+  downloadBlob(name, new Blob(chunks, { type: 'application/zip' }));
 }
 
 // ─── Logo helpers ─────────────────────────────────────────────────────────────
