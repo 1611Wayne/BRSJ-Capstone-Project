@@ -2,6 +2,8 @@
 
 **To be tested by the Supabase owner before relying on this procedure.**
 
+Checked against Supabase CLI 3.2.0 (`npx --yes supabase --version`). Before the first dump, run `supabase db dump --help` on your own machine and use the flags printed by your installed version.
+
 ## Monthly Staff/Admin report and file export
 
 1. In the Staff or Admin portal, open **Reports → Monthly Collection Report** and choose the month.
