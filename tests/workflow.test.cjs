@@ -505,7 +505,7 @@ test('monthly export role gate allows only Staff and Admin',()=>{
 });
 
 test('monthly export returns no signed URLs when the audit insert fails',async()=>{
-const Module=require('node:module'),load=Module._load,events=[];let auditRow;
+const Module=require('node:module'),load=Module._load,events=[];let auditRow,auditError={message:'database rejected'};
 const query=(data)=>({select(){return this;},not(){return this;},order(){return this;},range:async()=>({data,error:null})});
 const db={
  from(table){
@@ -515,7 +515,7 @@ const db={
    official_receipts:null,payment_verifications:null,
   }]);
   if(table==='profiles')return query([]);
-  if(table==='audit_logs')return {insert:async row=>{events.push('audit');auditRow=row;return {error:{message:'database rejected'}};}};
+  if(table==='audit_logs')return {insert:async row=>{events.push('audit');auditRow=row;return {error:auditError};}};
   throw new Error(`Unexpected table ${table}`);
  },
  storage:{from(bucket){return {createSignedUrls:async(paths,seconds)=>{
@@ -538,10 +538,16 @@ const response=await endpoint.POST(new Request('http://localhost/api/files/month
 }));
 const text=await response.text();
 assert.equal(response.status,503);assert.ok(!text.includes('private-signed-url'));assert.ok(!text.includes('42/document.pdf'));
-assert.deepEqual(events,['signed-urls','audit']);
+assert.deepEqual(events,['audit']);
 assert.equal(auditRow.action,'files_exported');assert.equal(auditRow.user_id,'staff-id');assert.equal(auditRow.role,'staff');
 assert.deepEqual(auditRow.new_value,{month:'2026-11',part:1,parts:1,file_count:1});
 assert.equal(JSON.stringify(auditRow.new_value).includes('SJ-2026-000042'),false);
+
+auditError=null;events.length=0;
+const successful=await endpoint.POST(new Request('http://localhost/api/files/monthly-export',{
+ method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({month:'2026-11',part:1}),
+}));
+assert.equal(successful.status,200);assert.deepEqual(events,['audit','signed-urls']);
 });
 
 

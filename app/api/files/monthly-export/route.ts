@@ -137,21 +137,32 @@ export async function POST(request: Request) {
   }
   if (partNumber > parts.length) return fail('That export part is no longer available. Reload the month and try again.', 404);
   const selected = parts[partNumber - 1];
-  const urls = await signedUrlsForPart(db, selected);
-  if (!urls) return fail('Could not prepare every file URL for this part. No download was started.', 503);
 
-  const { error: auditError } = await db.from('audit_logs').insert({
-    user_id: me.user.id,
-    role: me.user.role,
-    action: 'files_exported',
-    application_id: null,
-    reference_no: null,
-    old_value: null,
-    new_value: { month, part: partNumber, parts: parts.length, file_count: selected.length },
-    reason: null,
-    reversion: false,
-  });
+  let auditError: unknown;
+  try {
+    ({ error: auditError } = await db.from('audit_logs').insert({
+      user_id: me.user.id,
+      role: me.user.role,
+      action: 'files_exported',
+      application_id: null,
+      reference_no: null,
+      old_value: null,
+      new_value: { month, part: partNumber, parts: parts.length, file_count: selected.length },
+      reason: null,
+      reversion: false,
+    }));
+  } catch {
+    return fail('The export could not be recorded. No download was started.', 503);
+  }
   if (auditError) return fail('The export could not be recorded. No download was started.', 503);
+
+  let urls: Map<string, string> | undefined;
+  try {
+    urls = await signedUrlsForPart(db, selected);
+  } catch {
+    return fail('Could not prepare every file URL for this part. No download was started.', 503);
+  }
+  if (!urls) return fail('Could not prepare every file URL for this part. No download was started.', 503);
 
   return NextResponse.json({
     month,
