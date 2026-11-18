@@ -1,6 +1,6 @@
 -- STEP 2 of 3. THE MIGRATIONS. Paste ALL of this into the Supabase SQL Editor and click Run.
--- Generated 2026-10-18 from the migration files below (parts 10 and 11 added 2026-11-06, part 12 on 2026-11-08, part 13 on 2026-11-11, parts 14 and 15 on 2026-11-12, parts 16, 17 and 18 on 2026-11-13, part 19 on 2026-11-14), unchanged except that migration 6 was made re-runnable.
--- If you already ran an earlier version of this script, run this one again: it is safe. Parts 10 (the original issue date of a withdrawn clearance), 11 (a daily cap on sign-in texts), 12 (inspection scheduling), 13 (Staff and Admin notices), 14 (several fee versions on one day), 15 (no direct writes that skip the server), 16 (the audit log can only grow), 17 (ID checks and spam flags), 18 (Staff and Admin open files only through the server, so every opening is logged) and 19 (the records-requests table: a resident asks for a copy of their records) are new.
+-- Generated 2026-10-18 from the migration files below (parts 10 and 11 added 2026-11-06, part 12 on 2026-11-08, part 13 on 2026-11-11, parts 14 and 15 on 2026-11-12, parts 16, 17 and 18 on 2026-11-13, part 19 on 2026-11-14, part 20 on 2026-11-18), unchanged except that migration 6 was made re-runnable.
+-- If you already ran an earlier version of this script, run this one again: it is safe. Parts 10 (the original issue date of a withdrawn clearance), 11 (a daily cap on sign-in texts), 12 (inspection scheduling), 13 (Staff and Admin notices), 14 (several fee versions on one day), 15 (no direct writes that skip the server), 16 (the audit log can only grow), 17 (ID checks and spam flags), 18 (Staff and Admin open files only through the server, so every opening is logged), 19 (the records-requests table: a resident asks for a copy of their records) and 20 (the REAL fees from the 2019 Revenue Code, replacing the SAMPLE fees) are new.
 -- Parts 6 and 7 are the security rules: who may read each table, and three private file buckets (IDs, documents, receipts).
 -- Run it as the default role (postgres). The editor may warn about "destructive operations" because the script drops and
 -- re-creates some CHECK rules: that is expected, confirm it.
@@ -13,12 +13,12 @@
 -- check, demo simulation, and more); then one column recording which Staff member confirmed a release at the counter;
 -- then the in-app notices table; then the row-level security rules for every remaining table; then the three private
 -- Storage buckets with their upload and read rules; then the request reference numbers (SJ-YYYY-######) made by the database; then SAMPLE fee schedules
--- (the prototype's illustrative fees, clearly marked, NOT the approved Revenue Code) so Staff can test assessments.
+-- (the prototype's illustrative fees, clearly marked, NOT the approved Revenue Code) so Staff can test assessments; part 20 then loads the real fees from the 2019 Revised Revenue Code, which replace them.
 -- See SCHEMA_MAP.md for the full list.
 -- Afterwards, run STEP 3 (3_after_check.sql).
 
 -- ==========================================================================
--- PART 1 OF 19: 20261005000000_correct_clearance_types.sql
+-- PART 1 OF 20: 20261005000000_correct_clearance_types.sql
 -- ==========================================================================
 -- Correct the clearance_types catalog: 13 -> 9, confirmed with the real client
 -- Generated 2026-10-05. Depends on 20260923010000_seed_clearance_types.sql.
@@ -65,7 +65,7 @@ where name in (
 );
 
 -- ==========================================================================
--- PART 2 OF 19: 20261006000000_add_business_subcategory.sql
+-- PART 2 OF 20: 20261006000000_add_business_subcategory.sql
 -- ==========================================================================
 -- Add the Applicant's optional Ambulant / Lessor indication to applications
 -- Generated 2026-10-06. Depends on 20260922000000_init_schema.sql.
@@ -102,7 +102,7 @@ comment on column public.applications.business_subcategory is
   'Optional. What the Applicant indicated at intake for a Business Clearance: Ambulant or Lessor (Paupahan); NULL = Business Clearance only. A hint for Staff, not the final classification — that is decided at assessment.';
 
 -- ==========================================================================
--- PART 3 OF 19: 20261006010000_sync_schema_with_frontend.sql
+-- PART 3 OF 20: 20261006010000_sync_schema_with_frontend.sql
 -- ==========================================================================
 -- Sync the database with everything the frontend prototype has built since 2026-09-23
 -- Generated 2026-10-06. Depends on ALL of the earlier migrations, in particular
@@ -355,7 +355,7 @@ comment on column public.correction_requests.resident_id is
   'The Applicant who sent the request (the frontend''s requestedBy). The Staff who resolved it is resolved_by.';
 
 -- ==========================================================================
--- PART 4 OF 19: 20261016000000_receipt_confirmed_by.sql
+-- PART 4 OF 20: 20261016000000_receipt_confirmed_by.sql
 -- ==========================================================================
 -- Record WHO confirmed a release at the counter
 -- Generated 2026-10-16. Depends on 20260922000000_init_schema.sql (receipt_confirmations, profiles).
@@ -376,7 +376,7 @@ comment on column public.receipt_confirmations.confirmed_by is
   'The Staff member who recorded the release of the printed original at the counter. NULL = the Applicant confirmed receipt themselves.';
 
 -- ==========================================================================
--- PART 5 OF 19: 20261016010000_notifications.sql
+-- PART 5 OF 20: 20261016010000_notifications.sql
 -- ==========================================================================
 -- In-app notifications for Applicants
 -- Generated 2026-10-16. Depends on 20260922000000_init_schema.sql (profiles, applications).
@@ -422,7 +422,7 @@ comment on table public.notifications is
   'In-app notices for an Applicant (not SMS). Written by the server when Staff act on the Applicant''s application; the Applicant reads them and marks them read. An unread notice with the same dedupe_key is updated instead of repeated.';
 
 -- ==========================================================================
--- PART 6 OF 19: 20261017000000_rls_policies_remaining_tables.sql
+-- PART 6 OF 20: 20261017000000_rls_policies_remaining_tables.sql
 -- ==========================================================================
 -- RLS policies for the remaining tables (everything except profiles and applications, which have their own
 -- policies in 20260923020000). Generated 2026-10-17. Depends on all earlier migrations.
@@ -646,7 +646,7 @@ create trigger notifications_owner_only_marks_read
   for each row execute function public.notifications_owner_only_marks_read();
 
 -- ==========================================================================
--- PART 7 OF 19: 20261017010000_storage_buckets_and_policies.sql
+-- PART 7 OF 20: 20261017010000_storage_buckets_and_policies.sql
 -- ==========================================================================
 -- Storage: three PRIVATE buckets and who may read and upload into each. Generated 2026-10-17.
 -- Depends on 20261017000000_rls_policies_remaining_tables.sql (the helper functions).
@@ -783,7 +783,7 @@ with check (
 );
 
 -- ==========================================================================
--- PART 8 OF 19: 20261018000000_reference_numbers.sql
+-- PART 8 OF 20: 20261018000000_reference_numbers.sql
 -- ==========================================================================
 -- Request reference numbers made by the database: SJ-YYYY-######, one counter per year (Manila time), starting at 1.
 -- Generated 2026-10-18. Depends on 20261017000000_rls_policies_remaining_tables.sql.
@@ -836,7 +836,7 @@ grant execute on function public.next_reference_no() to authenticated, service_r
 alter table public.applications alter column reference_no set default public.next_reference_no();
 
 -- ==========================================================================
--- PART 9 OF 19: 20261018010000_sample_fee_schedules.sql
+-- PART 9 OF 20: 20261018010000_sample_fee_schedules.sql
 -- ==========================================================================
 -- SAMPLE fee data so Staff can test the assessment end to end. Generated 2026-10-18 from the prototype's own data
 -- (data/revenueCodeData.ts and data/mockFeeSchedules.ts), so the numbers are exactly the ones the prototype shows.
@@ -960,7 +960,7 @@ begin
 end $$;
 
 -- ==========================================================================
--- PART 10 OF 19: 20261106000000_clearance_revised_from.sql
+-- PART 10 OF 20: 20261106000000_clearance_revised_from.sql
 -- ==========================================================================
 -- Migration 14: keep a withdrawn clearance's original issue date on the application (IN PROGRESS, 2026-11-06).
 --
@@ -977,7 +977,7 @@ comment on column public.applications.clearance_revised_from is
   'Original issue date of a clearance withdrawn by an Admin correction; the next clearance is marked REVISED with it.';
 
 -- ==========================================================================
--- PART 11 OF 19: 20261106010000_sms_daily_cap.sql
+-- PART 11 OF 20: 20261106010000_sms_daily_cap.sql
 -- ==========================================================================
 -- Migration 15: a daily cap on sign-in texts (IN PROGRESS, 2026-11-06).
 --
@@ -1035,7 +1035,7 @@ revoke all on function public.claim_sms_send(text, integer, integer) from public
 grant execute on function public.claim_sms_send(text, integer, integer) to service_role;
 
 -- ==========================================================================
--- PART 12 OF 19: 20261108000000_inspection_scheduling.sql
+-- PART 12 OF 20: 20261108000000_inspection_scheduling.sql
 -- (its own begin; and commit; lines are left out here: this whole script already runs as one piece)
 -- ==========================================================================
 -- Migration 16: inspection scheduling (FT-9). Written by jayemm01 (PR #6, merged 2026-11-08) as
@@ -1070,7 +1070,7 @@ create index if not exists inspection_reports_pending_schedule_idx
   where status = 'Pending' and scheduled_at is not null;
 
 -- ==========================================================================
--- PART 13 OF 19: 20261111000000_team_notification_events.sql
+-- PART 13 OF 20: 20261111000000_team_notification_events.sql
 -- ==========================================================================
 -- Migration 17: in-app notices for Staff and Admin (FT-10) (IN PROGRESS, 2026-11-11).
 --
@@ -1095,7 +1095,7 @@ comment on table public.notifications is
   'In-app notices (not SMS). Applicants get notices about their own requests; Staff and Admin get team notices (new submission, correction requested, payment waiting, clearance waiting for release). Written only by the server; each person reads and marks read only their own. An unread notice with the same dedupe_key is updated instead of repeated.';
 
 -- ==========================================================================
--- PART 14 OF 19: 20261112000000_fee_versions_same_day.sql
+-- PART 14 OF 20: 20261112000000_fee_versions_same_day.sql
 -- ==========================================================================
 -- Migration 18: several fee schedule versions on the same effective date (IN PROGRESS, 2026-11-12).
 --
@@ -1127,7 +1127,7 @@ comment on table public.fee_schedules is
   'Append-only version history. The row with the latest effective_date <= today (and, on the same date, the latest created_at), for a given (clearance_type, category, classification), is the active one — chosen in application code, not here. Several versions may share an effective date (migration 18).';
 
 -- ==========================================================================
--- PART 15 OF 19: 20261112010000_close_direct_writes.sql
+-- PART 15 OF 20: 20261112010000_close_direct_writes.sql
 -- ==========================================================================
 -- Migration 19: close the direct-write back doors (DB-6 part 2) (IN PROGRESS, 2026-11-12).
 --
@@ -1197,7 +1197,7 @@ comment on policy "people fill in their own profile" on public.profiles is
   'Registration only: a new resident fills in their own blank address, mobile number and ID file (column grants + trigger profiles_fill_in_only). Every other profile change goes through the server (migration 19).';
 
 -- ==========================================================================
--- PART 16 OF 19: 20261113000000_audit_log_append_only.sql
+-- PART 16 OF 20: 20261113000000_audit_log_append_only.sql
 -- ==========================================================================
 -- Migration 20: the audit log can only grow (DB-7) (IN PROGRESS, 2026-11-13).
 --
@@ -1264,7 +1264,7 @@ comment on table public.audit_logs is
   'Append-only audit trail (migration 20): entries can be added, never edited or deleted, by any role including the server key. The only allowed change is the database clearing application_id or user_id when that request or account is deleted.';
 
 -- ==========================================================================
--- PART 17 OF 19: 20261113010000_account_checks.sql
+-- PART 17 OF 20: 20261113010000_account_checks.sql
 -- ==========================================================================
 -- Migration 21: account checks before real use (DB-11) (IN PROGRESS, 2026-11-13).
 --
@@ -1297,7 +1297,7 @@ comment on column public.profiles.id_verified_at is 'When Staff confirmed this r
 comment on column public.profiles.spam_flagged_at is 'When Staff or Admin flagged this account as spam (null = not flagged). A flagged account cannot submit new requests until Admin clears it.';
 
 -- ==========================================================================
--- PART 18 OF 19: 20261113020000_staff_file_reads_through_server.sql
+-- PART 18 OF 20: 20261113020000_staff_file_reads_through_server.sql
 -- ==========================================================================
 -- Migration 22: Staff and Admin open files only through the server, so every opening is logged (SE-4) (IN PROGRESS, 2026-11-13).
 -- Asked for in Angelo's PR #8 ("Not in this PR"). RUN IT ONLY AFTER PR #8 IS IN THE CODE EVERYONE RUNS: older code
@@ -1364,7 +1364,7 @@ create index if not exists audit_logs_view_lookup_idx
   on public.audit_logs (user_id, action, application_id, created_at desc);
 
 -- ==========================================================================
--- PART 19 OF 19: 20261114000000_personal_record_requests.sql
+-- PART 19 OF 20: 20261114000000_personal_record_requests.sql
 -- ==========================================================================
 -- Migration 23: the table behind "ask for a copy of my records" (FT-18, RA 10173 right of access) (IN PROGRESS, 2026-11-14).
 -- jayemm01's PR #10 (merged into main 2026-11-13) added the screens and app/api/record-requests, but no table, so on the
@@ -1425,3 +1425,499 @@ grant all on public.personal_record_requests to service_role;
 
 comment on table public.personal_record_requests is
   'A resident''s request for a copy of the records the barangay holds about them (RA 10173), and the office''s answer (FT-18, migration 23). Written only by the server (app/api/record-requests).';
+
+-- ==========================================================================
+-- PART 20 OF 20: 20261118000000_revenue_code_2019_fees.sql
+-- ==========================================================================
+-- Migration 24: the REAL fee schedules from the Revised Revenue Code of Barangay San Jose (Chapter V, Sangguniang
+-- Barangay session of 3 December 2019), replacing the SAMPLE fees of migration 13 (DB-8). Generated 2026-11-18 by
+-- "paperwork (for revisions)/Revenue Code 2019 (photos)/build_fee_migration.cjs" from "Revenue Code 2019 - encoded.csv"
+-- (encoded from the photos and cross-checked against the group leader's own typing). Do not edit by hand: fix the sheet
+-- and generate again (as a NEW migration once this one has been run).
+--
+-- WHAT IT ADDS: 199 fee schedules effective 2026-11-18 (Building Clearance 4, Fencing Clearance 3, Excavation Clearance 1, Lot Survey Clearance 1, Electrical Clearance 1, Water/MWSS Clearance 1, PODA Clearance 1, TODA Clearance 1, Business Clearance 186),
+-- 1216 fee lines, 164 categories and 52 classifications.
+--   Business Clearance: one schedule per establishment (and size), with the lines Business Clearance, Plate 150,
+--   Inspection Fee 50 (100 for the seasonal stall), Sticker 100, Penalty 0, No. of Employee 0, plus a per-unit line
+--   where the code charges per table, stall, unit and so on (the line holds one unit; Staff enter the total).
+--   Building and Fencing have brackets (Building / Renovation Permit, Residential / Commercial; Fencing by area), so they
+--   get categories too and the assessment screen offers them. The other types have one schedule each.
+-- HOW IT REPLACES THE SAMPLE: the newest effective schedule wins (lib/workflow.ts activeSchedule), and every SAMPLE
+-- category and size has a real one with the same name (Sari-Sari Store, Bakery, Beauty Parlor / Salon, Carinderia,
+-- Lessor 1–4 / 5–8 / 9+ Units, Ambulant / Mobile Vendor, Bank). The SAMPLE rows stay as history: assessments made with
+-- them keep pointing at them. Plate AND Sticker are on every business schedule, as in the sample, until New vs Renewal
+-- (FT-1) is built.
+-- STILL TO CONFIRM with the barangay: the rows whose notes say "To confirm" (see the CHECK rows in the sheet).
+-- RE-RUNNABLE: categories and classifications only if missing; a schedule only if this ordinance has none for that
+-- selection on 2026-11-18; its lines only when it has none.
+
+insert into public.business_categories (name) values
+  ('Advertising Shop/Printing Press'),
+  ('Aluminum - Glass Supply'),
+  ('Ambulant / Mobile Vendor'),
+  ('Amusement Park/Recreational'),
+  ('Animal Breeding'),
+  ('Animal Impounding'),
+  ('Apartments/Houses (Per Unit)'),
+  ('Appliance Store'),
+  ('Auto & Motor Parts & Repair'),
+  ('Bakery'),
+  ('Bakeshop (Goldilocks, Red Ribbon etc.)'),
+  ('Balloons & Party Needs w/ Videoke (Per Unit)'),
+  ('Bank'),
+  ('Bar & Restaurant'),
+  ('Barber Shop'),
+  ('Batching Plant'),
+  ('Battery Shop'),
+  ('Bazaars/Boutiques'),
+  ('Beauty Clinics'),
+  ('Beauty Parlor / Salon'),
+  ('Bicycle Parts/Store'),
+  ('Bicycle Rental (Per Unit)'),
+  ('Billboards/Streamers/Signages'),
+  ('Billiard Hall (Per Table)'),
+  ('Bookstore - National etc. (Large)'),
+  ('Brake Bonding Shop'),
+  ('Building Permit'),
+  ('Buildings (Per Unit)'),
+  ('Calibration Shop / Hydraulic Services'),
+  ('Cargo Trucks (Per Unit)'),
+  ('Carinderia'),
+  ('Carwash'),
+  ('Catering'),
+  ('Cellphone - Load Station & Repair'),
+  ('Cellphone Repair Shop'),
+  ('Ceramics Figurine Making / Marble Engraving'),
+  ('Computer Repair Shop'),
+  ('Computer Shop (Per Unit)'),
+  ('Contractors (Gen. Contractors, Building & Others)'),
+  ('Corporation/Holdings'),
+  ('Courier'),
+  ('Crushing Plant'),
+  ('Delivery Trucks (6 Wheeler)'),
+  ('Dental Clinics'),
+  ('Dialysis Center'),
+  ('Direct Selling/Online Selling'),
+  ('Drugstore'),
+  ('Electronic Repair Shop'),
+  ('Electronic Shop'),
+  ('Emission Testing'),
+  ('Employment Agency & Manpower'),
+  ('Enterprises'),
+  ('Events Place'),
+  ('FX, Van & Others (Per Unit)'),
+  ('Fencing Permit'),
+  ('Film Studio'),
+  ('Foodstall'),
+  ('Footwear'),
+  ('Funeral Parlor & Services'),
+  ('Furniture Factory'),
+  ('Furniture Store'),
+  ('Garage/Transport Service (Per Unit)'),
+  ('Garden & Landscaping Contractors'),
+  ('Garments Factory (Large Scale for Export)'),
+  ('Garments Factory (Small Scale, Local & Subcon)'),
+  ('Gasoline Station'),
+  ('Gift Shop'),
+  ('Grains Sales Outlet'),
+  ('Grilling Station - Isaw etc.'),
+  ('Groceries/Gen. Merchandise'),
+  ('Guns & Ammunitions Sales Center'),
+  ('Gym (Sports/Physical Fitness)'),
+  ('Hardware, Lumber & Construction Supply'),
+  ('Heavy Equipment (Per Unit)'),
+  ('Hollow Blocks Making'),
+  ('Hospital'),
+  ('Hotel (Motel, Lodging Inn, Apartelle) Per Unit'),
+  ('Household Beauty Products Manufacturers / Repacking'),
+  ('Incorporation'),
+  ('Junkshop'),
+  ('Karaoke or Video Machines (Per Unit)'),
+  ('LPG Dealer/Gasul Delivery & Refilling Station'),
+  ('Laboratory Clinics'),
+  ('Laundry Shop - Per Unit'),
+  ('Leather Crafts & Handicrafts Making'),
+  ('Lending'),
+  ('Lessor'),
+  ('Livestock and Poultry Supply'),
+  ('Lotto Outlet'),
+  ('Lying-in Clinics'),
+  ('Machine Shop'),
+  ('Market (Meat, Chicken, Vegetable etc.) - Per Stall'),
+  ('Marketing - Online Teaching'),
+  ('Massage/Reflexology Clinics'),
+  ('Medical Clinics'),
+  ('Memorial Park'),
+  ('Mineral Water Dealer & Outlet Refilling Station'),
+  ('Mobile & Sound System Rental'),
+  ('Motorcycle Parts Supply'),
+  ('Motorcycle Sales Center'),
+  ('Music Center'),
+  ('Notary Law Office'),
+  ('Office & School Supplies'),
+  ('Optical Clinics'),
+  ('Optical Sales Center'),
+  ('Paint Center'),
+  ('Paintings & Photo Gallery'),
+  ('Pasalubong Stores'),
+  ('Pawnshops'),
+  ('Peddlers (Taho, Ice Cream Vendors etc.)'),
+  ('Pet Shop & Supplies'),
+  ('Photo Center & Supplies / Video Coverage'),
+  ('Photo Copying / Xerox Center (Clearance & Per Unit)'),
+  ('Piggery/Poultry'),
+  ('Plasticware Store'),
+  ('Pool Table (Per Table)'),
+  ('Pot or Plants'),
+  ('Poultry & Livestock Supply'),
+  ('Professional Services'),
+  ('Public Utility Jeep (Per Unit)'),
+  ('RTW'),
+  ('Radiator Shop'),
+  ('Real Estate Developer'),
+  ('Refrigeration Shop (Aircon & Ref)'),
+  ('Renovation Permit'),
+  ('Resort'),
+  ('Sari-Sari Store'),
+  ('Sash Factory'),
+  ('School: College'),
+  ('School: Elementary'),
+  ('School: High School'),
+  ('School: Pre-School'),
+  ('School: Vocational/Technical'),
+  ('Seasonal Stall & Inspection Fee'),
+  ('Shoe Manufacturing (Big)'),
+  ('Shoe Repair Shop'),
+  ('Soap Making & Rug Making (Home)'),
+  ('Softdrinks Dealer & Wholesaler'),
+  ('Spa'),
+  ('Stall Rental (Per Unit)'),
+  ('Steel Fabrication & Iron Works'),
+  ('Subcontractors (Building Construction & Others)'),
+  ('Supermarket'),
+  ('Tailoring/Dress Shop'),
+  ('Tire Sales & Services'),
+  ('Toy Store'),
+  ('Trading (Corporation & Partnership)'),
+  ('Trading (Sole Proprietorship)'),
+  ('Trading/Merchandising'),
+  ('Transport (Corporation & Partnership) Coop.'),
+  ('Travel Agency'),
+  ('Trucks (Hauling Services) 10 Wheelers - Per Unit'),
+  ('Tutorial Center (Kumon, Japanese, Korean Lang. etc.)'),
+  ('Ukay-Ukay'),
+  ('Upholstery Repair'),
+  ('Upholstery Shop / Repair'),
+  ('Veterinary Clinics'),
+  ('Video Game Shop (Per Unit)'),
+  ('Vulcanizing Shop'),
+  ('Watch Repair Shop'),
+  ('Watch Store'),
+  ('Welding Shop'),
+  ('WiFi Services'),
+  ('Wine, Liquor & Beverages Store')
+on conflict (name) do nothing;
+update public.business_categories set active = true where not active and name in ('Advertising Shop/Printing Press', 'Aluminum - Glass Supply', 'Ambulant / Mobile Vendor', 'Amusement Park/Recreational', 'Animal Breeding', 'Animal Impounding', 'Apartments/Houses (Per Unit)', 'Appliance Store', 'Auto & Motor Parts & Repair', 'Bakery', 'Bakeshop (Goldilocks, Red Ribbon etc.)', 'Balloons & Party Needs w/ Videoke (Per Unit)', 'Bank', 'Bar & Restaurant', 'Barber Shop', 'Batching Plant', 'Battery Shop', 'Bazaars/Boutiques', 'Beauty Clinics', 'Beauty Parlor / Salon', 'Bicycle Parts/Store', 'Bicycle Rental (Per Unit)', 'Billboards/Streamers/Signages', 'Billiard Hall (Per Table)', 'Bookstore - National etc. (Large)', 'Brake Bonding Shop', 'Building Permit', 'Buildings (Per Unit)', 'Calibration Shop / Hydraulic Services', 'Cargo Trucks (Per Unit)', 'Carinderia', 'Carwash', 'Catering', 'Cellphone - Load Station & Repair', 'Cellphone Repair Shop', 'Ceramics Figurine Making / Marble Engraving', 'Computer Repair Shop', 'Computer Shop (Per Unit)', 'Contractors (Gen. Contractors, Building & Others)', 'Corporation/Holdings', 'Courier', 'Crushing Plant', 'Delivery Trucks (6 Wheeler)', 'Dental Clinics', 'Dialysis Center', 'Direct Selling/Online Selling', 'Drugstore', 'Electronic Repair Shop', 'Electronic Shop', 'Emission Testing', 'Employment Agency & Manpower', 'Enterprises', 'Events Place', 'FX, Van & Others (Per Unit)', 'Fencing Permit', 'Film Studio', 'Foodstall', 'Footwear', 'Funeral Parlor & Services', 'Furniture Factory', 'Furniture Store', 'Garage/Transport Service (Per Unit)', 'Garden & Landscaping Contractors', 'Garments Factory (Large Scale for Export)', 'Garments Factory (Small Scale, Local & Subcon)', 'Gasoline Station', 'Gift Shop', 'Grains Sales Outlet', 'Grilling Station - Isaw etc.', 'Groceries/Gen. Merchandise', 'Guns & Ammunitions Sales Center', 'Gym (Sports/Physical Fitness)', 'Hardware, Lumber & Construction Supply', 'Heavy Equipment (Per Unit)', 'Hollow Blocks Making', 'Hospital', 'Hotel (Motel, Lodging Inn, Apartelle) Per Unit', 'Household Beauty Products Manufacturers / Repacking', 'Incorporation', 'Junkshop', 'Karaoke or Video Machines (Per Unit)', 'LPG Dealer/Gasul Delivery & Refilling Station', 'Laboratory Clinics', 'Laundry Shop - Per Unit', 'Leather Crafts & Handicrafts Making', 'Lending', 'Lessor', 'Livestock and Poultry Supply', 'Lotto Outlet', 'Lying-in Clinics', 'Machine Shop', 'Market (Meat, Chicken, Vegetable etc.) - Per Stall', 'Marketing - Online Teaching', 'Massage/Reflexology Clinics', 'Medical Clinics', 'Memorial Park', 'Mineral Water Dealer & Outlet Refilling Station', 'Mobile & Sound System Rental', 'Motorcycle Parts Supply', 'Motorcycle Sales Center', 'Music Center', 'Notary Law Office', 'Office & School Supplies', 'Optical Clinics', 'Optical Sales Center', 'Paint Center', 'Paintings & Photo Gallery', 'Pasalubong Stores', 'Pawnshops', 'Peddlers (Taho, Ice Cream Vendors etc.)', 'Pet Shop & Supplies', 'Photo Center & Supplies / Video Coverage', 'Photo Copying / Xerox Center (Clearance & Per Unit)', 'Piggery/Poultry', 'Plasticware Store', 'Pool Table (Per Table)', 'Pot or Plants', 'Poultry & Livestock Supply', 'Professional Services', 'Public Utility Jeep (Per Unit)', 'RTW', 'Radiator Shop', 'Real Estate Developer', 'Refrigeration Shop (Aircon & Ref)', 'Renovation Permit', 'Resort', 'Sari-Sari Store', 'Sash Factory', 'School: College', 'School: Elementary', 'School: High School', 'School: Pre-School', 'School: Vocational/Technical', 'Seasonal Stall & Inspection Fee', 'Shoe Manufacturing (Big)', 'Shoe Repair Shop', 'Soap Making & Rug Making (Home)', 'Softdrinks Dealer & Wholesaler', 'Spa', 'Stall Rental (Per Unit)', 'Steel Fabrication & Iron Works', 'Subcontractors (Building Construction & Others)', 'Supermarket', 'Tailoring/Dress Shop', 'Tire Sales & Services', 'Toy Store', 'Trading (Corporation & Partnership)', 'Trading (Sole Proprietorship)', 'Trading/Merchandising', 'Transport (Corporation & Partnership) Coop.', 'Travel Agency', 'Trucks (Hauling Services) 10 Wheelers - Per Unit', 'Tutorial Center (Kumon, Japanese, Korean Lang. etc.)', 'Ukay-Ukay', 'Upholstery Repair', 'Upholstery Shop / Repair', 'Veterinary Clinics', 'Video Game Shop (Per Unit)', 'Vulcanizing Shop', 'Watch Repair Shop', 'Watch Store', 'Welding Shop', 'WiFi Services', 'Wine, Liquor & Beverages Store');
+
+insert into public.business_classifications (category_id, name)
+select c.id, v.name
+from (values
+  ('Building Permit', 'Residential'),
+  ('Building Permit', 'Commercial'),
+  ('Renovation Permit', 'Residential'),
+  ('Renovation Permit', 'Commercial'),
+  ('Fencing Permit', '100 sq m'),
+  ('Fencing Permit', '200 sq m'),
+  ('Fencing Permit', '300 sq m and above'),
+  ('Beauty Parlor / Salon', 'Small'),
+  ('Beauty Parlor / Salon', 'Large'),
+  ('Barber Shop', 'Small'),
+  ('Barber Shop', 'Large'),
+  ('Gym (Sports/Physical Fitness)', 'Small'),
+  ('Gym (Sports/Physical Fitness)', 'Medium'),
+  ('Gym (Sports/Physical Fitness)', 'Large'),
+  ('Watch Repair Shop', 'Small'),
+  ('Watch Repair Shop', 'Large'),
+  ('Amusement Park/Recreational', 'Small'),
+  ('Amusement Park/Recreational', 'Large'),
+  ('Lessor', '1–4 Units'),
+  ('Lessor', '5–8 Units'),
+  ('Lessor', '9+ Units'),
+  ('Tailoring/Dress Shop', 'Small'),
+  ('Tailoring/Dress Shop', 'Large'),
+  ('Advertising Shop/Printing Press', 'Small'),
+  ('Advertising Shop/Printing Press', 'Large'),
+  ('Bakery', 'Small'),
+  ('Bakery', 'Medium'),
+  ('Bakery', 'Large'),
+  ('Carinderia', 'Small'),
+  ('Carinderia', 'Large'),
+  ('Footwear', 'Small'),
+  ('Footwear', 'Large'),
+  ('Grains Sales Outlet', 'Retailer'),
+  ('Grains Sales Outlet', 'Dealer'),
+  ('Grains Sales Outlet', 'Both Categories'),
+  ('Groceries/Gen. Merchandise', 'Small'),
+  ('Groceries/Gen. Merchandise', 'Large'),
+  ('Junkshop', 'Small'),
+  ('Junkshop', 'Large'),
+  ('Office & School Supplies', 'Small'),
+  ('Office & School Supplies', 'Big'),
+  ('Paintings & Photo Gallery', 'Big'),
+  ('Paintings & Photo Gallery', 'Small'),
+  ('RTW', 'Small'),
+  ('RTW', 'Large'),
+  ('Sari-Sari Store', 'Small'),
+  ('Sari-Sari Store', 'Medium'),
+  ('Sari-Sari Store', 'Large'),
+  ('Toy Store', 'Small'),
+  ('Toy Store', 'Large'),
+  ('Ukay-Ukay', 'Small'),
+  ('Ukay-Ukay', 'Large')
+) as v(category, name)
+join public.business_categories c on c.name = v.category
+on conflict (category_id, name) do nothing;
+
+do $$
+declare
+  r record;
+  sched_id integer;
+  i integer;
+begin
+  for r in
+    select * from (values
+  ('Building Clearance', 'Building Permit', 'Residential', array['Building Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[500.00, 0.00, 0.00, 0.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18). Inspection Fee left at 0: the Revenue Code lists no inspection fee for this permit; Staff can enter 50 (small) or 100 (big) when an inspection is done.'),
+  ('Building Clearance', 'Building Permit', 'Commercial', array['Building Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[1000.00, 0.00, 0.00, 0.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18). Inspection Fee left at 0: the Revenue Code lists no inspection fee for this permit; Staff can enter 50 (small) or 100 (big) when an inspection is done.'),
+  ('Building Clearance', 'Renovation Permit', 'Residential', array['Building Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[300.00, 0.00, 0.00, 0.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18). Inspection Fee left at 0: the Revenue Code lists no inspection fee for this permit; Staff can enter 50 (small) or 100 (big) when an inspection is done.'),
+  ('Building Clearance', 'Renovation Permit', 'Commercial', array['Building Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[500.00, 0.00, 0.00, 0.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18). Inspection Fee left at 0: the Revenue Code lists no inspection fee for this permit; Staff can enter 50 (small) or 100 (big) when an inspection is done.'),
+  ('Fencing Clearance', 'Fencing Permit', '100 sq m', array['Fencing Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[300.00, 0.00, 0.00, 0.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18). To confirm with the barangay: Bracket edges not printed: is 100 "up to 100", 200 "101 to 200"? Inspection Fee left at 0: the Revenue Code lists no inspection fee for this permit; Staff can enter 50 (small) or 100 (big) when an inspection is done.'),
+  ('Fencing Clearance', 'Fencing Permit', '200 sq m', array['Fencing Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[400.00, 0.00, 0.00, 0.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18). To confirm with the barangay: Bracket edges not printed: is 100 "up to 100", 200 "101 to 200"? Inspection Fee left at 0: the Revenue Code lists no inspection fee for this permit; Staff can enter 50 (small) or 100 (big) when an inspection is done.'),
+  ('Fencing Clearance', 'Fencing Permit', '300 sq m and above', array['Fencing Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[500.00, 0.00, 0.00, 0.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18). To confirm with the barangay: Bracket edges not printed: is 100 "up to 100", 200 "101 to 200"? Inspection Fee left at 0: the Revenue Code lists no inspection fee for this permit; Staff can enter 50 (small) or 100 (big) when an inspection is done.'),
+  ('Excavation Clearance', null, null, array['Excavation Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee', 'Per linear meter: ₱5 each (enter the total)'], array[0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 5.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18). To confirm with the barangay: Handwritten question mark beside 5.00; unit assumed linear meter. Inspection Fee left at 0: the Revenue Code lists no inspection fee for this permit; Staff can enter 50 (small) or 100 (big) when an inspection is done. Per-unit fee: the line holds one unit; Staff enter the total for the actual number of units.'),
+  ('Lot Survey Clearance', null, null, array['Lot Survey Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[200.00, 0.00, 0.00, 0.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18). Inspection Fee left at 0: the Revenue Code lists no inspection fee for this permit; Staff can enter 50 (small) or 100 (big) when an inspection is done.'),
+  ('Electrical Clearance', null, null, array['Electrical Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[100.00, 0.00, 0.00, 0.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18). Inspection Fee left at 0: the Revenue Code lists no inspection fee for this permit; Staff can enter 50 (small) or 100 (big) when an inspection is done.'),
+  ('Water/MWSS Clearance', null, null, array['Water/MWSS Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[100.00, 0.00, 0.00, 0.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18). Inspection Fee left at 0: the Revenue Code lists no inspection fee for this permit; Staff can enter 50 (small) or 100 (big) when an inspection is done.'),
+  ('PODA Clearance', null, null, array['PODA Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[50.00, 0.00, 0.00, 0.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18). Inspection Fee left at 0: the Revenue Code lists no inspection fee for this permit; Staff can enter 50 (small) or 100 (big) when an inspection is done.'),
+  ('TODA Clearance', null, null, array['TODA Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[50.00, 0.00, 0.00, 0.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18). To confirm with the barangay: Or is our TODA Clearance the Terminal clearance - Tricycle (TODA) 500 further down? Inspection Fee left at 0: the Revenue Code lists no inspection fee for this permit; Staff can enter 50 (small) or 100 (big) when an inspection is done.'),
+  ('Business Clearance', 'Beauty Clinics', null, array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[1000.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Dental Clinics', null, array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[1000.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Dialysis Center', null, array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[2500.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Hospital', null, array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[2500.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Laboratory Clinics', null, array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[1000.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Lying-in Clinics', null, array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[1000.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Massage/Reflexology Clinics', null, array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[1000.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Medical Clinics', null, array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[1000.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Optical Clinics', null, array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[1000.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Veterinary Clinics', null, array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[1000.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'School: Pre-School', null, array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[1500.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'School: Elementary', null, array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[1500.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'School: High School', null, array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[1500.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'School: College', null, array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[1500.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'School: Vocational/Technical', null, array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[1500.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Bank', null, array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[2500.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Aluminum - Glass Supply', null, array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[1000.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Batching Plant', null, array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[2500.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Ceramics Figurine Making / Marble Engraving', null, array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[500.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Contractors (Gen. Contractors, Building & Others)', null, array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[2500.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Furniture Factory', null, array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[1750.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Garments Factory (Large Scale for Export)', null, array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[2500.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Garments Factory (Small Scale, Local & Subcon)', null, array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[1000.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Hollow Blocks Making', null, array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[1500.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Household Beauty Products Manufacturers / Repacking', null, array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[1500.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18). To confirm with the barangay: Handwritten line at the bottom of the page. Name as read in the group leader''s sheet ("Household Beauty Products Manufacturers / Repacking Nutrition", "Trading / Shooting"); fee 1,500 read the same in both. Confirm the wording.'),
+  ('Business Clearance', 'Leather Crafts & Handicrafts Making', null, array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[500.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Mineral Water Dealer & Outlet Refilling Station', null, array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[750.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Sash Factory', null, array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[1000.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Shoe Manufacturing (Big)', null, array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[2000.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Soap Making & Rug Making (Home)', null, array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[500.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Steel Fabrication & Iron Works', null, array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[1000.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Subcontractors (Building Construction & Others)', null, array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[1000.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Welding Shop', null, array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[500.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Beauty Parlor / Salon', 'Small', array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[500.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Beauty Parlor / Salon', 'Large', array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[1000.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Barber Shop', 'Small', array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[500.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Barber Shop', 'Large', array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[1000.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Battery Shop', null, array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[750.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Catering', null, array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[1000.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Courier', null, array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[2500.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Animal Breeding', null, array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[300.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Animal Impounding', null, array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[200.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Emission Testing', null, array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[1500.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Employment Agency & Manpower', null, array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[1000.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Film Studio', null, array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[500.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Funeral Parlor & Services', null, array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[1750.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Garden & Landscaping Contractors', null, array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[1000.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Gym (Sports/Physical Fitness)', 'Small', array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[500.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Gym (Sports/Physical Fitness)', 'Medium', array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[750.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Gym (Sports/Physical Fitness)', 'Large', array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[1000.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Laundry Shop - Per Unit', null, array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee', 'Per unit: ₱100 each (enter the total)'], array[500.00, 150.00, 50.00, 100.00, 0.00, 0.00, 100.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18). To confirm with the barangay: Printed "500.00/100.00": read as 500 plus 100 per unit (machine?). Per-unit fee: the line holds one unit; Staff enter the total for the actual number of units.'),
+  ('Business Clearance', 'Machine Shop', null, array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[1500.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Marketing - Online Teaching', null, array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[1750.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Memorial Park', null, array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[2500.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Notary Law Office', null, array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[1000.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Professional Services', null, array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[1000.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Spa', null, array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[750.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Tire Sales & Services', null, array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[1500.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Trading (Corporation & Partnership)', null, array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[1750.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Trading (Sole Proprietorship)', null, array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[1750.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Transport (Corporation & Partnership) Coop.', null, array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[2500.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Travel Agency', null, array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[1500.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Tutorial Center (Kumon, Japanese, Korean Lang. etc.)', null, array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[1000.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Upholstery Repair', null, array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[500.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Watch Repair Shop', 'Small', array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[300.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18). To confirm with the barangay: Page 22 Repair Shops lists Watch repair shop at 300 only. (The group leader''s sheet has 500 here: row shift; the photo shows 300/500.)'),
+  ('Business Clearance', 'Watch Repair Shop', 'Large', array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[500.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18). To confirm with the barangay: Page 22 Repair Shops lists Watch repair shop at 300 only. (The group leader''s sheet has 500 here: row shift; the photo shows 300/500.)'),
+  ('Business Clearance', 'WiFi Services', null, array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[1000.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Amusement Park/Recreational', 'Small', array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[750.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Amusement Park/Recreational', 'Large', array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[2000.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Bar & Restaurant', null, array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[2500.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Billiard Hall (Per Table)', null, array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee', 'Per table: ₱300 each (enter the total)'], array[0.00, 150.00, 50.00, 100.00, 0.00, 0.00, 300.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18). Per-unit fee: the line holds one unit; Staff enter the total for the actual number of units.'),
+  ('Business Clearance', 'Pool Table (Per Table)', null, array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee', 'Per table: ₱150 each (enter the total)'], array[0.00, 150.00, 50.00, 100.00, 0.00, 0.00, 150.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18). Per-unit fee: the line holds one unit; Staff enter the total for the actual number of units.'),
+  ('Business Clearance', 'Events Place', null, array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[2500.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Karaoke or Video Machines (Per Unit)', null, array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee', 'Per unit: ₱300 each (enter the total)'], array[0.00, 150.00, 50.00, 100.00, 0.00, 0.00, 300.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18). Per-unit fee: the line holds one unit; Staff enter the total for the actual number of units.'),
+  ('Business Clearance', 'Resort', null, array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[2500.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Apartments/Houses (Per Unit)', null, array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee', 'Per unit: ₱300 each (enter the total)'], array[0.00, 150.00, 50.00, 100.00, 0.00, 0.00, 300.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18). Per-unit fee: the line holds one unit; Staff enter the total for the actual number of units.'),
+  ('Business Clearance', 'Buildings (Per Unit)', null, array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee', 'Per unit: ₱300 each (enter the total)'], array[0.00, 150.00, 50.00, 100.00, 0.00, 0.00, 300.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18). Per-unit fee: the line holds one unit; Staff enter the total for the actual number of units.'),
+  ('Business Clearance', 'Bicycle Rental (Per Unit)', null, array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee', 'Per unit: ₱50 each (enter the total)'], array[0.00, 150.00, 50.00, 100.00, 0.00, 0.00, 50.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18). Per-unit fee: the line holds one unit; Staff enter the total for the actual number of units.'),
+  ('Business Clearance', 'Cargo Trucks (Per Unit)', null, array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee', 'Per unit: ₱350 each (enter the total)'], array[0.00, 150.00, 50.00, 100.00, 0.00, 0.00, 350.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18). Per-unit fee: the line holds one unit; Staff enter the total for the actual number of units.'),
+  ('Business Clearance', 'Delivery Trucks (6 Wheeler)', null, array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee', 'Per unit: ₱400 each (enter the total)'], array[0.00, 150.00, 50.00, 100.00, 0.00, 0.00, 400.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18). Per-unit fee: the line holds one unit; Staff enter the total for the actual number of units.'),
+  ('Business Clearance', 'FX, Van & Others (Per Unit)', null, array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee', 'Per unit: ₱400 each (enter the total)'], array[0.00, 150.00, 50.00, 100.00, 0.00, 0.00, 400.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18). Per-unit fee: the line holds one unit; Staff enter the total for the actual number of units.'),
+  ('Business Clearance', 'Garage/Transport Service (Per Unit)', null, array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee', 'Per unit: ₱400 each (enter the total)'], array[0.00, 150.00, 50.00, 100.00, 0.00, 0.00, 400.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18). Per-unit fee: the line holds one unit; Staff enter the total for the actual number of units.'),
+  ('Business Clearance', 'Hotel (Motel, Lodging Inn, Apartelle) Per Unit', null, array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee', 'Per unit: ₱200 each (enter the total)'], array[0.00, 150.00, 50.00, 100.00, 0.00, 0.00, 200.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18). Per-unit fee: the line holds one unit; Staff enter the total for the actual number of units.'),
+  ('Business Clearance', 'Heavy Equipment (Per Unit)', null, array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee', 'Per unit: ₱500 each (enter the total)'], array[0.00, 150.00, 50.00, 100.00, 0.00, 0.00, 500.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18). Per-unit fee: the line holds one unit; Staff enter the total for the actual number of units.'),
+  ('Business Clearance', 'Lessor', '1–4 Units', array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[1000.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Lessor', '5–8 Units', array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[1500.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Lessor', '9+ Units', array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[2500.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Mobile & Sound System Rental', null, array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[1000.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Public Utility Jeep (Per Unit)', null, array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee', 'Per unit: ₱500 each (enter the total)'], array[0.00, 150.00, 50.00, 100.00, 0.00, 0.00, 500.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18). Per-unit fee: the line holds one unit; Staff enter the total for the actual number of units.'),
+  ('Business Clearance', 'Trucks (Hauling Services) 10 Wheelers - Per Unit', null, array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee', 'Per unit: ₱500 each (enter the total)'], array[0.00, 150.00, 50.00, 100.00, 0.00, 0.00, 500.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18). Per-unit fee: the line holds one unit; Staff enter the total for the actual number of units.'),
+  ('Business Clearance', 'Brake Bonding Shop', null, array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[500.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Calibration Shop / Hydraulic Services', null, array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[1000.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Cellphone Repair Shop', null, array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[500.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Computer Repair Shop', null, array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[500.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Electronic Repair Shop', null, array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[1000.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Radiator Shop', null, array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[500.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Refrigeration Shop (Aircon & Ref)', null, array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[500.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Shoe Repair Shop', null, array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[500.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Tailoring/Dress Shop', 'Small', array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[500.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Tailoring/Dress Shop', 'Large', array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[800.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Upholstery Shop / Repair', null, array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[500.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Vulcanizing Shop', null, array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[500.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Ambulant / Mobile Vendor', null, array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[250.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Advertising Shop/Printing Press', 'Small', array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[500.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Advertising Shop/Printing Press', 'Large', array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[1000.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Appliance Store', null, array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[2500.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Auto & Motor Parts & Repair', null, array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[1750.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Bakery', 'Small', array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[500.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Bakery', 'Medium', array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[750.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Bakery', 'Large', array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[1000.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Bakeshop (Goldilocks, Red Ribbon etc.)', null, array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[2500.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Balloons & Party Needs w/ Videoke (Per Unit)', null, array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee', 'Per videoke unit: ₱300 each (enter the total)'], array[1000.00, 150.00, 50.00, 100.00, 0.00, 0.00, 300.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18). To confirm with the barangay: Printed "1,000.00/300.00": read as 1,000 plus 300 per videoke unit. Per-unit fee: the line holds one unit; Staff enter the total for the actual number of units.'),
+  ('Business Clearance', 'Bazaars/Boutiques', null, array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[500.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Bicycle Parts/Store', null, array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[1000.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Billboards/Streamers/Signages', null, array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[1500.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Bookstore - National etc. (Large)', null, array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[2500.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Carinderia', 'Small', array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[500.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Carinderia', 'Large', array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[1000.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Carwash', null, array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[800.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Cellphone - Load Station & Repair', null, array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[500.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Computer Shop (Per Unit)', null, array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee', 'Per computer: ₱150 each (enter the total)'], array[0.00, 150.00, 50.00, 100.00, 0.00, 0.00, 150.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18). To confirm with the barangay: Only 150 printed: per unit with no base fee? Per-unit fee: the line holds one unit; Staff enter the total for the actual number of units.'),
+  ('Business Clearance', 'Corporation/Holdings', null, array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[2500.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Crushing Plant', null, array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[2500.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Direct Selling/Online Selling', null, array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[500.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Drugstore', null, array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[1500.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Electronic Shop', null, array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[1750.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Enterprises', null, array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[1750.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Foodstall', null, array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[500.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Footwear', 'Small', array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[500.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Footwear', 'Large', array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[1000.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Furniture Store', null, array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[1750.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Gasoline Station', null, array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[2500.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Gift Shop', null, array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[500.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Grains Sales Outlet', 'Retailer', array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[500.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Grains Sales Outlet', 'Dealer', array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[1000.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Grains Sales Outlet', 'Both Categories', array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[1000.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Grilling Station - Isaw etc.', null, array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[300.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Groceries/Gen. Merchandise', 'Small', array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[1000.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18). To confirm with the barangay: Printed 1,000/2,000 with no size labels; Small/Large assumed.'),
+  ('Business Clearance', 'Groceries/Gen. Merchandise', 'Large', array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[2000.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18). To confirm with the barangay: Printed 1,000/2,000 with no size labels; Small/Large assumed.'),
+  ('Business Clearance', 'Guns & Ammunitions Sales Center', null, array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[1750.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Hardware, Lumber & Construction Supply', null, array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[1750.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Incorporation', null, array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[2500.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Junkshop', 'Small', array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[1500.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Junkshop', 'Large', array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[2000.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Lending', null, array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[1500.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Livestock and Poultry Supply', null, array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[1000.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Lotto Outlet', null, array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[750.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'LPG Dealer/Gasul Delivery & Refilling Station', null, array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[1500.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Market (Meat, Chicken, Vegetable etc.) - Per Stall', null, array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee', 'Per stall: ₱500 each (enter the total)'], array[0.00, 150.00, 50.00, 100.00, 0.00, 0.00, 500.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18). Per-unit fee: the line holds one unit; Staff enter the total for the actual number of units.'),
+  ('Business Clearance', 'Music Center', null, array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[500.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Motorcycle Sales Center', null, array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[2500.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Motorcycle Parts Supply', null, array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[1000.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Office & School Supplies', 'Small', array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[500.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Office & School Supplies', 'Big', array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[750.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Optical Sales Center', null, array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[500.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Paint Center', null, array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[1000.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Paintings & Photo Gallery', 'Big', array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[500.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Paintings & Photo Gallery', 'Small', array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[300.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Pasalubong Stores', null, array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[500.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Pawnshops', null, array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[1500.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Peddlers (Taho, Ice Cream Vendors etc.)', null, array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[250.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Pet Shop & Supplies', null, array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[750.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Photo Center & Supplies / Video Coverage', null, array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[1000.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Photo Copying / Xerox Center (Clearance & Per Unit)', null, array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee', 'Per unit: ₱150 each (enter the total)'], array[200.00, 150.00, 50.00, 100.00, 0.00, 0.00, 150.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18). To confirm with the barangay: Printed "Clearance & per unit 200.00/150.00" on the next line: read as 200 plus 150 per machine. Per-unit fee: the line holds one unit; Staff enter the total for the actual number of units.'),
+  ('Business Clearance', 'Piggery/Poultry', null, array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[2000.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Plasticware Store', null, array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[500.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Pot or Plants', null, array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[500.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Poultry & Livestock Supply', null, array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[1000.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Real Estate Developer', null, array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[2500.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'RTW', 'Small', array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[500.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'RTW', 'Large', array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[750.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Sari-Sari Store', 'Small', array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[100.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Sari-Sari Store', 'Medium', array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[300.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Sari-Sari Store', 'Large', array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[500.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Seasonal Stall & Inspection Fee', null, array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[250.00, 150.00, 100.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Softdrinks Dealer & Wholesaler', null, array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[1000.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Stall Rental (Per Unit)', null, array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee', 'Per stall: ₱300 each (enter the total)'], array[0.00, 150.00, 50.00, 100.00, 0.00, 0.00, 300.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18). Per-unit fee: the line holds one unit; Staff enter the total for the actual number of units.'),
+  ('Business Clearance', 'Supermarket', null, array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[2000.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Trading/Merchandising', null, array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[1750.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Toy Store', 'Small', array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[500.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Toy Store', 'Large', array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[750.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Ukay-Ukay', 'Small', array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[500.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Ukay-Ukay', 'Large', array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[750.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Video Game Shop (Per Unit)', null, array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee', 'Per unit: ₱150 each (enter the total)'], array[500.00, 150.00, 50.00, 100.00, 0.00, 0.00, 150.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18). To confirm with the barangay: Printed "500.00/150.00": read as 500 plus 150 per unit. Per-unit fee: the line holds one unit; Staff enter the total for the actual number of units.'),
+  ('Business Clearance', 'Watch Store', null, array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[500.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).'),
+  ('Business Clearance', 'Wine, Liquor & Beverages Store', null, array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[750.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18).')
+    ) as v(clearance_type, category, classification, names, amounts, notes)
+  loop
+    sched_id := null;
+    select s.id into sched_id
+    from public.fee_schedules s
+    join public.clearance_types t on t.id = s.clearance_type_id and t.name = r.clearance_type
+    left join public.business_categories c on c.id = s.business_category_id
+    left join public.business_classifications k on k.id = s.classification_id
+    where s.effective_date = date '2026-11-18'
+      and s.ordinance_reference = 'Revised Revenue Code of Barangay San Jose, Chapter V (Sangguniang Barangay session, 3 December 2019)'
+      and c.name is not distinct from r.category
+      and k.name is not distinct from r.classification
+    limit 1;
+
+    if sched_id is null then
+      insert into public.fee_schedules (clearance_type_id, business_category_id, classification_id, effective_date, ordinance_reference, reason_notes, created_by)
+      select t.id, c.id, k.id, date '2026-11-18', 'Revised Revenue Code of Barangay San Jose, Chapter V (Sangguniang Barangay session, 3 December 2019)', r.notes, null
+      from public.clearance_types t
+      left join public.business_categories c on c.name = r.category
+      left join public.business_classifications k on k.category_id = c.id and k.name = r.classification
+      where t.name = r.clearance_type
+      returning id into sched_id;
+    end if;
+
+    if sched_id is null then
+      raise exception 'Fee schedule could not be created for % / % / %', r.clearance_type, r.category, r.classification;
+    end if;
+
+    if not exists (select 1 from public.fee_schedule_items where fee_schedule_id = sched_id) then
+      for i in 1 .. array_length(r.names, 1) loop
+        insert into public.fee_schedule_items (fee_schedule_id, component_name, amount)
+        values (sched_id, r.names[i], r.amounts[i]);
+      end loop;
+    end if;
+  end loop;
+end $$;
