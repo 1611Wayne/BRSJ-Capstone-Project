@@ -57,6 +57,35 @@ export function feeCategoryOptions(schedules: FeeSchedule[], type: string, date 
     if (s.classification) found.get(s.category)!.add(s.classification);
   }
   const rank = (size: string) => { const i = ['Small', 'Medium', 'Large', 'Big'].indexOf(size); return i < 0 ? 9 : i; };
+  return sortedOptions(found, rank);
+}
+// Business size from the employees the Applicant entered (barangay, 2026-11-18): the MSME bands without Micro, so
+// 1–99 Small, 100–199 Medium, 200+ Large; where the code has only two sizes, 100+ is the larger one (Large or Big).
+// Other size lists (Lessor units, Retailer / Dealer, fencing area) are not about employees: no suggestion.
+export function suggestedSize(sizes: string[], employees: number): string | undefined {
+  const has = (n: string) => sizes.includes(n);
+  if (!has('Small')) return undefined;
+  if (has('Medium') && has('Large')) return employees >= 200 ? 'Large' : employees >= 100 ? 'Medium' : 'Small';
+  const larger = has('Large') ? 'Large' : has('Big') ? 'Big' : undefined;
+  if (!larger || sizes.length !== 2) return undefined;
+  return employees >= 100 ? larger : 'Small';
+}
+export const employeesOf = (a: Pick<Application, 'hasEmployees' | 'employeeCount'>) => a.hasEmployees ? Math.max(0, Number(a.employeeCount) || 0) : 0;
+// The amounts an assessment starts from (Staff may still change them; changes are logged). FT-1, confirmed by the
+// barangay 2026-11-18: a NEW business pays the Plate and the Inspection Fee (50 small, 100 big: 100+ employees), no
+// Sticker; a RENEWAL pays the Sticker, no Plate and no Inspection Fee (Staff add an inspection when one is done).
+// An Inspection Fee the schedule sets to anything but the standard 50 (the seasonal stall's 100) is kept as it is.
+export function assessmentDefaults(a: Pick<Application, 'clearanceType' | 'applicationType' | 'hasEmployees' | 'employeeCount'>, schedule: Pick<FeeSchedule, 'items'>): number[] {
+  if (a.clearanceType !== 'Business Clearance') return schedule.items.map(i => i.amount);
+  const renewal = a.applicationType === 'Renewal';
+  return schedule.items.map(i => {
+    if (i.name === 'Plate') return renewal ? 0 : i.amount;
+    if (i.name === 'Sticker') return renewal ? i.amount : 0;
+    if (i.name === 'Inspection Fee') return renewal ? 0 : i.amount === 50 ? (employeesOf(a) >= 100 ? 100 : 50) : i.amount;
+    return i.amount;
+  });
+}
+function sortedOptions(found: Map<string, Set<string>>, rank: (size: string) => number) {
   return [...found].sort(([a], [b]) => a.localeCompare(b)).map(([name, sizes]) => sizes.size
     ? { name, classifications: [...sizes].sort((a, b) => rank(a) - rank(b) || a.localeCompare(b, undefined, { numeric: true })).map(size => ({ name: size })) }
     : { name });
@@ -333,12 +362,14 @@ export function transition(state: PortalState, command: Command, now = new Date(
     requireThat(!categories.length || categories.some(c => c.name === command.category && (c.classifications ? c.classifications.some(k => k.name === command.classification) : !command.classification)), 'Choose a fee category (and size) for this clearance type.');
     const schedule = activeSchedule(s.schedules, a.clearanceType, command.category, command.classification);
     requireThat(schedule, 'No effective fee schedule matches this selection.');
-    const amounts = command.amounts || schedule.items.map(item => item.amount);
+    const defaults = assessmentDefaults(a, schedule);
+    const amounts = command.amounts || defaults;
     requireThat(amounts.length === schedule.items.length && amounts.every(amount => typeof amount === 'number' && Number.isFinite(amount) && amount >= 0 && Number.isSafeInteger(Math.round(amount * 100)) && Math.abs(amount * 100 - Math.round(amount * 100)) < 0.000001), 'Enter a valid non-negative amount with at most two decimal places for every fee component.');
     const items = schedule.items.map((item, index) => ({ ...item, amount: amounts[index] }));
     const totalCents = items.reduce((sum, item) => sum + Math.round(item.amount * 100), 0);
     requireThat(Number.isSafeInteger(totalCents), 'The total assessment amount is too large.');
-    if (items.some((item, index) => item.amount !== schedule.items[index].amount)) log('Assessment fee amounts adjusted', reference, JSON.stringify(schedule.items), JSON.stringify(items));
+    // Logged when Staff change an amount from where it starts (the schedule, with the New / Renewal and size rules applied).
+    if (items.some((item, index) => item.amount !== defaults[index])) log('Assessment fee amounts adjusted', reference, JSON.stringify(schedule.items.map((item, index) => ({ ...item, amount: defaults[index] }))), JSON.stringify(items));
     a.assessment = { items, total: totalCents/100, category: schedule.category, classification: schedule.classification, scheduleId: schedule.id, assessedBy: fullName(actor), assessedAt: now, ordinance: schedule.ordinance };
     a.status = 'Awaiting OR'; a.staffEncoder = fullName(actor); log('Assessment confirmed', reference, original.status, JSON.stringify(a.assessment));
     notify(a.residentId, reference, 'assessment_ready', `Your assessment is ready: ₱${a.assessment.total.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}. Pay at the Municipal Treasury, then upload a photo of your receipt here, or bring the receipt to the barangay. Your reference number is ${reference}.`);

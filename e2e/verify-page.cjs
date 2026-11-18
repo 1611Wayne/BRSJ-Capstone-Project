@@ -16,7 +16,7 @@ const at = '2026-09-07T02:30:12.000Z', ref = 'SJ-2026-000123', photo = { require
 let s = structuredClone({ users: mockUsers, applications: mockApplications, schedules: mockFeeSchedules, audits: [], notifications: [], currentUserId: 'staff-maria' });
 s = transition(s, { type: 'assess', reference: ref, category: 'Sari-Sari Store', classification: 'Medium' }, at);
 s = transition({ ...s, currentUserId: 'resident-maria' }, { type: 'receiptPhoto', reference: ref, photo }, at);
-s = transition({ ...s, currentUserId: 'staff-maria' }, { type: 'verifyPayment', reference: ref, orNumber: '123456', orDate: '2026-09-06', amountPaid: 600 }, at);
+s = transition({ ...s, currentUserId: 'staff-maria' }, { type: 'verifyPayment', reference: ref, orNumber: '123456', orDate: '2026-09-06', amountPaid: 500 }, at);
 (async () => {
   const b = await chromium.launch({ ...(CHANNEL ? { channel: CHANNEL } : {}), headless: true }); const p = await (await b.newContext()).newPage();
   await p.addInitScript(([k, v]) => sessionStorage.setItem(k, v), ['san-jose-prototype-v2', JSON.stringify({ ...s, currentUserId: null })]);

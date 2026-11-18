@@ -33,7 +33,7 @@ b = T(b, 'staff-maria', { type: 'assess', reference: ref, category: 'Sari-Sari S
 b = T(b, 'resident-maria', { type: 'receiptPhoto', reference: ref, photo }, '2026-09-07T01:40:00.000Z');
 b = T(b, 'staff-maria', { type: 'returnPayment', reference: ref, reason: 'The OR number is cut off.' }, '2026-09-07T01:50:00.000Z');
 b = T(b, 'resident-maria', { type: 'receiptPhoto', reference: ref, photo }, '2026-09-07T02:00:00.000Z');
-b = T(b, 'staff-maria', { type: 'verifyPayment', reference: ref, orNumber: '123456', orDate: '2026-09-06', amountPaid: 600 }, '2026-09-07T02:10:00.000Z');
+b = T(b, 'staff-maria', { type: 'verifyPayment', reference: ref, orNumber: '123456', orDate: '2026-09-06', amountPaid: 500 }, '2026-09-07T02:10:00.000Z');
 const stateB = as(b, 'resident-maria');
 
 const results = [], errors = [];
@@ -99,7 +99,7 @@ const setUser = (page, id) => page.evaluate(([k, id]) => { const s = JSON.parse(
   const items = await page.locator('main ul > li').allInnerTexts();
   check('the inbox lists all five, newest first', items.length === 5 && /Your clearance is ready/.test(items[0]) && /upload your receipt again/.test(items[1]) && /assessment is ready/.test(items[2]) && /made the correction/.test(items[3]) && /was returned/.test(items[4]), items.map(t => t.replace(/\s+/g, ' ').slice(0, 40)).join(' | '));
   check('each is marked New on the first visit', items.every(t => /\bNew\b/.test(t)));
-  check('the assessment notice has the fee and says where to pay', items[2].includes('₱600.00') && items[2].includes('Municipal Treasury'));
+  check('the assessment notice has the fee and says where to pay', items[2].includes('₱500.00') && items[2].includes('Municipal Treasury'));
   check('the clearance notice says to claim the stamped original at the monitoring office', items[0].includes('monitoring office') && items[0].includes('backup'));
   await shot(page, 'notify-4-inbox-journey');
   await page.click('main ul > li:first-child a:has-text("Open application")');

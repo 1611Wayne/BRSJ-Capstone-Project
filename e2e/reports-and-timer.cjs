@@ -53,7 +53,7 @@ const shot = (page, n) => page.screenshot({ path: path.join(__dirname, 'shots', 
   await page.waitForSelector('[role=alert]');
   check('a receipt that shows another amount is refused with a plain message', (await page.locator('[role=alert]').first().innerText()).includes('Amount Paid must match the assessed amount'));
   check('and the request is still For Checking (nothing was released)', !(await page.locator('body').innerText()).includes('Checked by Maria Staff'));
-  await amount.fill('600');
+  await amount.fill('500');
   await shot(page, 'report-1-staff-verify-form');
   await btn.click();
   await page.waitForSelector('text=Checked by Maria Staff');
@@ -76,7 +76,7 @@ const shot = (page, n) => page.screenshot({ path: path.join(__dirname, 'shots', 
   check('Daily OR Summary columns follow the manuscript', ['OR Number', 'OR Date', 'Amount Paid', 'Clearance Generated', 'Processing Staff'].every(h => headers.some(x => x.includes(h))), headers.join(' | '));
   const row = page.locator('tr', { hasText: ref });
   const rowText = await row.count() ? await row.first().innerText() : '';
-  check('the payment is listed on today (the day Staff verified), with OR number, OR date, amount and Staff', /123456/.test(rowText) && /2026-09-06/.test(rowText) && /600\.00/.test(rowText) && /Maria Staff/.test(rowText), rowText.replace(/\s+/g, ' ').slice(0, 140));
+  check('the payment is listed on today (the day Staff verified), with OR number, OR date, amount and Staff', /123456/.test(rowText) && /2026-09-06/.test(rowText) && /500\.00/.test(rowText) && /Maria Staff/.test(rowText), rowText.replace(/\s+/g, ' ').slice(0, 140));
   await shot(page, 'report-3-daily-or');
 
   // 4. Admin dashboard cards

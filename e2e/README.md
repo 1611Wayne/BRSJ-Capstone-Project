@@ -32,6 +32,8 @@ Each script prints PASS or FAIL for every check, then "N/N checks passed", and e
 
 ## Notes
 
+- `fees-new-renewal.cjs` checks FT-1 and the size suggestion on the assessment page: a new business starts with Plate and Inspection Fee (100 for 100+ employees) and no Sticker, a renewal with the Sticker only, and the size is pre-selected from the employee count (1-99 Small, 100-199 Medium, 200+ Large) while Staff can still change it.
+
 - `reversion-filter.cjs` checks FT-24 clearance-type filtering alongside date/Admin/action filters, historical type handling, CSV and print.
 
 - `staff-reports.cjs` checks FT-21 Staff report navigation, filtering, CSV/print, parity with Admin reports and role restrictions.

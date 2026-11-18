@@ -15,7 +15,7 @@ act('resident-maria', { type: 'requestCorrection', reference: ref, message: 'FT-
 act('staff-maria', { type: 'resolveCorrection', reference: ref, note: 'Checked' }, 2);
 act('staff-maria', { type: 'assess', reference: ref, category: 'Sari-Sari Store', classification: 'Medium' }, 3);
 act('resident-maria', { type: 'receiptPhoto', reference: ref, photo: { requirement: 'OR', name: 'receipt.jpg', type: 'image/jpeg', size: 100, status: 'Pending Review' } }, 4);
-act('staff-maria', { type: 'verifyPayment', reference: ref, orNumber: 'FT10-123', orDate: '2026-09-06', amountPaid: 600 }, 5);
+act('staff-maria', { type: 'verifyPayment', reference: ref, orNumber: 'FT10-123', orDate: '2026-09-06', amountPaid: 500 }, 5);
 let checks = 0;
 const check = (name, value) => { assert.ok(value, name); checks++; console.log('PASS ' + name); };
 (async () => {
