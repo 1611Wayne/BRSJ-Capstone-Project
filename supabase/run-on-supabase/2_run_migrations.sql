@@ -1,6 +1,6 @@
 -- STEP 2 of 3. THE MIGRATIONS. Paste ALL of this into the Supabase SQL Editor and click Run.
--- Generated 2026-10-18 from the migration files below (parts 10 and 11 added 2026-11-06, part 12 on 2026-11-08, part 13 on 2026-11-11, parts 14 and 15 on 2026-11-12, parts 16, 17 and 18 on 2026-11-13, part 19 on 2026-11-14, part 20 on 2026-11-18), unchanged except that migration 6 was made re-runnable.
--- If you already ran an earlier version of this script, run this one again: it is safe. Parts 10 (the original issue date of a withdrawn clearance), 11 (a daily cap on sign-in texts), 12 (inspection scheduling), 13 (Staff and Admin notices), 14 (several fee versions on one day), 15 (no direct writes that skip the server), 16 (the audit log can only grow), 17 (ID checks and spam flags), 18 (Staff and Admin open files only through the server, so every opening is logged), 19 (the records-requests table: a resident asks for a copy of their records) and 20 (the REAL fees from the 2019 Revenue Code, replacing the SAMPLE fees) are new.
+-- Generated 2026-10-18 from the migration files below (parts 10 and 11 added 2026-11-06, part 12 on 2026-11-08, part 13 on 2026-11-11, parts 14 and 15 on 2026-11-12, parts 16, 17 and 18 on 2026-11-13, part 19 on 2026-11-14, parts 20 and 21 on 2026-11-18), unchanged except that migration 6 was made re-runnable.
+-- If you already ran an earlier version of this script, run this one again: it is safe. Parts 10 (the original issue date of a withdrawn clearance), 11 (a daily cap on sign-in texts), 12 (inspection scheduling), 13 (Staff and Admin notices), 14 (several fee versions on one day), 15 (no direct writes that skip the server), 16 (the audit log can only grow), 17 (ID checks and spam flags), 18 (Staff and Admin open files only through the server, so every opening is logged), 19 (the records-requests table: a resident asks for a copy of their records) 20 (the REAL fees from the 2019 Revenue Code, replacing the SAMPLE fees) and 21 (the barangay's answers: School: Review Center 1,500 and confirmed notes) are new.
 -- Parts 6 and 7 are the security rules: who may read each table, and three private file buckets (IDs, documents, receipts).
 -- Run it as the default role (postgres). The editor may warn about "destructive operations" because the script drops and
 -- re-creates some CHECK rules: that is expected, confirm it.
@@ -18,7 +18,7 @@
 -- Afterwards, run STEP 3 (3_after_check.sql).
 
 -- ==========================================================================
--- PART 1 OF 20: 20261005000000_correct_clearance_types.sql
+-- PART 1 OF 21: 20261005000000_correct_clearance_types.sql
 -- ==========================================================================
 -- Correct the clearance_types catalog: 13 -> 9, confirmed with the real client
 -- Generated 2026-10-05. Depends on 20260923010000_seed_clearance_types.sql.
@@ -65,7 +65,7 @@ where name in (
 );
 
 -- ==========================================================================
--- PART 2 OF 20: 20261006000000_add_business_subcategory.sql
+-- PART 2 OF 21: 20261006000000_add_business_subcategory.sql
 -- ==========================================================================
 -- Add the Applicant's optional Ambulant / Lessor indication to applications
 -- Generated 2026-10-06. Depends on 20260922000000_init_schema.sql.
@@ -102,7 +102,7 @@ comment on column public.applications.business_subcategory is
   'Optional. What the Applicant indicated at intake for a Business Clearance: Ambulant or Lessor (Paupahan); NULL = Business Clearance only. A hint for Staff, not the final classification — that is decided at assessment.';
 
 -- ==========================================================================
--- PART 3 OF 20: 20261006010000_sync_schema_with_frontend.sql
+-- PART 3 OF 21: 20261006010000_sync_schema_with_frontend.sql
 -- ==========================================================================
 -- Sync the database with everything the frontend prototype has built since 2026-09-23
 -- Generated 2026-10-06. Depends on ALL of the earlier migrations, in particular
@@ -355,7 +355,7 @@ comment on column public.correction_requests.resident_id is
   'The Applicant who sent the request (the frontend''s requestedBy). The Staff who resolved it is resolved_by.';
 
 -- ==========================================================================
--- PART 4 OF 20: 20261016000000_receipt_confirmed_by.sql
+-- PART 4 OF 21: 20261016000000_receipt_confirmed_by.sql
 -- ==========================================================================
 -- Record WHO confirmed a release at the counter
 -- Generated 2026-10-16. Depends on 20260922000000_init_schema.sql (receipt_confirmations, profiles).
@@ -376,7 +376,7 @@ comment on column public.receipt_confirmations.confirmed_by is
   'The Staff member who recorded the release of the printed original at the counter. NULL = the Applicant confirmed receipt themselves.';
 
 -- ==========================================================================
--- PART 5 OF 20: 20261016010000_notifications.sql
+-- PART 5 OF 21: 20261016010000_notifications.sql
 -- ==========================================================================
 -- In-app notifications for Applicants
 -- Generated 2026-10-16. Depends on 20260922000000_init_schema.sql (profiles, applications).
@@ -422,7 +422,7 @@ comment on table public.notifications is
   'In-app notices for an Applicant (not SMS). Written by the server when Staff act on the Applicant''s application; the Applicant reads them and marks them read. An unread notice with the same dedupe_key is updated instead of repeated.';
 
 -- ==========================================================================
--- PART 6 OF 20: 20261017000000_rls_policies_remaining_tables.sql
+-- PART 6 OF 21: 20261017000000_rls_policies_remaining_tables.sql
 -- ==========================================================================
 -- RLS policies for the remaining tables (everything except profiles and applications, which have their own
 -- policies in 20260923020000). Generated 2026-10-17. Depends on all earlier migrations.
@@ -646,7 +646,7 @@ create trigger notifications_owner_only_marks_read
   for each row execute function public.notifications_owner_only_marks_read();
 
 -- ==========================================================================
--- PART 7 OF 20: 20261017010000_storage_buckets_and_policies.sql
+-- PART 7 OF 21: 20261017010000_storage_buckets_and_policies.sql
 -- ==========================================================================
 -- Storage: three PRIVATE buckets and who may read and upload into each. Generated 2026-10-17.
 -- Depends on 20261017000000_rls_policies_remaining_tables.sql (the helper functions).
@@ -783,7 +783,7 @@ with check (
 );
 
 -- ==========================================================================
--- PART 8 OF 20: 20261018000000_reference_numbers.sql
+-- PART 8 OF 21: 20261018000000_reference_numbers.sql
 -- ==========================================================================
 -- Request reference numbers made by the database: SJ-YYYY-######, one counter per year (Manila time), starting at 1.
 -- Generated 2026-10-18. Depends on 20261017000000_rls_policies_remaining_tables.sql.
@@ -836,7 +836,7 @@ grant execute on function public.next_reference_no() to authenticated, service_r
 alter table public.applications alter column reference_no set default public.next_reference_no();
 
 -- ==========================================================================
--- PART 9 OF 20: 20261018010000_sample_fee_schedules.sql
+-- PART 9 OF 21: 20261018010000_sample_fee_schedules.sql
 -- ==========================================================================
 -- SAMPLE fee data so Staff can test the assessment end to end. Generated 2026-10-18 from the prototype's own data
 -- (data/revenueCodeData.ts and data/mockFeeSchedules.ts), so the numbers are exactly the ones the prototype shows.
@@ -960,7 +960,7 @@ begin
 end $$;
 
 -- ==========================================================================
--- PART 10 OF 20: 20261106000000_clearance_revised_from.sql
+-- PART 10 OF 21: 20261106000000_clearance_revised_from.sql
 -- ==========================================================================
 -- Migration 14: keep a withdrawn clearance's original issue date on the application (IN PROGRESS, 2026-11-06).
 --
@@ -977,7 +977,7 @@ comment on column public.applications.clearance_revised_from is
   'Original issue date of a clearance withdrawn by an Admin correction; the next clearance is marked REVISED with it.';
 
 -- ==========================================================================
--- PART 11 OF 20: 20261106010000_sms_daily_cap.sql
+-- PART 11 OF 21: 20261106010000_sms_daily_cap.sql
 -- ==========================================================================
 -- Migration 15: a daily cap on sign-in texts (IN PROGRESS, 2026-11-06).
 --
@@ -1035,7 +1035,7 @@ revoke all on function public.claim_sms_send(text, integer, integer) from public
 grant execute on function public.claim_sms_send(text, integer, integer) to service_role;
 
 -- ==========================================================================
--- PART 12 OF 20: 20261108000000_inspection_scheduling.sql
+-- PART 12 OF 21: 20261108000000_inspection_scheduling.sql
 -- (its own begin; and commit; lines are left out here: this whole script already runs as one piece)
 -- ==========================================================================
 -- Migration 16: inspection scheduling (FT-9). Written by jayemm01 (PR #6, merged 2026-11-08) as
@@ -1070,7 +1070,7 @@ create index if not exists inspection_reports_pending_schedule_idx
   where status = 'Pending' and scheduled_at is not null;
 
 -- ==========================================================================
--- PART 13 OF 20: 20261111000000_team_notification_events.sql
+-- PART 13 OF 21: 20261111000000_team_notification_events.sql
 -- ==========================================================================
 -- Migration 17: in-app notices for Staff and Admin (FT-10) (IN PROGRESS, 2026-11-11).
 --
@@ -1095,7 +1095,7 @@ comment on table public.notifications is
   'In-app notices (not SMS). Applicants get notices about their own requests; Staff and Admin get team notices (new submission, correction requested, payment waiting, clearance waiting for release). Written only by the server; each person reads and marks read only their own. An unread notice with the same dedupe_key is updated instead of repeated.';
 
 -- ==========================================================================
--- PART 14 OF 20: 20261112000000_fee_versions_same_day.sql
+-- PART 14 OF 21: 20261112000000_fee_versions_same_day.sql
 -- ==========================================================================
 -- Migration 18: several fee schedule versions on the same effective date (IN PROGRESS, 2026-11-12).
 --
@@ -1127,7 +1127,7 @@ comment on table public.fee_schedules is
   'Append-only version history. The row with the latest effective_date <= today (and, on the same date, the latest created_at), for a given (clearance_type, category, classification), is the active one — chosen in application code, not here. Several versions may share an effective date (migration 18).';
 
 -- ==========================================================================
--- PART 15 OF 20: 20261112010000_close_direct_writes.sql
+-- PART 15 OF 21: 20261112010000_close_direct_writes.sql
 -- ==========================================================================
 -- Migration 19: close the direct-write back doors (DB-6 part 2) (IN PROGRESS, 2026-11-12).
 --
@@ -1197,7 +1197,7 @@ comment on policy "people fill in their own profile" on public.profiles is
   'Registration only: a new resident fills in their own blank address, mobile number and ID file (column grants + trigger profiles_fill_in_only). Every other profile change goes through the server (migration 19).';
 
 -- ==========================================================================
--- PART 16 OF 20: 20261113000000_audit_log_append_only.sql
+-- PART 16 OF 21: 20261113000000_audit_log_append_only.sql
 -- ==========================================================================
 -- Migration 20: the audit log can only grow (DB-7) (IN PROGRESS, 2026-11-13).
 --
@@ -1264,7 +1264,7 @@ comment on table public.audit_logs is
   'Append-only audit trail (migration 20): entries can be added, never edited or deleted, by any role including the server key. The only allowed change is the database clearing application_id or user_id when that request or account is deleted.';
 
 -- ==========================================================================
--- PART 17 OF 20: 20261113010000_account_checks.sql
+-- PART 17 OF 21: 20261113010000_account_checks.sql
 -- ==========================================================================
 -- Migration 21: account checks before real use (DB-11) (IN PROGRESS, 2026-11-13).
 --
@@ -1297,7 +1297,7 @@ comment on column public.profiles.id_verified_at is 'When Staff confirmed this r
 comment on column public.profiles.spam_flagged_at is 'When Staff or Admin flagged this account as spam (null = not flagged). A flagged account cannot submit new requests until Admin clears it.';
 
 -- ==========================================================================
--- PART 18 OF 20: 20261113020000_staff_file_reads_through_server.sql
+-- PART 18 OF 21: 20261113020000_staff_file_reads_through_server.sql
 -- ==========================================================================
 -- Migration 22: Staff and Admin open files only through the server, so every opening is logged (SE-4) (IN PROGRESS, 2026-11-13).
 -- Asked for in Angelo's PR #8 ("Not in this PR"). RUN IT ONLY AFTER PR #8 IS IN THE CODE EVERYONE RUNS: older code
@@ -1364,7 +1364,7 @@ create index if not exists audit_logs_view_lookup_idx
   on public.audit_logs (user_id, action, application_id, created_at desc);
 
 -- ==========================================================================
--- PART 19 OF 20: 20261114000000_personal_record_requests.sql
+-- PART 19 OF 21: 20261114000000_personal_record_requests.sql
 -- ==========================================================================
 -- Migration 23: the table behind "ask for a copy of my records" (FT-18, RA 10173 right of access) (IN PROGRESS, 2026-11-14).
 -- jayemm01's PR #10 (merged into main 2026-11-13) added the screens and app/api/record-requests, but no table, so on the
@@ -1427,7 +1427,7 @@ comment on table public.personal_record_requests is
   'A resident''s request for a copy of the records the barangay holds about them (RA 10173), and the office''s answer (FT-18, migration 23). Written only by the server (app/api/record-requests).';
 
 -- ==========================================================================
--- PART 20 OF 20: 20261118000000_revenue_code_2019_fees.sql
+-- PART 20 OF 21: 20261118000000_revenue_code_2019_fees.sql
 -- ==========================================================================
 -- Migration 24: the REAL fee schedules from the Revised Revenue Code of Barangay San Jose (Chapter V, Sangguniang
 -- Barangay session of 3 December 2019), replacing the SAMPLE fees of migration 13 (DB-8). Generated 2026-11-18 by
@@ -1921,3 +1921,81 @@ begin
     end if;
   end loop;
 end $$;
+
+-- ==========================================================================
+-- PART 21 OF 21: 20261118010000_revenue_code_answers.sql
+-- ==========================================================================
+-- Fee schedule update from the 2019 Revenue Code sheet: the barangay's answers of 2026-11-18. Generated 2026-11-18 by
+-- "paperwork (for revisions)/Revenue Code 2019 (photos)/build_fee_update.cjs", which compares "Revenue Code 2019 -
+-- encoded.csv" with the fees in force on the live project. Do not edit by hand; never edit it once it has been run.
+--
+-- WHAT IT DOES: 1 new schedule(s), 0 new version(s) where an amount changed (effective 2026-11-18; the
+-- older version stays as history), 9 schedule note(s) corrected in place (notes only, never an amount, and
+-- only on the rows the system loaded: created_by is NULL). Adds 1 schedule(s) with 6 fee line(s).
+--   + Business Clearance|School: Review Center|
+--   * Excavation Clearance|| (notes)
+--   * TODA Clearance|| (notes)
+--   * Business Clearance|Household Beauty Products Manufacturers / Repacking| (notes)
+--   * Business Clearance|Laundry Shop - Per Unit| (notes)
+--   * Business Clearance|Watch Repair Shop|Small (notes)
+--   * Business Clearance|Watch Repair Shop|Large (notes)
+--   * Business Clearance|Balloons & Party Needs w/ Videoke (Per Unit)| (notes)
+--   * Business Clearance|Photo Copying / Xerox Center (Clearance & Per Unit)| (notes)
+--   * Business Clearance|Video Game Shop (Per Unit)| (notes)
+-- RE-RUNNABLE: inserts only what is missing; note updates only where the note still differs.
+
+insert into public.business_categories (name) values
+  ('School: Review Center')
+on conflict (name) do nothing;
+
+do $$
+declare r record; sched_id integer; i integer;
+begin
+  for r in select * from (values
+  ('Business Clearance', 'School: Review Center', null, date '2026-11-18', array['Business Clearance', 'Plate', 'Inspection Fee', 'Sticker', 'Penalty', 'No. of Employee'], array[1500.00, 150.00, 50.00, 100.00, 0.00, 0.00]::numeric[], 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18). Confirmed by the barangay (2026-11-18): Handwritten under Vocational/technical; it belongs to that category, so 1,500 like the other schools.')
+  ) as v(clearance_type, category, classification, effective_date, names, amounts, notes)
+  loop
+    sched_id := null;
+    select s.id into sched_id from public.fee_schedules s
+    join public.clearance_types t on t.id = s.clearance_type_id and t.name = r.clearance_type
+    left join public.business_categories c on c.id = s.business_category_id
+    left join public.business_classifications k on k.id = s.classification_id
+    where s.effective_date = r.effective_date and s.ordinance_reference = 'Revised Revenue Code of Barangay San Jose, Chapter V (Sangguniang Barangay session, 3 December 2019)' and s.reason_notes = r.notes
+      and c.name is not distinct from r.category and k.name is not distinct from r.classification
+    limit 1;
+    if sched_id is null then
+      insert into public.fee_schedules (clearance_type_id, business_category_id, classification_id, effective_date, ordinance_reference, reason_notes, created_by)
+      select t.id, c.id, k.id, r.effective_date, 'Revised Revenue Code of Barangay San Jose, Chapter V (Sangguniang Barangay session, 3 December 2019)', r.notes, null
+      from public.clearance_types t
+      left join public.business_categories c on c.name = r.category
+      left join public.business_classifications k on k.category_id = c.id and k.name = r.classification
+      where t.name = r.clearance_type
+      returning id into sched_id;
+    end if;
+    if sched_id is null then raise exception 'Fee schedule could not be created for % / % / %', r.clearance_type, r.category, r.classification; end if;
+    if not exists (select 1 from public.fee_schedule_items where fee_schedule_id = sched_id) then
+      for i in 1 .. array_length(r.names, 1) loop
+        insert into public.fee_schedule_items (fee_schedule_id, component_name, amount) values (sched_id, r.names[i], r.amounts[i]);
+      end loop;
+    end if;
+  end loop;
+end $$;
+
+update public.fee_schedules f set reason_notes = v.notes
+from (values
+  ('Excavation Clearance', null, null, date '2026-11-18', 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18). Confirmed by the barangay (2026-11-18): 5.00 per linear meter is right; ignore the handwritten question mark. Inspection Fee left at 0: the Revenue Code lists no inspection fee for this permit; Staff can enter 50 (small) or 100 (big) when an inspection is done. Per-unit fee: the line holds one unit; Staff enter the total for the actual number of units.'),
+  ('TODA Clearance', null, null, date '2026-11-18', 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18). Confirmed by the barangay (2026-11-18): Our TODA Clearance is the Franchise Permit (TODA), 50. Inspection Fee left at 0: the Revenue Code lists no inspection fee for this permit; Staff can enter 50 (small) or 100 (big) when an inspection is done.'),
+  ('Business Clearance', 'Household Beauty Products Manufacturers / Repacking', null, date '2026-11-18', 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18). Confirmed by the barangay (2026-11-18): Handwritten line at the bottom of the page; the wording read in the group leader''s sheet is right ("Household Beauty Products Manufacturers / Repacking"), 1,500.'),
+  ('Business Clearance', 'Laundry Shop - Per Unit', null, date '2026-11-18', 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18). Confirmed by the barangay (2026-11-18): 500 plus 100 per unit. Per-unit fee: the line holds one unit; Staff enter the total for the actual number of units.'),
+  ('Business Clearance', 'Watch Repair Shop', 'Small', date '2026-11-18', 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18). Confirmed by the barangay (2026-11-18): Small 300 / large 500 is right (page 22 lists 300 only). (The group leader''s sheet has 500 here: row shift.)'),
+  ('Business Clearance', 'Watch Repair Shop', 'Large', date '2026-11-18', 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18). Confirmed by the barangay (2026-11-18): Small 300 / large 500 is right (page 22 lists 300 only). (The group leader''s sheet has 500 here: row shift.)'),
+  ('Business Clearance', 'Balloons & Party Needs w/ Videoke (Per Unit)', null, date '2026-11-18', 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18). Confirmed by the barangay (2026-11-18): 1,000 plus 300 per videoke unit. Per-unit fee: the line holds one unit; Staff enter the total for the actual number of units.'),
+  ('Business Clearance', 'Photo Copying / Xerox Center (Clearance & Per Unit)', null, date '2026-11-18', 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18). Confirmed by the barangay (2026-11-18): 200 plus 150 per unit (machine). Per-unit fee: the line holds one unit; Staff enter the total for the actual number of units.'),
+  ('Business Clearance', 'Video Game Shop (Per Unit)', null, date '2026-11-18', 'Loaded from the photos of the 2019 Revised Revenue Code (encoded and cross-checked 2026-11-18). Confirmed by the barangay (2026-11-18): 500 plus 150 per unit. Per-unit fee: the line holds one unit; Staff enter the total for the actual number of units.')
+) as v(clearance_type, category, classification, effective_date, notes)
+join public.clearance_types t on t.name = v.clearance_type
+left join public.business_categories c on c.name = v.category
+left join public.business_classifications k on k.category_id = c.id and k.name = v.classification
+where f.clearance_type_id = t.id and f.business_category_id is not distinct from c.id and f.classification_id is not distinct from k.id
+  and f.ordinance_reference = 'Revised Revenue Code of Barangay San Jose, Chapter V (Sangguniang Barangay session, 3 December 2019)' and f.effective_date = v.effective_date and f.created_by is null
+  and f.reason_notes is distinct from v.notes;
