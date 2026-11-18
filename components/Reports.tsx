@@ -1,15 +1,16 @@
 'use client';
 import { useState } from 'react';import Link from 'next/link';import { usePortal } from './PortalProvider';import { Field } from './Field';import { ReportTable } from './ReportTable';import { DateRangePresets } from './DateRangePresets';import { monthlyCollectionReport } from '@/data/mockReports';import { clearanceTypes } from '@/data/clearanceTypes';import { formatPeso } from '@/data/revenueCodeData';import { dateLabel,today,presetRange } from '@/lib/workflow';import { dailyOrApplications } from '@/data/mockReports';import { exportCSV } from '@/lib/downloads';import { useDbAudits } from './useDbAudits';
 import { isSensitiveViewAction } from '@/lib/sensitiveViews';
-import { reversionClearanceType } from '@/lib/reversionReports';
+import { auditDateRange, reversionClearanceType } from '@/lib/reversionReports';
+import { manilaDate } from '@/lib/workflow';
 import { MonthlyFilesExportButton } from './MonthlyFilesExportButton';
 type Kind='monthly'|'daily'|'reversion'|'audit';
 const defaultRange=presetRange('annual');
 export function Reports({kind}:{kind:Kind}){
  const {state,user}=usePortal();const manilaToday=today();const currentYear=manilaToday.slice(0,4);const initial={date:manilaToday,month:manilaToday.slice(5,7),year:currentYear,type:'',view:'daily',auditView:'changes' as 'changes'|'views',from:defaultRange.from,to:defaultRange.to,admin:'',action:''};const [draft,setDraft]=useState(initial),[filter,setFilter]=useState(initial);
  const collection=kind==='monthly'?monthlyCollectionReport(state.applications,filter.year+'-'+filter.month,filter.type):undefined;
- // Real sign-in mode: the audit entries of the chosen dates (the same UTC days the filter below compares).
- const logError=useDbAudits(kind==='reversion'||kind==='audit'?{since:filter.from?filter.from+'T00:00:00.000Z':undefined,until:filter.to?filter.to+'T23:59:59.999Z':undefined,reversion:kind==='reversion'||undefined,view:kind==='audit'?filter.auditView:'changes'}:null);
+ // Server retrieval and local filtering use the same Manila calendar days as the displayed timestamps.
+ const logError=useDbAudits(kind==='reversion'||kind==='audit'?{...auditDateRange(filter.from,filter.to),reversion:kind==='reversion'||undefined,view:kind==='audit'?filter.auditView:'changes'}:null);
  const titles={monthly:'Monthly Collection Report',daily:'Daily OR Summary',reversion:'Reversion Audit Report',audit:'Audit Trail'};
  let headers:string[]=[],rows:(string|number)[][]=[],summaries:{label:string;value:string|number}[]=[];
  const isSelectedAuditView=(action:string)=>kind==='audit'&&filter.auditView==='views'?isSensitiveViewAction(action):!isSensitiveViewAction(action);
@@ -23,7 +24,7 @@ export function Reports({kind}:{kind:Kind}){
  const apps=dailyOrApplications(state.applications,filter.date,filter.type);
  headers=['Request Reference','Applicant','Clearance Type','OR Number','OR Date','Amount Paid','Clearance Generated','Processing Staff'];rows=apps.map(a=>[a.reference,a.applicant,a.clearanceType,a.receipt!.orNumber,a.receipt!.orDate,formatPeso(a.receipt!.amountPaid),dateLabel(a.clearance!.generatedAt),a.paymentVerification?.checkedBy||a.receipt!.encodedBy]);summaries=[{label:'Total OR Entries',value:apps.length},{label:'Total Recorded Amount',value:formatPeso(apps.reduce((s,a)=>s+a.receipt!.amountPaid,0))}];
  }else{
- const logs=state.audits.filter(a=>isSelectedAuditView(a.action)&&(kind!=='reversion'||a.reversion)&&(!filter.type||kind!=='reversion'||reversionClearanceType(a,state.applications)===filter.type)&&(!filter.from||a.timestamp.slice(0,10)>=filter.from)&&(!filter.to||a.timestamp.slice(0,10)<=filter.to)&&(!filter.admin||a.user===filter.admin)&&(!filter.action||a.action===filter.action));
+ const logs=state.audits.filter(a=>isSelectedAuditView(a.action)&&(kind!=='reversion'||a.reversion)&&(!filter.type||kind!=='reversion'||reversionClearanceType(a,state.applications)===filter.type)&&(!filter.from||manilaDate(a.timestamp)>=filter.from)&&(!filter.to||manilaDate(a.timestamp)<=filter.to)&&(!filter.admin||a.user===filter.admin)&&(!filter.action||a.action===filter.action));
  headers=['Date / Time',kind==='reversion'?'Admin':'User','Request Reference','Action','Reason','Old Value','New Value'];rows=logs.map(a=>[dateLabel(a.timestamp),a.user,a.reference,a.action,a.reason||'—',a.oldValue||'—',a.newValue||'—']);
  }
  const selectType=<Field label="Clearance Type"><select className="select-field" value={draft.type} onChange={e=>setDraft({...draft,type:e.target.value})}><option value="">All Clearance Types</option>{clearanceTypes.map(c=><option key={c.id}>{c.name}</option>)}</select></Field>;

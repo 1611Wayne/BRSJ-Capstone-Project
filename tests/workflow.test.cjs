@@ -300,6 +300,30 @@ test('audit records retain database timestamps and JSON values; Staff log loads 
  assert.deepEqual(transition(state('admin'),{type:'loadAudits',audits:[log]}).audits,[log]);
 });
 
+test('FT-7 averages by type and month use valid ratings and Manila submission dates, with empty months unscored',()=>{
+ const entry=(clearanceType,rating,submittedAt)=>({...mockApplications[0],clearanceType,feedback:{rating,comment:'',submittedAt}});
+ const result=feedbackSummary([
+  entry('Business Clearance',5,'2026-08-31T16:00:00Z'),
+  entry('Business Clearance',1,'2026-09-30T15:59:59Z'),
+  entry('Building Clearance',4,'2026-11-01T00:00:00+08:00'),
+  entry('Building Clearance',2,'unknown'),
+  entry('Business Clearance',6,'2026-10-01T00:00:00Z'),
+ ]);
+ assert.equal(result.total,4);assert.equal(result.average,3);
+ assert.deepEqual(result.byType,[{clearanceType:'Building Clearance',count:2,average:3},{clearanceType:'Business Clearance',count:2,average:3}]);
+ assert.deepEqual(result.monthly,[{month:'2026-09',count:2,average:3},{month:'2026-10',count:0,average:null},{month:'2026-11',count:1,average:4}]);
+ assert.equal(feedbackSummary([]).average,null);assert.deepEqual(feedbackSummary([]).monthly,[]);
+});
+
+test('FT-24 server audit bounds include the full Manila day, including UTC midnight and year rollover',()=>{
+ const {auditDateRange}=require('../lib/reversionReports.ts');
+ assert.deepEqual(auditDateRange('2026-01-01','2026-01-01'),{since:'2025-12-31T16:00:00.000Z',until:'2026-01-01T15:59:59.999Z'});
+ const {since,until}=auditDateRange('2026-11-17','2026-11-17');
+ for(const timestamp of ['2026-11-16T16:00:00.000Z','2026-11-17T15:59:59.999Z'])assert.ok(timestamp>=since&&timestamp<=until);
+ for(const timestamp of ['2026-11-16T15:59:59.999Z','2026-11-17T16:00:00.000Z'])assert.ok(timestamp<since||timestamp>until);
+ assert.deepEqual(auditDateRange('',''),{since:undefined,until:undefined});
+});
+
 test('feedback summary includes all five rating counts and counts ratings without comments',()=>{
  const applications=[5,4,3,2,1,5].map((rating,index)=>({...mockApplications[0],reference:String(index),feedback:{rating,comment:index===0?'Helpful staff':'',submittedAt:at}}));
  const original=structuredClone(applications);
@@ -941,6 +965,21 @@ test('the Daily OR Summary lists a payment on the Manila day Staff verified it, 
  assert.equal(manilaDate('2026-10-05T17:00:00.000Z'),'2026-10-06');assert.equal(manilaDate('2026-10-05T15:59:00.000Z'),'2026-10-05');
  assert.equal(validOrDate('2026-09-06'),true);assert.equal(validOrDate('2026-09-31'),false);assert.equal(validOrDate('2999-01-01'),false);assert.equal(validOrDate(),false);
 });
+test('FT-5 daily OR excludes stale rejected, pending, under-review and simulated receipts, but retains legitimate legacy issued ORs',()=>{
+ const source=app(releasedByPhoto()), date=manilaDate(source.clearance.generatedAt);
+ const rows=[...['Draft','Pending Assessment','Awaiting OR','For Checking','Under Review','Rejected','Void'].map(status=>({...source,status,reference:status})),
+  {...source,reference:'simulated',simulatedPayment:{method:'GCash',amount:source.assessment.total,referenceNumber:'SIM-TEST',paidAt:at}},
+  {...source,reference:'unverified',paymentVerification:{...source.paymentVerification,status:'Pending'}},
+  {...source,reference:'missing-receipt',receipt:undefined},
+  {...source,reference:'missing-clearance',clearance:undefined},
+  {...source,reference:'legacy',paymentVerification:undefined,receiptPhoto:undefined},
+  {...source,reference:'verified'}];
+ const original=structuredClone(rows), result=dailyOrApplications(rows,date);
+ assert.deepEqual(result.map(a=>a.reference),['legacy','verified']);
+ assert.equal(result.reduce((sum,a)=>sum+a.receipt.amountPaid,0),source.receipt.amountPaid*2);
+ assert.deepEqual(rows,original);
+});
+
 test('Daily OR Summary excludes a voided issued transaction while preserving its receipt and audit history',()=>{
  const issued=releasedByPhoto(),date=manilaDate(app(issued).clearance.generatedAt);
  const before=dailyOrApplications(issued.applications,date);

@@ -34,7 +34,7 @@ const check = (name, ok) => { assert.ok(ok, name); checks++; console.log('PASS '
    const count = rating === 5 ? 2 : 1;
    check(`${rating}-star count is correct`, await section.getByRole('listitem', { name: `${rating} ${rating === 1 ? 'star' : 'stars'}: ${count} ${count === 1 ? 'response' : 'responses'}`, exact: true }).count() === 1);
   }
-  const words = await section.locator('tbody tr').allTextContents();
+  const words = await section.locator('table').first().locator('tbody tr').allTextContents();
   check('frequent words ignore case and punctuation and count repeated words', words[0].trim() === 'fast3' && words[1].trim() === 'service3');
   check('English and Filipino connecting words are excluded', words.every(row => !/^(ang|ay|po|and)\d+$/.test(row.trim())));
   check('existing average rating remains correct', (await page.locator('body').innerText()).includes('3.3/5'));

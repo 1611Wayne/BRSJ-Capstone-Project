@@ -115,7 +115,6 @@ export function Dashboard({ role }: { role: UserRole }) {
   const apps = state.applications.filter(a => (role !== 'resident' || a.residentId === user?.id) && a.status !== 'Draft');
   const times = apps.map(processingSeconds).filter((n): n is number => n !== null);
   const checks = apps.map(paymentCheckSeconds).filter((n): n is number => n !== null);
-  const ratings = apps.flatMap(a => a.feedback ? [a.feedback.rating] : []);
   const feedback = feedbackSummary(apps);
 
   const now = useNow();
@@ -169,7 +168,7 @@ export function Dashboard({ role }: { role: UserRole }) {
         {role === 'admin' && <>
           <StatCard label="Requests Within SLA" value={checks.length ? Math.round(checks.filter(t => t <= SLA_SECONDS).length / checks.length * 100) + '%' : '—'} icon={Gauge} />
           <StatCard label="Average Processing Time" value={times.length ? mmss(times.reduce((a, b) => a + b, 0) / times.length) : '—'} icon={Clock3} />
-          <StatCard label="Average Satisfaction Rating" value={ratings.length ? (ratings.reduce((a, b) => a + b, 0) / ratings.length).toFixed(1) + '/5' : '—'} icon={Star} />
+          <StatCard label="Average Satisfaction Rating" value={feedback.average !== null ? feedback.average.toFixed(1) + '/5' : '—'} icon={Star} />
         </>}
       </div>
       {role === 'admin' && <p className="text-xs text-slate-500 mt-3">Average processing time runs from application submission to the Applicant’s receipt confirmation (MM:SS). Requests Within SLA measures the Staff payment check, from receipt upload to verification, against a demo target of {SLA_SECONDS} seconds; no SLA has been approved.</p>}
@@ -258,6 +257,18 @@ export function Dashboard({ role }: { role: UserRole }) {
               <h3 className="font-bold text-brand-ink mb-2">Most Common Comment Words</h3>
               <p className="text-xs text-slate-500 mb-4">Top 10 words by number of occurrences. Capitalization and punctuation are ignored; common English and Filipino connecting words are excluded.</p>
               {feedback.commonWords.length ? <ReportTable headers={['Word', 'Occurrences']} rows={feedback.commonWords.map(({ word, count }) => [word, count])} /> : <p className="text-sm text-slate-500">No words to summarize yet.</p>}
+            </div>
+          </div>
+          <div className="grid md:grid-cols-2 gap-6 mt-6">
+            <div className="content-card p-6" role="region" aria-label="Average Rating by Clearance Type">
+              <h3 className="font-bold text-brand-ink mb-2">Average Rating by Clearance Type</h3>
+              <p className="text-xs text-slate-500 mb-4">Each response counts once, including ratings without comments.</p>
+              <ReportTable headers={['Clearance Type', 'Responses', 'Average Rating']} rows={feedback.byType.map(row => [row.clearanceType, row.count, row.average.toFixed(1) + '/5'])} />
+            </div>
+            <div className="content-card p-6" role="region" aria-label="Monthly Feedback Trend">
+              <h3 className="font-bold text-brand-ink mb-2">Monthly Feedback Trend</h3>
+              <p className="text-xs text-slate-500 mb-4">Grouped by feedback submission month in Manila time, oldest first. Months without responses have no average. Entries without a valid submission date remain in the overall totals only.</p>
+              <ReportTable headers={['Month', 'Responses', 'Average Rating']} rows={feedback.monthly.map(row => [row.month, row.count, row.average === null ? '—' : row.average.toFixed(1) + '/5'])} />
             </div>
           </div>
         </section>

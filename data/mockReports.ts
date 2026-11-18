@@ -51,9 +51,13 @@ export function paymentCheckSeconds(a: Application) {
 }
 export const mmss = (seconds: number) => `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(Math.floor(seconds % 60)).padStart(2, '0')}`;
 // Daily OR Summary: clearances released against a verified OR on the given Manila day (the day Staff verified the payment).
-// Exclude void transactions from daily entries and totals; their history remains in the Reversion Audit Report.
+// Include issued Treasury ORs only. Legacy typed ORs remain supported; when a verification record exists it must be verified.
+// History stays in the audit report, including receipts on rejected, voided and reverted requests.
 export const dailyOrApplications = (applications: Application[], date: string, type = '') =>
-  applications.filter(a => a.status !== 'Void' && a.receipt && a.clearance && manilaDate(a.clearance.generatedAt) === date && (!type || a.clearanceType === type));
+  applications.filter(a => (a.status === 'Ready for Download' || a.status === 'Closed - Cleared') &&
+    a.receipt && a.clearance && !a.simulatedPayment &&
+    (!a.paymentVerification || a.paymentVerification.status === 'Verified') &&
+    manilaDate(a.clearance.generatedAt) === date && (!type || a.clearanceType === type));
 
 // Common connecting words add little meaning to a frequency summary. Comments remain unchanged.
 const feedbackStopWords = new Set([
@@ -67,7 +71,35 @@ const feedbackStopWords = new Set([
 ]);
 
 export function feedbackSummary(applications: Application[]) {
-  const feedback = applications.flatMap(a => a.feedback && Number.isInteger(a.feedback.rating) && a.feedback.rating >= 1 && a.feedback.rating <= 5 ? [a.feedback] : []);
+  const entries = applications.filter(a => a.feedback && Number.isInteger(a.feedback.rating) && a.feedback.rating >= 1 && a.feedback.rating <= 5);
+  const feedback = entries.map(a => a.feedback!);
+  const average = feedback.length ? feedback.reduce((sum, f) => sum + f.rating, 0) / feedback.length : null;
+  const types = new Map<string, { count: number; sum: number }>();
+  const months = new Map<string, { count: number; sum: number }>();
+  for (const a of entries) {
+    const f = a.feedback!;
+    const group = types.get(a.clearanceType) || { count: 0, sum: 0 };
+    group.count++; group.sum += f.rating; types.set(a.clearanceType, group);
+    if (Number.isFinite(Date.parse(f.submittedAt))) {
+      const month = manilaDate(f.submittedAt).slice(0, 7);
+      const row = months.get(month) || { count: 0, sum: 0 };
+      row.count++; row.sum += f.rating; months.set(month, row);
+    }
+  }
+  const byType = Array.from(types, ([clearanceType, row]) => ({ clearanceType, count: row.count, average: row.sum / row.count }))
+    .sort((a, b) => a.clearanceType.localeCompare(b.clearanceType));
+  const monthly: { month: string; count: number; average: number | null }[] = [];
+  const datedMonths = Array.from(months.keys()).sort();
+  if (datedMonths.length) {
+    let month = datedMonths[0];
+    const last = datedMonths[datedMonths.length - 1];
+    while (month <= last) {
+      const row = months.get(month);
+      monthly.push({ month, count: row?.count || 0, average: row ? row.sum / row.count : null });
+      const [year, number] = month.split('-').map(Number);
+      month = number === 12 ? `${year + 1}-01` : `${year}-${String(number + 1).padStart(2, '0')}`;
+    }
+  }
   const ratingCounts = [5, 4, 3, 2, 1].map(rating => ({ rating, count: feedback.filter(f => f.rating === rating).length }));
   const wordCounts = new Map<string, number>();
   for (const entry of feedback) {
@@ -80,7 +112,7 @@ export function feedbackSummary(applications: Application[]) {
   }
   const commonWords = Array.from(wordCounts, ([word, count]) => ({ word, count }))
     .sort((a, b) => b.count - a.count || a.word.localeCompare(b.word, 'en')).slice(0, 10);
-  return { total: feedback.length, commentCount: feedback.filter(f => f.comment.trim()).length, ratingCounts, commonWords };
+  return { total: feedback.length, average, byType, monthly, commentCount: feedback.filter(f => f.comment.trim()).length, ratingCounts, commonWords };
 }
 
 export function monthlyReversions(audits: AuditLog[], month: string) {
