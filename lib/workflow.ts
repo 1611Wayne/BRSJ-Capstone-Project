@@ -46,6 +46,21 @@ function requireThat(condition: unknown, message: string): asserts condition { i
 export function activeSchedule(schedules: FeeSchedule[], type: string, category: string, classification: string, date = today()) {
   return schedules.filter(s => s.clearanceType === type && s.category === category && s.classification === classification && s.effectiveDate <= date).sort((a,b) => b.effectiveDate.localeCompare(a.effectiveDate) || b.createdAt.localeCompare(a.createdAt))[0];
 }
+// The fee categories (and their sizes) Staff and Admin choose from for a clearance type: every category with a schedule
+// in force, A to Z. They come from the loaded schedules, so in connected mode they are the database's (the Revenue Code,
+// migration 24) and in sample mode the sample ones. A type with no categorised schedule returns [] and needs no choice.
+export function feeCategoryOptions(schedules: FeeSchedule[], type: string, date = today()): { name: string; classifications?: { name: string }[] }[] {
+  const found = new Map<string, Set<string>>();
+  for (const s of schedules) {
+    if (s.clearanceType !== type || !s.category || s.effectiveDate > date) continue;
+    if (!found.has(s.category)) found.set(s.category, new Set());
+    if (s.classification) found.get(s.category)!.add(s.classification);
+  }
+  const rank = (size: string) => { const i = ['Small', 'Medium', 'Large', 'Big'].indexOf(size); return i < 0 ? 9 : i; };
+  return [...found].sort(([a], [b]) => a.localeCompare(b)).map(([name, sizes]) => sizes.size
+    ? { name, classifications: [...sizes].sort((a, b) => rank(a) - rank(b) || a.localeCompare(b, undefined, { numeric: true })).map(size => ({ name: size })) }
+    : { name });
+}
 export function validateOR(number: string, date: string, amount: string | number, total: number, currentDate = today()) {
   requireThat(/^TR-\d{4}-\d{5}$/.test(number), 'Use the OR format TR-YYYY-#####.');
   requireThat(/^\d{4}-\d{2}-\d{2}$/.test(date) && !isNaN(Date.parse(date)) && new Date(date).toISOString().slice(0,10) === date && date <= currentDate, 'Enter a valid OR date that is not in the future.');
@@ -312,6 +327,10 @@ export function transition(state: PortalState, command: Command, now = new Date(
     staff(); requireThat(a.status === 'Pending Assessment' || (a.status === 'Under Review' && !a.receipt), 'This request cannot be assessed at its current stage.');
     requireThat(!a.inspection?.scheduledAt || a.inspection.status === 'Completed', 'Complete the scheduled inspection before confirming assessment.');
     requireThat(requirements(a).every(r => a.documents.some(d => d.requirement === r.name && d.status === 'Verified')), 'Verify every required document before confirming assessment.');
+    // A type whose fees have categories (every Business Clearance; Building and Fencing brackets) needs one of them, so
+    // an older uncategorised schedule (the SAMPLE ones) can never be picked by leaving the category out.
+    const categories = feeCategoryOptions(s.schedules, a.clearanceType);
+    requireThat(!categories.length || categories.some(c => c.name === command.category && (c.classifications ? c.classifications.some(k => k.name === command.classification) : !command.classification)), 'Choose a fee category (and size) for this clearance type.');
     const schedule = activeSchedule(s.schedules, a.clearanceType, command.category, command.classification);
     requireThat(schedule, 'No effective fee schedule matches this selection.');
     const amounts = command.amounts || schedule.items.map(item => item.amount);

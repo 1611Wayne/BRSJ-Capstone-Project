@@ -2,10 +2,10 @@
 import { InspectionForm } from './InspectionForm';
 import { ApplicantAccountCheck } from './ApplicantAccountCheck';
 import { useEffect, useState } from 'react';import { useRouter } from 'next/navigation';import Link from 'next/link';import { XCircle, CheckCircle2, FileText, Eye, LockKeyhole } from 'lucide-react';
-import { usePortal } from './PortalProvider';import { Modal } from './Modal';import { Field,ErrorMessage,Notice } from './Field';import { FeeTable } from './FeeTable';import { StatusBadge } from './StatusBadge';import { DocumentPreview } from './DocumentPreview';import { ReplaceDocuments } from './ReplaceDocuments';import { revenueCategories } from '@/data/revenueCodeData';import { formatPeso } from '@/data/revenueCodeData';import { activeSchedule,requirements } from '@/lib/workflow';import type { UploadedDocument } from '@/types';
+import { usePortal } from './PortalProvider';import { Modal } from './Modal';import { Field,ErrorMessage,Notice } from './Field';import { FeeTable } from './FeeTable';import { StatusBadge } from './StatusBadge';import { DocumentPreview } from './DocumentPreview';import { ReplaceDocuments } from './ReplaceDocuments';import { formatPeso } from '@/data/revenueCodeData';import { activeSchedule,feeCategoryOptions,requirements } from '@/lib/workflow';import type { UploadedDocument } from '@/types';
 export function AssessmentPage({reference}:{reference:string}){
  const router=useRouter();const {state,user,act}=usePortal();const a=state.applications.find(a=>a.reference===reference);
- const [category,setCategory]=useState(a?.assessment?.category||(a?.businessSubcategory==='Ambulant'?'Ambulant / Mobile Vendor':a?.businessSubcategory==='Lessor (Paupahan)'?'Lessor':revenueCategories[0].name)),[classification,setClassification]=useState(a?.assessment?.classification||(a?.businessSubcategory==='Ambulant'?'':a?.businessSubcategory==='Lessor (Paupahan)'?revenueCategories.find(c=>c.name==='Lessor')!.classifications![0].name:'Small')),[error,setError]=useState(''),[message,setMessage]=useState(''),[preview,setPreview]=useState<UploadedDocument>();
+ const [category,setCategory]=useState(a?.assessment?.category||(a?.businessSubcategory==='Ambulant'?'Ambulant / Mobile Vendor':a?.businessSubcategory==='Lessor (Paupahan)'?'Lessor':'')),[classification,setClassification]=useState(a?.assessment?.classification||''),[error,setError]=useState(''),[message,setMessage]=useState(''),[preview,setPreview]=useState<UploadedDocument>();
  const [feeDraft,setFeeDraft]=useState<{scheduleId:string;amounts:string[]}>();
  const [docs,setDocs]=useState(a?.documents||[]);
  // Follow the shared data: records loaded from the database after this page opened, or reloaded after the server refused a change.
@@ -15,7 +15,14 @@ export function AssessmentPage({reference}:{reference:string}){
  useEffect(()=>{if(assessed===null)return;const t=setTimeout(()=>router.push('/staff/dashboard'),3000);return()=>clearTimeout(t);},[assessed,router]);
  // Reject state
  const [showReject,setShowReject]=useState(false),[rejectReason,setRejectReason]=useState(''),[rejectCategory,setRejectCategory]=useState<'standard'|'spam'>('standard');
- if(!a)return <div className="p-8">Application Not Found</div>;const business=a.clearanceType==='Business Clearance';const current=revenueCategories.find(c=>c.name===category)!;const schedule=activeSchedule(state.schedules,a.clearanceType,business?category:'',business?classification:'');const editable=a.status==='Pending Assessment'||(a.status==='Under Review'&&!a.receipt);
+ if(!a)return <div className="p-8">Application Not Found</div>;const business=a.clearanceType==='Business Clearance';
+ // Categories come from the fee schedules in force (the Revenue Code in the database); an earlier assessment's own
+ // category stays shown even if it is no longer offered. With nothing chosen yet: Sari-Sari Store, else the first.
+ const options=feeCategoryOptions(state.schedules,a.clearanceType);const choose=options.length>0;
+ const current=options.find(c=>c.name===category)||(category&&a.assessment?.category===category?{name:category,classifications:classification?[{name:classification}]:undefined}:options.find(c=>c.name==='Sari-Sari Store')||options[0]);
+ const shownOptions=current&&!options.some(c=>c.name===current.name)?[...options,current]:options;
+ const pickedCategory=current?.name||'';const pickedClassification=current?.classifications?(current.classifications.some(c=>c.name===classification)?classification:current.classifications[0].name):'';
+ const schedule=activeSchedule(state.schedules,a.clearanceType,choose?pickedCategory:'',choose?pickedClassification:'');const editable=a.status==='Pending Assessment'||(a.status==='Under Review'&&!a.receipt);
  const feeAmounts=schedule?(feeDraft?.scheduleId===schedule.id?feeDraft.amounts:a.assessment?.scheduleId===schedule.id?a.assessment.items.map(item=>item.amount.toFixed(2)):schedule.items.map(item=>item.amount.toFixed(2))):[];
  const validAmounts=feeAmounts.every(value=>/^\d+(\.\d{1,2})?$/.test(value)&&Number.isFinite(Number(value))&&Number.isSafeInteger(Math.round(Number(value)*100)));
  const feeTotal=feeAmounts.reduce((sum,value)=>sum+Math.round(Number(value||0)*100),0)/100;
@@ -57,15 +64,15 @@ export function AssessmentPage({reference}:{reference:string}){
 
    <div className="content-card p-6 h-fit">
     <h2 className="font-bold text-brand-ink border-b pb-3">Assessment Information</h2>
-    {business&&<div className="space-y-4 mt-4">
-     <Field label="Business Category *"><select disabled={!editable} className="select-field" value={category} onChange={e=>{setCategory(e.target.value);setClassification(revenueCategories.find(c=>c.name===e.target.value)?.classifications?.[0].name||'');}}>{revenueCategories.map(c=><option key={c.name}>{c.name}</option>)}</select><p className="text-xs text-slate-500 mt-2">Applicant indicated: {a.businessSubcategory||'Business Clearance only'}. Staff make the final selection.</p></Field>
-     {current.classifications&&<Field label="Classification / Scale *"><select disabled={!editable} value={classification} className="select-field" onChange={e=>setClassification(e.target.value)}>{current.classifications.map(c=><option key={c.name}>{c.name}</option>)}</select></Field>}
+    {choose&&<div className="space-y-4 mt-4">
+     <Field label={business?'Business Category *':'Fee Category *'}><select disabled={!editable} className="select-field" value={pickedCategory} onChange={e=>{setCategory(e.target.value);setClassification(shownOptions.find(c=>c.name===e.target.value)?.classifications?.[0].name||'');}}>{shownOptions.map(c=><option key={c.name}>{c.name}</option>)}</select>{business&&<p className="text-xs text-slate-500 mt-2">Applicant indicated: {a.businessSubcategory||'Business Clearance only'}. Staff make the final selection.</p>}</Field>
+     {current?.classifications&&<Field label="Classification / Scale *"><select disabled={!editable} value={pickedClassification} className="select-field" onChange={e=>setClassification(e.target.value)}>{current.classifications.map(c=><option key={c.name}>{c.name}</option>)}</select></Field>}
     </div>}
     <div className="mt-6">{editable&&schedule?<div className="table-wrap"><table className="portal-table border border-slate-300"><thead><tr><th>Fee Component</th><th className="!text-right">Amount (PHP)</th></tr></thead><tbody>{schedule.items.map((item,index)=><tr key={index}><td>{item.name}</td><td><input type="number" inputMode="decimal" min="0" step="0.01" required aria-label={item.name+' amount'} className="text-field text-right" value={feeAmounts[index]} onChange={e=>setFeeDraft({scheduleId:schedule.id,amounts:feeAmounts.map((value,i)=>i===index?e.target.value:value)})}/></td></tr>)}<tr className="bg-slate-100"><td className="font-bold">Total Amount Due</td><td className="text-right font-bold" aria-live="polite">{validAmounts?formatPeso(feeTotal):'Enter valid amounts'}</td></tr></tbody></table></div>:<FeeTable items={a.assessment?.items||schedule?.items||[]}/>}</div>
     <p className="text-xs mt-4 text-slate-500">Amounts start from the effective fee schedule. Staff can adjust them for this application before confirming assessment.</p>
     <p className="text-sm mt-5">Assessed By: <strong>{a.assessment?.assessedBy||user?.firstName+' '+user?.lastName}</strong></p>
 
-    <button aria-describedby="assessment-verification-hint" disabled={!editable||!schedule||!allVerified||!validAmounts||inspectionPending} className="primary-btn w-full mt-5" onClick={()=>{try{act({type:'assess',reference,category:business?category:'',classification:business?classification:'',amounts:feeAmounts.map(Number)});setError('');setAssessed(feeTotal);}catch(e){setError((e as Error).message);}}}>Confirm Assessment</button>
+    <button aria-describedby="assessment-verification-hint" disabled={!editable||!schedule||!allVerified||!validAmounts||inspectionPending} className="primary-btn w-full mt-5" onClick={()=>{try{act({type:'assess',reference,category:choose?pickedCategory:'',classification:choose?pickedClassification:'',amounts:feeAmounts.map(Number)});setError('');setAssessed(feeTotal);}catch(e){setError((e as Error).message);}}}>Confirm Assessment</button>
 
     {editable&&<p id="assessment-verification-hint" className="text-xs mt-3 text-slate-600">{!allVerified?'Verify all required documents above to enable Confirm Assessment.':inspectionPending?'Complete the scheduled inspection above before confirming assessment.':!schedule?'No fee schedule is available for this assessment.':'All required documents are verified. Assessment can be confirmed.'}</p>}
 

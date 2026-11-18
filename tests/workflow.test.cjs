@@ -16,6 +16,33 @@ const { MAX_BYTES_PER_PART, buildMonthlyManifest, canExportMonthlyFiles, isAllow
 const state = (id = 'resident-maria') => structuredClone({users:mockUsers,applications:mockApplications,schedules:mockFeeSchedules,audits:[],currentUserId:id});
 const at = '2026-09-07T02:30:12.000Z', ref = 'SJ-2026-000123';
 const app = s => s.applications.find(a=>a.reference===ref);
+test('DB-8 fee categories come from the schedules in force, A to Z, sizes in order; types without categories need none',()=>{
+ const {feeCategoryOptions}=require('../lib/workflow.ts');
+ const s=state();
+ const names=feeCategoryOptions(s.schedules,'Business Clearance').map(o=>o.name);
+ assert.ok(names.includes('Sari-Sari Store')&&names.includes('Lessor'));
+ assert.deepEqual(names,[...names].sort((a,b)=>a.localeCompare(b)));
+ assert.deepEqual(feeCategoryOptions(s.schedules,'Business Clearance').find(o=>o.name==='Sari-Sari Store').classifications.map(c=>c.name),['Small','Medium','Large']);
+ assert.deepEqual(feeCategoryOptions(s.schedules,'Building Clearance'),[]);
+ const sched=(type,category,classification,effectiveDate='2026-09-01')=>({id:`x-${type}-${category}-${classification}-${effectiveDate}`,clearanceType:type,category,classification,items:[{name:type,amount:100}],effectiveDate,ordinance:'Revenue Code',notes:'',changedBy:'System',createdAt:effectiveDate+'T00:00:00Z'});
+ s.schedules.push(sched('Business Clearance','Paintings & Photo Gallery','Big'),sched('Business Clearance','Paintings & Photo Gallery','Small'),sched('Business Clearance','Billiard Hall (Per Table)',''),
+  sched('Business Clearance','Future Shop','','2999-01-01'),sched('Building Clearance','Building Permit','Commercial'),sched('Building Clearance','Building Permit','Residential'),
+  sched('Fencing Clearance','Fencing Permit','300 sq m and above'),sched('Fencing Clearance','Fencing Permit','100 sq m'),sched('Fencing Clearance','Fencing Permit','200 sq m'));
+ const biz=feeCategoryOptions(s.schedules,'Business Clearance');
+ assert.deepEqual(biz.find(o=>o.name==='Paintings & Photo Gallery').classifications.map(c=>c.name),['Small','Big']);
+ assert.equal(biz.find(o=>o.name==='Billiard Hall (Per Table)').classifications,undefined);
+ assert.ok(!biz.some(o=>o.name==='Future Shop'),'a schedule not yet in force is not offered');
+ assert.deepEqual(feeCategoryOptions(s.schedules,'Building Clearance'),[{name:'Building Permit',classifications:[{name:'Commercial'},{name:'Residential'}]}]);
+ assert.deepEqual(feeCategoryOptions(s.schedules,'Fencing Clearance')[0].classifications.map(c=>c.name),['100 sq m','200 sq m','300 sq m and above']);
+});
+test('DB-8 assessing needs a category the type offers, so an older uncategorised schedule cannot be picked',()=>{
+ const go=(category,classification)=>transition(role(state(),'staff-maria'),{type:'assess',reference:ref,category,classification},at);
+ assert.throws(()=>go('',''),/Choose a fee category/);
+ assert.throws(()=>go('No Such Shop',''),/Choose a fee category/);
+ assert.throws(()=>go('Sari-Sari Store','Huge'),/Choose a fee category/);
+ assert.throws(()=>go('Sari-Sari Store',''),/Choose a fee category/);
+ assert.equal(app(go('Sari-Sari Store','Medium')).status,'Awaiting OR');
+});
 test('FT-24 reversion types use historical snapshots with safe legacy fallbacks',()=>{
  const {reversionClearanceType}=require('../lib/reversionReports.ts');
  const applications=[{reference:ref,clearanceType:'Electrical Clearance'}];
@@ -643,7 +670,7 @@ test('staff make the final Business Category choice, whatever the Applicant indi
  }
  const bank=transition(state('staff-maria'),{type:'assess',reference:ref,category:'Bank',classification:''},at);
  assert.equal(app(bank).assessment.category,'Bank');
- assert.throws(()=>transition(state('staff-maria'),{type:'assess',reference:ref,category:'No Such Category',classification:''},at),/No effective fee schedule/);
+ assert.throws(()=>transition(state('staff-maria'),{type:'assess',reference:ref,category:'No Such Category',classification:''},at),/Choose a fee category/);
 });
 
 // Document replacement (2026-10-06): Staff flag a document Missing / Needs Replacement; the Applicant uploads a new copy,
