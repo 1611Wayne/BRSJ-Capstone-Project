@@ -12,6 +12,8 @@ type RouteResult = { status: number; body: Record<string, unknown> };
 const inFlightFileViews = new Map<string, Promise<RouteResult>>();
 
 const result = (status: number, body: RouteResult['body']): RouteResult => ({ status, body });
+// DB-10 clean-up (migration 26): the record stays; the file itself was removed from Storage after the monthly export.
+const removedMessage = (at: string) => `it was removed from the online system on ${new Date(at).toLocaleDateString('en-PH', { timeZone: 'Asia/Manila', year: 'numeric', month: 'long', day: 'numeric' })}, after the monthly export. The office keeps it in that month's files ZIP.`;
 
 function validObjectPath(path: unknown): path is string {
   return typeof path === 'string'
@@ -48,15 +50,17 @@ export async function POST(request: Request) {
 
     let belongsToApplication = false;
     if (bucket === 'application-documents') {
-      const { data, error } = await db.from('application_documents').select('storage_path')
+      const { data, error } = await db.from('application_documents').select('storage_path, file_removed_at')
         .eq('application_id', application.id).eq('storage_path', path).maybeSingle();
       if (error) return result(500, { error: 'Could not verify the file path.' });
       belongsToApplication = !!data;
+      if (data?.file_removed_at) return result(410, { error: removedMessage(data.file_removed_at) });
     } else if (bucket === 'receipt-photos') {
-      const { data, error } = await db.from('official_receipts').select('receipt_photo_path')
+      const { data, error } = await db.from('official_receipts').select('receipt_photo_path, receipt_photo_removed_at')
         .eq('application_id', application.id).eq('receipt_photo_path', path).maybeSingle();
       if (error) return result(500, { error: 'Could not verify the file path.' });
       belongsToApplication = !!data;
+      if (data?.receipt_photo_removed_at) return result(410, { error: removedMessage(data.receipt_photo_removed_at) });
     } else {
       const { data, error } = await db.from('profiles').select('valid_id_path')
         .eq('id', application.resident_id).eq('valid_id_path', path).maybeSingle();

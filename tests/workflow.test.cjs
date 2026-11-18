@@ -64,6 +64,29 @@ test('FT-1 (barangay 2026-11-18): new pays Plate + Inspection (100 for 100+ empl
  const changed=transition(fresh,{type:'assess',reference:ref,category:'Sari-Sari Store',classification:'Medium',amounts:app(s).assessment.items.map(i=>i.name==='Sticker'?100:i.amount)},at);
  assert.ok(changed.audits.some(x=>x.action==='Assessment fee amounts adjusted'),'Staff adding the sticker by hand is logged');
 });
+test('DB-10 clean-up rule: month + 14 days, only finished requests, never valid IDs, only after both backups',()=>{
+ const {cleanupDueDate,backupsTaken,planCleanup,dueMonths}=require('../lib/fileCleanup.ts');
+ assert.equal(cleanupDueDate('2026-10'),'2026-11-15');assert.equal(cleanupDueDate('2026-12'),'2027-01-15');
+ assert.deepEqual(dueMonths('2026-11-14').slice(-1),['2026-09']);assert.deepEqual(dueMonths('2026-11-15').slice(-1),['2026-10']);assert.equal(dueMonths('2026-11-15')[0],'2025-01');
+ const f=(bucket,status,path,createdAt='2026-10-10T02:00:00Z',removedAt=null)=>({bucket,path,createdAt,status,removedAt});
+ const files=[f('application-documents','Closed - Cleared','1/a.pdf'),f('receipt-photos','Rejected','2/r.jpg'),f('application-documents','Void','3/v.pdf'),
+  f('application-documents','Awaiting OR','4/open.pdf'),f('valid-ids',null,'u/id.jpg'),f('application-documents','Closed - Cleared','5/nov.pdf','2026-11-02T02:00:00Z'),
+  f('application-documents','Closed - Cleared','6/gone.pdf','2026-10-11T02:00:00Z','2026-11-16T00:00:00Z')];
+ const exp=(part,parts,file_count,created_at='2026-11-05T01:00:00Z',month='2026-10')=>({action:'files_exported',created_at,new_value:{month,part,parts,file_count}});
+ const dbx=(created_at='2026-11-06T01:00:00Z')=>({action:'database_exported',created_at,new_value:{}});
+ const ok=planCleanup('2026-10',files,[exp(1,1,5),dbx()],'2026-11-15');
+ assert.deepEqual(ok.blockers,[]);
+ assert.deepEqual(ok.remove.map(x=>x.path).sort(),['1/a.pdf','2/r.jpg','3/v.pdf'],'finished requests only, this month only, not already removed');
+ assert.equal(ok.keptOpen,1);assert.equal(ok.keptIds,1);assert.equal(ok.alreadyRemoved,1);
+ assert.match(planCleanup('2026-10',files,[exp(1,1,5),dbx()],'2026-11-14').blockers.join(),/grace period runs until 2026-11-15/);
+ assert.match(planCleanup('2026-10',files,[dbx()],'2026-11-20').blockers.join(),/files ZIP/,'no files export');
+ assert.match(planCleanup('2026-10',files,[exp(1,1,5,'2026-10-30T01:00:00Z'),dbx()],'2026-11-20').blockers.join(),/files ZIP/,'an export made during the month does not count');
+ assert.match(planCleanup('2026-10',files,[exp(1,2,3),dbx()],'2026-11-20').blockers.join(),/files ZIP/,'part 2 of 2 missing');
+ assert.deepEqual(planCleanup('2026-10',files,[exp(1,2,3),exp(2,2,2),dbx()],'2026-11-20').blockers,[],'every part of one export');
+ assert.match(planCleanup('2026-10',files,[exp(1,1,4),dbx()],'2026-11-20').blockers.join(),/added after the files ZIP/,'more files now than were exported');
+ assert.match(planCleanup('2026-10',files,[exp(1,1,5),dbx('2026-10-31T10:00:00Z')],'2026-11-20').blockers.join(),/database export/,'database export before the month ended (Manila) does not count');
+ assert.deepEqual(backupsTaken('2026-10',[exp(1,1,9,'2026-11-05T01:00:00Z','2026-09'),dbx()]).filesExported,null,'another month\'s export does not count');
+});
 test('DB-8 assessing needs a category the type offers, so an older uncategorised schedule cannot be picked',()=>{
  const go=(category,classification)=>transition(role(state(),'staff-maria'),{type:'assess',reference:ref,category,classification},at);
  assert.throws(()=>go('',''),/Choose a fee category/);

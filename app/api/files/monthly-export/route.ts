@@ -1,86 +1,22 @@
 import { NextResponse } from 'next/server';
-import { canExportMonthlyFiles, buildMonthlyManifest, EXPORT_BUCKETS, isAllowedMonthlyExportMonth, MAX_BYTES_PER_PART, MAX_VALID_ID_BYTES, splitMonthlyExportParts, type ExportCandidate } from '@/lib/monthlyFileExport';
+import { canExportMonthlyFiles, buildMonthlyManifest, EXPORT_BUCKETS, isAllowedMonthlyExportMonth, splitMonthlyExportParts, type ExportCandidate } from '@/lib/monthlyFileExport';
 import { currentUser } from '@/lib/server/currentUser';
 import { supabaseAdmin } from '@/lib/supabase/server';
+import { loadFileRecords } from '@/lib/server/monthlyFiles';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
 const SIGNED_URL_SECONDS = 600;
-const PAGE_SIZE = 1000;
 const fail = (error: string, status = 400) => NextResponse.json({ error }, { status, headers: { 'Cache-Control': 'no-store' } });
 
-type RelatedOne<T> = T | T[] | null | undefined;
-type DocumentRow = { storage_path: string | null; file_size: number | null; uploaded_at: string | null };
-type ReceiptRow = { receipt_photo_path: string | null; receipt_photo_size: number | null; recorded_at: string | null };
-type VerificationRow = { submitted_at: string | null };
-type ApplicationRow = {
-  id: number;
-  reference_no: string;
-  date_requested: string | null;
-  application_documents?: DocumentRow[] | null;
-  official_receipts?: RelatedOne<ReceiptRow>;
-  payment_verifications?: RelatedOne<VerificationRow>;
-};
-type ProfileRow = { valid_id_path: string; created_at: string };
 type SignedUrlRow = { path: string; signedUrl: string | null; error?: string | null };
 
-const one = <T,>(value: RelatedOne<T>): T | undefined => Array.isArray(value) ? value[0] : value ?? undefined;
-const many = <T,>(value: T[] | null | undefined): T[] => value ?? [];
-
+// The file list comes from lib/server/monthlyFiles.ts (shared with the clean-up); files already removed after an earlier
+// export (migration 26) are left out, since they are no longer in Storage.
 async function loadCandidates(db: ReturnType<typeof supabaseAdmin>) {
-  const applications: ApplicationRow[] = [];
-  for (let offset = 0; ; offset += PAGE_SIZE) {
-    const { data, error } = await db.from('applications')
-      .select('id, reference_no, date_requested, application_documents(storage_path, file_size, uploaded_at), official_receipts(receipt_photo_path, receipt_photo_size, recorded_at), payment_verifications(submitted_at)')
-      .order('id', { ascending: true }).range(offset, offset + PAGE_SIZE - 1);
-    if (error) throw new Error('Could not read application file references.');
-    const page = (data ?? []) as ApplicationRow[];
-    applications.push(...page);
-    if (page.length < PAGE_SIZE) break;
-  }
-
-  const applicationReferences = new Map(applications.map(row => [row.id, row.reference_no]));
-  const candidates: ExportCandidate[] = [];
-  for (const application of applications) {
-    for (const document of many(application.application_documents)) {
-      if (!document.storage_path) continue;
-      candidates.push({
-        bucket: 'application-documents',
-        path: document.storage_path,
-        createdAt: document.uploaded_at || application.date_requested || '',
-        sizeLimit: document.file_size ?? MAX_BYTES_PER_PART,
-      });
-    }
-
-    const receipt = one(application.official_receipts);
-    if (receipt?.receipt_photo_path) {
-      candidates.push({
-        bucket: 'receipt-photos',
-        path: receipt.receipt_photo_path,
-        createdAt: one(application.payment_verifications)?.submitted_at || receipt.recorded_at || '',
-        sizeLimit: receipt.receipt_photo_size ?? MAX_BYTES_PER_PART,
-      });
-    }
-  }
-
-  const profiles: ProfileRow[] = [];
-  for (let offset = 0; ; offset += PAGE_SIZE) {
-    const { data, error } = await db.from('profiles').select('valid_id_path, created_at')
-      .not('valid_id_path', 'is', null).order('created_at', { ascending: true }).range(offset, offset + PAGE_SIZE - 1);
-    if (error) throw new Error('Could not read valid ID references.');
-    const page = (data ?? []) as ProfileRow[];
-    profiles.push(...page);
-    if (page.length < PAGE_SIZE) break;
-  }
-  for (const profile of profiles) {
-    candidates.push({
-      bucket: 'valid-ids',
-      path: profile.valid_id_path,
-      createdAt: profile.created_at,
-      sizeLimit: MAX_VALID_ID_BYTES,
-    });
-  }
+  const { records, applicationReferences } = await loadFileRecords(db);
+  const candidates: ExportCandidate[] = records.filter(r => !r.removedAt).map(({ bucket, path, createdAt, sizeLimit }) => ({ bucket, path, createdAt, sizeLimit }));
   return { candidates, applicationReferences };
 }
 
