@@ -2,6 +2,7 @@
 const { spawnSync } = require('child_process');
 const path = require('path');
 const files = ['reports-and-timer.cjs', 'release-and-return.cjs', 'notifications.cjs', 'team-notifications.cjs', 'verify-page.cjs', 'business-verification.cjs', 'staff-queue.cjs', 'spam-handling.cjs', 'records-requests.cjs', 'admin-reversion.cjs', 'feedback-summary.cjs', 'transaction-log.cjs', 'monthly-collections.cjs', 'inspection-scheduling.cjs', 'waiting-times.cjs', 'staff-reports.cjs', 'reversion-filter.cjs', 'fees-new-renewal.cjs', 'database-export.cjs'];
+files.push('ft-report-payment-regressions.cjs');
 const rows = [];
 for (const f of files) {
   const r = spawnSync(process.execPath, [path.join(__dirname, f)], { encoding: 'utf8', timeout: 300000 });

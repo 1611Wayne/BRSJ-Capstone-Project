@@ -38,6 +38,8 @@ Each script prints PASS or FAIL for every check, then "N/N checks passed", and e
 
 - `reversion-filter.cjs` checks FT-24 clearance-type filtering alongside date/Admin/action filters, historical type handling, CSV and print.
 
+- `ft-report-payment-regressions.cjs` checks FT-5 stale/simulated OR exclusion, FT-7 averages by clearance type and Manila month, FT-22 payment confirmation and cancellation, and FT-24 Manila midnight boundaries. It saves screenshots in `e2e/shots/` using isolated sample data.
+
 - `staff-reports.cjs` checks FT-21 Staff report navigation, filtering, CSV/print, parity with Admin reports and role restrictions.
 
 - `business-verification.cjs` checks FT-19 exact public business-name matching, restricted result fields, excluded records and reference-verification navigation.
