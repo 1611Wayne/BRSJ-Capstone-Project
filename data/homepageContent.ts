@@ -13,7 +13,7 @@ export const portalBenefits = [
 ];
 
 export const homepageFAQs = [
-  { id: 'faq-apply', question: 'How do I apply for a clearance?', answer: 'Register or log in, choose one of the 13 clearance types, complete the application form, and upload the required documents. After you submit, your request will be marked Pending Assessment for Staff review.' },
+  { id: 'faq-apply', question: 'How do I apply for a clearance?', answer: 'Register or log in, choose one of the 9 clearance types, complete the application form, and upload the required documents. After you submit, your request will be marked Pending Assessment for Staff review.' },
   { id: 'faq-documents', question: 'What documents can I upload?', answer: 'Upload clear JPG, PNG, or PDF files, up to 5 MB each. Required documents appear in the application form and depend on your clearance type. A Business Clearance renewal requires the old clearance, and renters must also provide a contract of lease.' },
   { id: 'faq-assessment', question: 'How will I know how much to pay?', answer: 'Staff reviews your requirements and completes the assessment. When your status changes to Awaiting OR, open My Applications to view the fee breakdown and download your Pre-Assessment Slip.' },
   { id: 'faq-payment', question: 'Can I pay through this portal?', answer: 'Payments are made at the Municipal Treasury. The portal does not collect payments or issue Official Receipts. After paying, upload a photo of the receipt issued by the Treasury. Staff will review it and record the OR number before verifying payment.' },

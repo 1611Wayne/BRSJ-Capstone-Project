@@ -19,7 +19,7 @@ export default function HomePage() {
         <section className="max-w-[1200px] mx-auto px-6 md:px-12 py-12 md:py-[86px] grid md:grid-cols-[0.9fr_1.1fr] items-center gap-10 lg:gap-12 min-h-[530px]">
           <div>
             <h1 className="text-[34px] lg:text-[39px] leading-[1.08] font-bold text-brand-ink max-w-[450px]">Apply for Barangay<br/><span className="text-brand-primary">Clearances Online</span></h1>
-            <p className="mt-6 text-[14px] leading-6 text-slate-700 max-w-[430px]">Quickly apply for any of our 13 clearance types from the comfort of your home. A streamlined, transparent civic service.</p>
+            <p className="mt-6 text-[14px] leading-6 text-slate-700 max-w-[430px]">Quickly apply for any of our 9 clearance types from the comfort of your home. A streamlined, transparent civic service.</p>
             <div className="flex flex-wrap gap-3 mt-10">
               <Link href="/resident/apply" className="primary-btn">Apply Now</Link>
               <Link href="/track" className="secondary-btn">Track My Application</Link>
