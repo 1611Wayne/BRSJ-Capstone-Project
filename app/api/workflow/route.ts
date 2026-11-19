@@ -219,6 +219,12 @@ export async function POST(request: Request) {
     const edit = command.data.action === 'Edit Fields';
     const changes: Record<string, unknown> = edit ? { applicant_name: after.applicant, business_name: after.businessName,
       business_subcategory: after.businessSubcategory ?? null, clearance_revised_from: after.clearanceRevisedFrom ?? null } : {};
+    // Other entries printed on the clearance (address, purpose, ...), when the Admin corrected them.
+    if (edit && command.data.entries) {
+      const columns = applicantColumns(after, row.clearance_type_id);
+      Object.assign(changes, { address: columns.address, contact_number: columns.contact_number, purpose: columns.purpose, business_location: columns.business_location,
+        date_initial_operation: columns.date_initial_operation, business_contact: columns.business_contact, property_owner_name: columns.property_owner_name });
+    }
     if (edit && after.clearanceType !== before.clearanceType) {
       const { data: type } = await db.from('clearance_types').select('id').eq('name', after.clearanceType).eq('active', true).maybeSingle();
       if (!type) return fail('Choose a supported clearance type.', 400);
@@ -265,6 +271,12 @@ export async function POST(request: Request) {
     if (before.confirmation && !after.confirmation) await db.from('receipt_confirmations').delete().eq('application_id', row.id);
     if (before.feedback && !after.feedback) await db.from('feedback').delete().eq('application_id', row.id);
     if (before.simulatedPayment && !after.simulatedPayment) await db.from('simulated_payments').delete().eq('application_id', row.id);
+    // The Applicant's correction request this reversion answered (D10).
+    if (command.data.resolveCorrection) {
+      const { error } = await db.from('correction_requests').update({ status: 'Resolved', resolved_by: me.user.id, resolved_at: now, resolution_note: null })
+        .eq('application_id', row.id).eq('status', 'Open');
+      if (error) return fail('Could not resolve the correction request: ' + error.message);
+    }
     // The Reversion Audit Report's own record, besides the audit log entry written below.
     const entry = next.audits.find(a => a.reversion);
     const { error } = await db.from('transaction_reversions').insert({ application_id: row.id, admin_id: me.user.id, action: command.data.action,

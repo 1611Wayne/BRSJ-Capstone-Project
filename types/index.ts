@@ -48,7 +48,8 @@ export interface CorrectionRequest { id: string; message: string; requestedBy: s
 export type ApplicationEdits = Partial<Pick<Application, 'applicant' | 'address' | 'contact' | 'purpose' | 'applicationType' | 'businessLocation' | 'businessName' | 'initialOperation' | 'businessContact' | 'ownership' | 'propertyOwner' | 'hasEmployees' | 'employeeCount' | 'businessSubcategory'>>;
 export type ApplicationInput = Omit<Application, 'reference' | 'dateRequested' | 'status'>;
 export type ReversionAction = 'Edit Fields' | 'Void Transaction' | 'Mark Under Review';
-export interface TransactionReversion { reference: string; action: ReversionAction; reason: string; applicant?: string; businessName?: string; orNumber?: string; orDate?: string; amountPaid?: number; clearanceType?: string; feeAssessment?: { scheduleId: string; amounts: number[] } }
+export interface TransactionReversion { reference: string; action: ReversionAction; reason: string; applicant?: string; businessName?: string; orNumber?: string; orDate?: string; amountPaid?: number; clearanceType?: string; feeAssessment?: { scheduleId: string; amounts: number[] };
+  entries?: Partial<Pick<Application, 'address' | 'contact' | 'purpose' | 'businessLocation' | 'initialOperation' | 'businessContact' | 'propertyOwner'>>; resolveCorrection?: boolean }
 export interface AuditLog { id: string; timestamp: string; user: string; userId?: string; role: UserRole; action: string; reference: string; oldValue?: string; newValue?: string; reason?: string; reversion?: boolean }
 export interface ReportRecord { clearanceType: string; count: number; assessed: number; recorded: number }
 export interface MonthlyCollectionRow extends ReportRecord { date: string; subcategory: string; applicationType: Application['applicationType']; components: Record<string, number> }

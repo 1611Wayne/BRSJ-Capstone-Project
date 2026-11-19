@@ -14,6 +14,11 @@ export function ReversionModal({application:a,onClose,onConfirm}:{application:Ap
  const [action,setAction]=useState<ReversionAction>('Edit Fields'),[reason,setReason]=useState(''),[applicant,setApplicant]=useState(a.applicant),[businessName,setBusinessName]=useState(a.businessName),[orNumber,setOrNumber]=useState(a.receipt?.orNumber||''),[orDate,setOrDate]=useState(a.receipt?.orDate||''),[amountPaid,setAmountPaid]=useState(a.receipt?.amountPaid.toFixed(2)||''),[error,setError]=useState('');
  const [clearanceType,setClearanceType]=useState(a.clearanceType),[editFees,setEditFees]=useState(false),[scheduleId,setScheduleId]=useState(a.assessment?.scheduleId||'');
  const [feeDraft,setFeeDraft]=useState<{scheduleId:string;amounts:string[]}>();
+ // Other entries printed on the clearance, and the Applicant's open correction request this reversion answers (D10).
+ const openRequest=a.corrections?.find(c=>c.status==='Open');
+ const [entries,setEntries]=useState({address:a.address,contact:a.contact,purpose:a.purpose,businessLocation:a.businessLocation,initialOperation:a.initialOperation,businessContact:a.businessContact,propertyOwner:a.propertyOwner}),[resolveCorrection,setResolveCorrection]=useState(!!openRequest);
+ const setEntry=(key:keyof typeof entries,value:string)=>setEntries(e=>({...e,[key]:value}));
+ const changedEntries=Object.fromEntries(Object.entries(entries).filter(([k,v])=>v!==a[k as keyof typeof entries]));
  const schedules=state.schedules.filter(s=>s.clearanceType===clearanceType&&activeSchedule(state.schedules,clearanceType,s.category,s.classification)?.id===s.id);
  const schedule=schedules.find(s=>s.id===scheduleId)||schedules.find(s=>s.category===a.assessment?.category&&s.classification===a.assessment?.classification)||schedules[0];
  const correctingFees=editFees||clearanceType!==a.clearanceType;
@@ -23,13 +28,25 @@ export function ReversionModal({application:a,onClose,onConfirm}:{application:Ap
  return <Modal title="Transaction Reversion" onClose={onClose}>
   <dl className="form-grid text-xs mt-5">{Object.entries({'Reference No.':a.reference,Applicant:a.applicant,'Clearance Type':a.clearanceType,'Staff Encoder':a.staffEncoder||'Resident self-service'}).map(([k,v])=><div key={k}><dt className="text-slate-500">{k}</dt><dd className="font-semibold mt-1">{v}</dd></div>)}</dl>
   <div className="text-xs mt-3">Current Status: <StatusBadge status={a.status}/></div>
-    <form className="mt-5 space-y-4" onSubmit={e=>{e.preventDefault();try{onConfirm({reference:a.reference,action,reason,applicant,businessName,...(a.receipt?{orNumber,orDate,amountPaid:Number(amountPaid)}:{}),clearanceType,...(action==='Edit Fields'&&correctingFees&&schedule?{feeAssessment:{scheduleId:schedule.id,amounts:amounts.map(Number)}}:{})});onClose();}catch(e){setError((e as Error).message);}}}>
+    <form className="mt-5 space-y-4" onSubmit={e=>{e.preventDefault();try{onConfirm({reference:a.reference,action,reason,applicant,businessName,...(a.receipt?{orNumber,orDate,amountPaid:Number(amountPaid)}:{}),clearanceType,...(action==='Edit Fields'&&correctingFees&&schedule?{feeAssessment:{scheduleId:schedule.id,amounts:amounts.map(Number)}}:{}),...(action==='Edit Fields'&&Object.keys(changedEntries).length?{entries:changedEntries}:{}),...(openRequest&&resolveCorrection?{resolveCorrection:true}:{})});onClose();}catch(e){setError((e as Error).message);}}}>
+   {openRequest&&<div className="bg-brand-soft p-4 text-sm"><p className="text-xs font-bold uppercase tracking-wide text-brand-ink">Applicant&apos;s correction request</p><p className="mt-2">{openRequest.message}</p>
+    <label className="flex items-center gap-2 mt-3"><input type="checkbox" checked={resolveCorrection} onChange={e=>setResolveCorrection(e.target.checked)}/>Resolve the Applicant&apos;s correction request with this reversion</label></div>}
    <Field label="Select Action *"><select className="select-field" value={action} onChange={e=>setAction(e.target.value as ReversionAction)}><option>Edit Fields</option><option>Void Transaction</option><option>Mark Under Review</option></select></Field>
    <Field label="Reason for Reversion *"><textarea className="textarea-field min-h-[90px]" value={reason} required onChange={e=>setReason(e.target.value)}/></Field>
    {action==='Edit Fields'&&<div className="space-y-4">
     <Field label="Applicant Name *"><input required className="text-field" value={applicant} onChange={e=>setApplicant(e.target.value)}/></Field>
     <Field label="Clearance Type *"><select className="select-field" value={clearanceType} onChange={e=>{setClearanceType(e.target.value);setScheduleId('');setFeeDraft(undefined);}}>{clearanceTypes.map(type=><option key={type.id}>{type.name}</option>)}</select></Field>
     {clearanceType==='Business Clearance'&&<Field label="Business Name"><input className="text-field" value={businessName} onChange={e=>setBusinessName(e.target.value)}/></Field>}
+    <Field label="Complete Address *"><input required className="text-field" value={entries.address} onChange={e=>setEntry('address',e.target.value)}/></Field>
+    <Field label="Contact Number *"><input required className="text-field" value={entries.contact} onChange={e=>setEntry('contact',e.target.value)}/></Field>
+    <Field label="Purpose of Clearance *"><input required className="text-field" value={entries.purpose} onChange={e=>setEntry('purpose',e.target.value)}/></Field>
+    <Field label="Business / Property Location *"><input required className="text-field" value={entries.businessLocation} onChange={e=>setEntry('businessLocation',e.target.value)}/></Field>
+    {a.ownership!=='Owner'&&<Field label="Name of Property Owner *"><input required className="text-field" value={entries.propertyOwner} onChange={e=>setEntry('propertyOwner',e.target.value)}/></Field>}
+    {clearanceType==='Business Clearance'&&<>
+     <Field label="Business Contact Number *"><input required className="text-field" value={entries.businessContact} onChange={e=>setEntry('businessContact',e.target.value)}/></Field>
+     <Field label="Date of Initial Operation *"><input required type="date" max={today()} className="text-field" value={entries.initialOperation} onChange={e=>setEntry('initialOperation',e.target.value)}/></Field>
+    </>}
+    <p className="text-xs text-slate-600">To change the application type, ownership or employees, correct the fee assessment below (the request returns to Pending Assessment, where Staff can edit them and assess again).</p>
     {a.receipt&&<>
      <Field label="OR Number *"><input required className="text-field" value={orNumber} onChange={e=>setOrNumber(e.target.value)}/></Field>
      <Field label="OR Date *"><input required type="date" max={today()} className="text-field" value={orDate} onChange={e=>setOrDate(e.target.value)}/></Field>

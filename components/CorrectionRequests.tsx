@@ -4,7 +4,7 @@ import type { Application, ApplicationEdits, CorrectionRequest } from '@/types';
 import { usePortal } from './PortalProvider';
 import { Field, ErrorMessage, Notice } from './Field';
 import { businessSubcategories } from '@/data/clearanceTypes';
-import { correctableStatuses, dateLabel, today } from '@/lib/workflow';
+import { correctableStatuses, correctionNeedsAdmin, correctionRequestStatuses, dateLabel, today } from '@/lib/workflow';
 
 const MAX_MESSAGE = 500;
 export const openCorrection = (a: Application) => a.corrections?.find(c => c.status === 'Open');
@@ -18,17 +18,19 @@ function SendRequest({ application: a }: { application: Application }) {
     try { act({ type: 'requestCorrection', reference: a.reference, message }); setMessage(''); setError(''); setSent(true); }
     catch (err) { setError((err as Error).message); }
   }
-  const returned = a.status === 'Rejected';
+  const returned = a.status === 'Rejected', issued = correctionNeedsAdmin(a);
   return <form onSubmit={send} className="mt-4">
     <p className="text-sm text-slate-600">{returned
       ? 'Your request was returned to you. You do not need to change anything yourself. Write what is wrong and what it should say, and Staff will fix it for you.'
-      : 'Found a mistake? You do not need to change anything yourself. Write what is wrong and what it should say, and Staff will fix it for you.'}</p>
+      : issued
+        ? 'Your clearance is already issued. If something on it is wrong, write what is wrong and what it should say. An Admin will correct it, and you can then download a new copy marked REVISED.'
+        : 'Found a mistake? You do not need to change anything yourself. Write what is wrong and what it should say, and Staff will fix it for you.'}</p>
     <Field label="What needs to be corrected?" hint={`Example: My last name is spelled "Clarra". It should be "Clara". ${message.length}/${MAX_MESSAGE}`}>
       <textarea className="textarea-field min-h-[90px]" maxLength={MAX_MESSAGE} required value={message} onChange={e => { setMessage(e.target.value); setSent(false); }} />
     </Field>
     <ErrorMessage message={error} />
-    {sent && <Notice>Your request was sent to Staff.</Notice>}
-    <button className="primary-btn mt-3" disabled={!message.trim()}>Send to Staff</button>
+    {sent && <Notice>Your request was sent to {issued ? 'the Admin' : 'Staff'}.</Notice>}
+    <button className="primary-btn mt-3" disabled={!message.trim()}>{issued ? 'Send to the Admin' : 'Send to Staff'}</button>
   </form>;
 }
 
@@ -48,6 +50,8 @@ const toEdits = (f: Form, business: boolean): ApplicationEdits => ({
 function EditEntries({ application: a, onSaved }: { application: Application; onSaved: () => void }) {
   const { act } = usePortal();
   const business = a.clearanceType === 'Business Clearance';
+  // After assessment the business fee depends on New/Renewal and the employees (FT-1); changing them needs a new assessment.
+  const feeLocked = business && !!a.assessment && (a.status === 'Awaiting OR' || a.status === 'For Checking');
   const [form, setForm] = useState<Form>(() => toForm(a)), [error, setError] = useState('');
   const set = <K extends keyof Form>(key: K, value: Form[K]) => setForm(f => ({ ...f, [key]: value }));
   function save(e: React.FormEvent) {
@@ -63,7 +67,7 @@ function EditEntries({ application: a, onSaved }: { application: Application; on
       <Field label="Contact Number *"><input required className="text-field" value={form.contact} onChange={e => set('contact', e.target.value)} /></Field>
       <Field label="Purpose of Clearance *"><input required className="text-field" value={form.purpose} onChange={e => set('purpose', e.target.value)} /></Field>
       <Field label="Business / Property Location *"><input required className="text-field" value={form.businessLocation} onChange={e => set('businessLocation', e.target.value)} /></Field>
-      <Field label="Application Type"><select className="select-field" value={form.applicationType} onChange={e => set('applicationType', e.target.value as Form['applicationType'])}><option>New Application</option><option>Renewal</option></select></Field>
+      <Field label="Application Type"><select disabled={feeLocked} className="select-field" value={form.applicationType} onChange={e => set('applicationType', e.target.value as Form['applicationType'])}><option>New Application</option><option>Renewal</option></select></Field>
       <Field label="Ownership"><select className="select-field" value={form.ownership} onChange={e => set('ownership', e.target.value as Form['ownership'])}><option>Owner</option><option>Renter</option><option>Occupant</option></select></Field>
       {form.ownership !== 'Owner' && <Field label="Name of Property Owner *"><input required className="text-field" value={form.propertyOwner} onChange={e => set('propertyOwner', e.target.value)} /></Field>}
       {business && <>
@@ -72,9 +76,10 @@ function EditEntries({ application: a, onSaved }: { application: Application; on
         <Field label="Date of Initial Operation *"><input type="date" max={today()} required className="text-field" value={form.initialOperation} onChange={e => set('initialOperation', e.target.value)} /></Field>
         <Field label="Business Subcategory (optional)"><select className="select-field" value={form.businessSubcategory} onChange={e => set('businessSubcategory', e.target.value)}><option value="">Business Clearance only</option>{businessSubcategories.map(c => <option key={c}>{c}</option>)}</select></Field>
       </>}
-      <Field label="Has employees?"><select className="select-field" value={form.hasEmployees} onChange={e => set('hasEmployees', e.target.value)}><option value="">Not stated</option><option value="yes">Yes</option><option value="no">No</option></select></Field>
-      {form.hasEmployees === 'yes' && <Field label="Number of employees (optional)"><input type="number" inputMode="numeric" min="1" className="text-field" value={form.employeeCount} onChange={e => set('employeeCount', e.target.value)} /></Field>}
+      <Field label="Has employees?"><select disabled={feeLocked} className="select-field" value={form.hasEmployees} onChange={e => set('hasEmployees', e.target.value)}><option value="">Not stated</option><option value="yes">Yes</option><option value="no">No</option></select></Field>
+      {form.hasEmployees === 'yes' && <Field label="Number of employees (optional)"><input disabled={feeLocked} type="number" inputMode="numeric" min="1" className="text-field" value={form.employeeCount} onChange={e => set('employeeCount', e.target.value)} /></Field>}
     </div>
+    {feeLocked && <p className="text-xs text-slate-600 mt-3">The application type and employees are locked because the fee was already assessed from them. To change them, ask an Admin to use the Transaction Reversion so the request is assessed again.</p>}
     {(form.ownership === 'Renter' || form.applicationType === 'Renewal') && <p className="text-xs text-amber-800 mt-3">Renter and Renewal applications need extra documents. Any that are not on file will be added as Missing for the Applicant to upload.</p>}
     <ErrorMessage message={error} />
     <button className="primary-btn mt-3">Save Changes</button>
@@ -97,27 +102,36 @@ export function CorrectionRequests({ application: a }: { application: Applicatio
   const [editing, setEditing] = useState(false), [note, setNote] = useState(''), [error, setError] = useState(''), [saved, setSaved] = useState(false);
   if (!user) return null;
   const open = openCorrection(a), done = (a.corrections || []).filter(c => c.status === 'Resolved').reverse(), allowed = correctableStatuses.includes(a.status);
-  const resident = user.role === 'resident', staff = user.role === 'staff';
-  if (!(allowed && (resident || staff)) && !a.corrections?.length) return null;
+  const resident = user.role === 'resident', staff = user.role === 'staff', admin = user.role === 'admin';
+  // Before payment is verified Staff handle requests; after that (D10) an Admin does, through the transaction reversion.
+  const canAsk = correctionRequestStatuses.includes(a.status), byAdmin = correctionNeedsAdmin(a);
+  const canResolve = !!open && (byAdmin ? admin : staff);
+  if (!((canAsk && resident) || (allowed && staff)) && !a.corrections?.length) return null;
   function resolve() {
     try { act({ type: 'resolveCorrection', reference: a.reference, note }); setNote(''); setEditing(false); setError(''); setSaved(false); }
     catch (err) { setError((err as Error).message); }
   }
   return <div className="content-card p-6 mt-6 border-l-4 border-l-brand-primary">
-    <h2 className="text-lg font-bold text-brand-ink">{resident && allowed && !open ? 'Ask for a correction' : 'Correction requests'}</h2>
+    <h2 className="text-lg font-bold text-brand-ink">{resident && canAsk && !open ? 'Ask for a correction' : 'Correction requests'}</h2>
     {open && <div className="mt-3 bg-brand-soft p-4">
-      <p className="text-xs font-bold uppercase tracking-wide text-brand-ink">{resident ? 'Waiting for Staff' : 'Open request'}</p>
+      <p className="text-xs font-bold uppercase tracking-wide text-brand-ink">{resident ? (byAdmin ? 'Waiting for an Admin' : 'Waiting for Staff') : 'Open request'}</p>
       <p className="text-sm mt-2">{open.message}</p>
       <p className="text-xs text-slate-500 mt-2">Sent by {open.requestedBy} • {dateLabel(open.requestedAt)}</p>
     </div>}
-    {resident && allowed && !open && <SendRequest application={a} />}
+    {resident && canAsk && !open && <SendRequest application={a} />}
     {staff && <>
       {allowed ? <>
         {!open && <p className="text-sm text-slate-600 mt-3">There is no open request. You can still correct an entry if the Applicant asks you in person.</p>}
         <button type="button" className="secondary-btn mt-4" onClick={() => setEditing(v => !v)}>{editing ? 'Close editing' : 'Edit application entries'}</button>
         {editing && <EditEntries key={JSON.stringify(toForm(a))} application={a} onSaved={() => setSaved(true)} />}
         {saved && <Notice>Changes saved.{open ? ' Mark the request as resolved when you are done.' : ''}</Notice>}
-      </> : open && <p className="text-sm text-slate-600 mt-3">The clearance is already generated, so entries can only be changed through the Admin transaction reversion. Mark this request as resolved once that is done.</p>}
+      </> : open && <p className="text-sm text-slate-600 mt-3">Payment for this request is already verified, so an Admin handles this correction through the Transaction Reversion.</p>}
+    </>}
+    {admin && open && byAdmin && <div className="mt-4 text-sm text-slate-600">
+      <p>Payment is already verified, so the change is made through the Transaction Reversion: the old and new values are logged and the reissued clearance is marked REVISED. Tick "Resolve the Applicant&apos;s correction request" there, or mark it resolved below if no change is needed.</p>
+      <a className="secondary-btn mt-3 inline-block" href={`/admin/transaction-reversion?reference=${encodeURIComponent(a.reference)}`}>Open Transaction Reversion</a>
+    </div>}
+    {canResolve && <>
       {open && <div className="mt-5 border-t pt-4">
         <Field label="Note for the Applicant (optional)" hint={a.status === 'Rejected' ? 'Resolving this request reopens the application for assessment.' : undefined}>
           <input className="text-field" maxLength={300} value={note} onChange={e => setNote(e.target.value)} placeholder="Example: Corrected the spelling of the last name." />

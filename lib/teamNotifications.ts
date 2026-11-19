@@ -7,7 +7,9 @@ export function teamNotice(action: string, before: Application | undefined, afte
   if (action === 'saveApplication' && after.status === 'Pending Assessment' && (!before || before.status === 'Draft')) {
     event = 'submission_received'; message = `New application ${reference} was submitted. Review its documents and assessment.`;
   } else if (action === 'requestCorrection' && (after.corrections?.length ?? 0) > (before?.corrections?.length ?? 0)) {
-    event = 'correction_requested'; message = `The Applicant requested a correction for ${reference}. Review the request before resolving it.`;
+    event = 'correction_requested'; message = after.status === 'Ready for Download'
+      ? `The Applicant requested a correction for ${reference}, whose clearance is already issued. An Admin makes it through the Transaction Reversion.`
+      : `The Applicant requested a correction for ${reference}. Review the request before resolving it.`;
   } else if (['receiptPhoto', 'onlinePayment', 'or'].includes(action) && after.status === 'For Checking' && before?.status !== 'For Checking') {
     event = 'payment_pending'; message = `${after.simulatedPayment ? 'A simulated payment' : 'Payment evidence'} for ${reference} is waiting for Staff verification.`;
   } else if (action === 'verifyPayment' && after.status === 'Ready for Download' && before?.status !== 'Ready for Download') {

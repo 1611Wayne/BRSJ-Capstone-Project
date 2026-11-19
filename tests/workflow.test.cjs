@@ -796,8 +796,9 @@ test('the Applicant sends a free-text correction request: one open at a time, on
  assert.throws(()=>askFix(state(),'resident-maria','x'.repeat(501)),/500 characters/);
  assert.throws(()=>askFix(state(),'resident-juan'),/belongs to another resident/);
  for(const id of ['staff-maria','admin'])assert.throws(()=>askFix(state(),id),/Only the Applicant/);
- for(const status of ['Ready for Download','Closed - Cleared','Void','Draft']){const s2=state();app(s2).status=status;assert.throws(()=>askFix(s2),/can no longer be sent/,status);}
- for(const status of ['Pending Assessment','Under Review','Rejected','Awaiting OR','For Checking']){const s2=state();app(s2).status=status;assert.equal(app(askFix(s2)).corrections.length,1,status);}
+ for(const status of ['Closed - Cleared','Void','Draft']){const s2=state();app(s2).status=status;assert.throws(()=>askFix(s2),/can no longer be sent/,status);}
+ // "before the clearance is closed" (manuscript 3.1.1.1.2, D10): Ready for Download still accepts one.
+ for(const status of ['Pending Assessment','Under Review','Rejected','Awaiting OR','For Checking','Ready for Download']){const s2=state();app(s2).status=status;assert.equal(app(askFix(s2)).corrections.length,1,status);}
 });
 test('Staff correct the Applicant\'s entries for them; only the changed entries are logged, old and new',()=>{
  const before=app(state());const s=staffEdit(state(),{applicant:'  Maria Clarita ',contact:before.contact,purpose:'Renewal of business permit'});
@@ -841,6 +842,46 @@ test('resolving a correction request does not change the status of a request tha
  assert.throws(()=>transition(role(state(),'staff-maria'),{type:'resolveCorrection',reference:ref},at),/no open correction request/);
  assert.throws(()=>transition(role(s,'staff-maria'),{type:'resolveCorrection',reference:ref},at),/no open correction request/);
  for(const id of ['resident-maria','admin'])assert.throws(()=>transition(role(askFix(state()),id),{type:'resolveCorrection',reference:ref},at),/Only Staff/);
+});
+// D10 (decided 2026-11-19, option B): after payment is verified the Applicant can still send a correction request until the
+// clearance is closed; an Admin makes the change through the transaction reversion, and the reissued clearance is REVISED.
+const issuedWithRequest=()=>askFix(releasedByPhoto(),'resident-maria','The address should be Purok 3, San Jose.');
+const correctionNote=s=>s.notifications.find(n=>n.event==='correction_resolved'&&n.userId==='resident-maria');
+test('D10: a correction request on an issued clearance goes to an Admin, not Staff',()=>{
+ const s=issuedWithRequest();assert.equal(app(s).status,'Ready for Download');assert.equal(app(s).corrections[0].status,'Open');
+ assert.throws(()=>askFix(s),/already waiting for an Admin/);
+ assert.throws(()=>staffEdit(s,{address:'Purok 3, San Jose'}),/Admin transaction reversion/);
+ assert.throws(()=>transition(role(s,'staff-maria'),{type:'resolveCorrection',reference:ref},at),/an Admin resolves/);
+ assert.ok(s.notifications.some(n=>n.userId==='admin'&&n.event==='correction_requested'&&/Transaction Reversion/.test(n.message)));
+ // No change needed: the Admin marks it resolved with a note; the clearance stays as issued.
+ const resolved=transition(role(s,'admin'),{type:'resolveCorrection',reference:ref,note:'The address on file is already correct.'},at);
+ assert.deepEqual([app(resolved).corrections[0].status,app(resolved).corrections[0].resolvedBy,app(resolved).status],['Resolved','Admin San Jose','Ready for Download']);
+ assert.equal(app(resolved).clearance.revisedFrom,undefined);assert.match(correctionNote(resolved).message,/An Admin handled.*already correct/);
+ const closed=transition(role(releasedByPhoto(),'staff-maria'),{type:'confirm',reference:ref},at);
+ assert.throws(()=>askFix(closed),/can no longer be sent/);
+});
+test('D10: the Admin reversion corrects entries on the clearance, marks it REVISED and resolves the request',()=>{
+ const s=issuedWithRequest(),a0=app(s);
+ const data={reference:ref,action:'Edit Fields',reason:'Applicant reported a wrong address',applicant:a0.applicant,orNumber:a0.receipt.orNumber,orDate:a0.receipt.orDate,amountPaid:a0.receipt.amountPaid,entries:{address:'  Purok 3, San Jose  '},resolveCorrection:true};
+ const fixed=transition(role(s,'admin'),{type:'revert',data},at),a=app(fixed);
+ assert.equal(a.address,'Purok 3, San Jose');assert.equal(a.status,'Ready for Download');assert.equal(a.clearance.revisedFrom,a0.clearance.issueDate);assert.equal(a.clearance.downloadedAt,undefined);
+ assert.equal(a.corrections[0].status,'Resolved');assert.match(correctionNote(fixed).message,/REVISED/);
+ const reversion=fixed.audits.find(x=>x.reversion);assert.equal(JSON.parse(reversion.oldValue).address,a0.address);assert.equal(JSON.parse(reversion.newValue).address,'Purok 3, San Jose');
+ assert.ok(fixed.audits.some(x=>x.action==='Correction request resolved'&&/transaction reversion/.test(x.newValue)));
+ // Without entries the snapshot stays as before; checks match a Staff edit; only the listed entries; needs an open request.
+ assert.equal('address' in JSON.parse(transition(role(s,'admin'),{type:'revert',data:{...data,entries:undefined}},at).audits.find(x=>x.reversion).oldValue),false);
+ assert.throws(()=>transition(role(s,'admin'),{type:'revert',data:{...data,entries:{contact:'123'}}},at),/valid Philippine mobile/);
+ assert.throws(()=>transition(role(s,'admin'),{type:'revert',data:{...data,entries:{employeeCount:150}}},at),/cannot be corrected here/);
+ assert.throws(()=>transition(role(releasedByPhoto(),'admin'),{type:'revert',data},at),/no open correction request/);
+ const kept=transition(role(s,'admin'),{type:'revert',data:{...data,resolveCorrection:false}},at);assert.equal(app(kept).corrections[0].status,'Open');
+});
+test('D10: after assessment, Staff cannot change the entries a business fee depends on',()=>{
+ const assessed=assess(state());assert.equal(app(assessed).status,'Awaiting OR');
+ for(const changes of [{hasEmployees:true,employeeCount:150},{applicationType:app(assessed).applicationType==='Renewal'?'New Application':'Renewal'}])
+  assert.throws(()=>staffEdit(assessed,changes),/affects the assessed fee|another document required/,JSON.stringify(changes));
+ assert.throws(()=>staffEdit(assessed,{hasEmployees:true,employeeCount:150}),/affects the assessed fee/);
+ assert.equal(app(staffEdit(assessed,{purpose:'Changed'})).purpose,'Changed');
+ assert.equal(app(staffEdit(state(),{hasEmployees:true,employeeCount:150})).employeeCount,150);
 });
 test('Staff can leave a short reason on a flagged document; it is dropped once the document is verified or replaced',()=>{
  const first=app(state()).documents[0].requirement,doc=s=>app(s).documents.find(d=>d.requirement===first);

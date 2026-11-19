@@ -108,6 +108,14 @@ export const validOrDate = (date?: string, currentDate = today()) => !!date && /
 // Before the clearance is generated, an Applicant can ask for a correction and Staff can make it. A rejected request counts as
 // returned to the Applicant. After generation, changes go through the Admin transaction reversion.
 export const correctableStatuses: ApplicationStatus[] = ['Pending Assessment', 'Under Review', 'Rejected', 'Awaiting OR', 'For Checking'];
+// The Applicant can still ask "before the clearance is closed" (manuscript 3.1.1.1.2, decision D10): once payment is verified
+// the request goes to an Admin, who makes the change through the transaction reversion (logged, clearance reissued as REVISED).
+export const correctionRequestStatuses: ApplicationStatus[] = [...correctableStatuses, 'Ready for Download'];
+export const correctionNeedsAdmin = (a: Pick<Application, 'status'>) => !correctableStatuses.includes(a.status);
+// Entries the fee depends on for a business (New/Renewal, employees: FT-1). Once assessed, changing them means a new assessment.
+const feeEntries = ['applicationType', 'hasEmployees', 'employeeCount'];
+// Entries an Admin can correct on an issued clearance (besides the name and business name the reversion already had).
+export const reversionEntries = ['address', 'contact', 'purpose', 'businessLocation', 'initialOperation', 'businessContact', 'propertyOwner'] as const;
 export type Command =
   | { type: 'login'; email: string; password: string } | { type: 'logout' }
   | { type: 'sessionUser'; user: User }
@@ -390,12 +398,15 @@ export function transition(state: PortalState, command: Command, now = new Date(
   // Once a clearance is generated, changes go through the Admin reversion instead.
   const editableEntries = ['applicant', 'address', 'contact', 'purpose', 'applicationType', 'businessLocation', 'businessName', 'initialOperation', 'businessContact', 'ownership', 'propertyOwner', 'hasEmployees', 'employeeCount', 'businessSubcategory'];
   const openRequest = a.corrections?.find(c => c.status === 'Open');
+  const resolveOpenRequest = (note?: string) => {
+    a.corrections = a.corrections!.map(c => c.id === openRequest!.id ? { ...c, status: 'Resolved' as const, resolvedBy: fullName(actor), resolvedAt: now, resolutionNote: note } : c);
+  };
   if (command.type === 'requestCorrection') {
     requireThat(actor.role === 'resident', 'Only the Applicant can send a correction request.');
-    requireThat(correctableStatuses.includes(a.status), 'A correction request can no longer be sent for this request.');
+    requireThat(correctionRequestStatuses.includes(a.status), 'A correction request can no longer be sent for this request.');
     requireThat(command.message.trim(), 'Describe what needs to be corrected.');
     requireThat(command.message.trim().length <= 500, 'Keep the correction request to 500 characters or fewer.');
-    requireThat(!openRequest, 'A correction request is already waiting for Staff.');
+    requireThat(!openRequest, correctionNeedsAdmin(a) ? 'A correction request is already waiting for an Admin.' : 'A correction request is already waiting for Staff.');
     const request: CorrectionRequest = { id: `corr-${now}-${(a.corrections?.length || 0) + 1}`, message: command.message.trim(), requestedBy: fullName(actor), requestedAt: now, status: 'Open' };
     a.corrections = [...(a.corrections || []), request]; log('Correction requested', reference, '', command.message.trim());
   }
@@ -412,6 +423,9 @@ export function transition(state: PortalState, command: Command, now = new Date(
     requireThat(!next.hasEmployees || next.employeeCount === undefined || (Number.isInteger(next.employeeCount) && next.employeeCount > 0), 'Enter a valid number of employees.');
     for (const key of Object.keys(command.changes) as (keyof ApplicationEdits)[]) if (JSON.stringify(a[key]) !== JSON.stringify(next[key])) { before[key] = a[key]; after[key] = next[key]; }
     requireThat(Object.keys(after).length, 'Nothing was changed.');
+    // The assessed fee depends on New/Renewal and the employees (FT-1), so after assessment those go through the reversion,
+    // which returns the request for a new assessment.
+    requireThat(!business || !a.assessment || !['Awaiting OR', 'For Checking'].includes(a.status) || !Object.keys(after).some(k => feeEntries.includes(k)), 'This change affects the assessed fee. Use the Admin transaction reversion to have it assessed again.');
     // A change such as Renter or Renewal makes another document required. Add it as Missing so it can be uploaded through
     // the normal replace step; once the assessment is confirmed that is no longer possible, so the Admin reversion applies.
     const added = requirements(next).filter(r => !a.documents.some(d => d.requirement === r.name));
@@ -421,11 +435,14 @@ export function transition(state: PortalState, command: Command, now = new Date(
     log('Application edited by Staff for the Applicant', reference, JSON.stringify(before), JSON.stringify(after), openRequest?.message || '');
   }
   if (command.type === 'resolveCorrection') {
-    staff(); requireThat(openRequest, 'There is no open correction request to resolve.');
+    // Before payment is verified Staff resolve it; after that an Admin does (after the transaction reversion, if a change was needed).
+    if (correctionNeedsAdmin(a)) requireThat(actor.role === 'admin', 'Payment for this request is already verified, so an Admin resolves this correction request.');
+    else staff();
+    requireThat(openRequest, 'There is no open correction request to resolve.');
     const note = command.note?.trim().slice(0, 300) || undefined;
-    a.corrections = a.corrections!.map(c => c.id === openRequest.id ? { ...c, status: 'Resolved' as const, resolvedBy: fullName(actor), resolvedAt: now, resolutionNote: note } : c);
+    resolveOpenRequest(note);
     if (a.status === 'Rejected') { a.status = 'Pending Assessment'; a.rejection = undefined; }
-    notify(a.residentId, reference, 'correction_resolved', (original.status === 'Rejected' ? 'Staff made the correction you asked for, and your application is back in review.' : 'Staff made the correction you asked for.') + (note ? ` Note: ${note}` : ''));
+    notify(a.residentId, reference, 'correction_resolved', (original.status === 'Rejected' ? 'Staff made the correction you asked for, and your application is back in review.' : actor.role === 'admin' ? 'An Admin handled the correction you asked for.' : 'Staff made the correction you asked for.') + (note ? ` Note: ${note}` : ''));
     log('Correction request resolved', reference, openRequest.message, a.status === original.status ? 'Resolved' : `Resolved; ${original.status} -> ${a.status}`, note || '');
   }
   if (command.type === 'or') {
@@ -554,6 +571,18 @@ export function transition(state: PortalState, command: Command, now = new Date(
         a.paymentVerification = { status: 'Pending', submittedAt: now };
       }
       a.applicant = d.applicant!.trim(); a.businessName = d.businessName?.trim() || a.businessName;
+      if (d.entries) {
+        // Other entries printed on the clearance (address, purpose, ...), checked the same way as a Staff edit.
+        const e = d.entries;
+        requireThat(Object.keys(e).every(k => (reversionEntries as readonly string[]).includes(k)), 'That entry cannot be corrected here.');
+        const fixed = { address: (e.address ?? a.address).trim(), contact: (e.contact ?? a.contact).trim(), purpose: (e.purpose ?? a.purpose).trim(), businessLocation: (e.businessLocation ?? a.businessLocation).trim(),
+          initialOperation: e.initialOperation ?? a.initialOperation, businessContact: (e.businessContact ?? a.businessContact).trim(), propertyOwner: a.ownership === 'Owner' ? a.propertyOwner : (e.propertyOwner ?? a.propertyOwner).trim() };
+        requireThat(fixed.address && fixed.purpose && /^(09\d{9}|\+639\d{9})$/.test(fixed.contact), 'Complete the address and purpose, and enter a valid Philippine mobile number.');
+        requireThat(fixed.businessLocation, 'Business / property location is required.');
+        if (a.clearanceType === 'Business Clearance') requireThat(fixed.businessContact && fixed.initialOperation && !isNaN(Date.parse(fixed.initialOperation)) && fixed.initialOperation <= today(), 'Complete the business contact and use a valid operation date.');
+        requireThat(a.ownership === 'Owner' || fixed.propertyOwner, 'Property owner name is required for renters and occupants.');
+        Object.assign(a, fixed);
+      }
       if (assessmentChanged) {
         // Retain the receipt as evidence, but revoke release and require Staff to check requirements and reassess.
         // A fresh receipt submission after assessment must still pass the existing amount and OR checks.
@@ -565,8 +594,16 @@ export function transition(state: PortalState, command: Command, now = new Date(
       }
       if (a.clearance) a.clearance = { ...a.clearance, revisedFrom: a.clearance.revisedFrom || a.clearance.issueDate, downloadedAt: undefined };
     }
-    const snapshot = (x: Application) => JSON.stringify({ applicant: x.applicant, businessName: x.businessName, clearanceType: x.clearanceType, assessment: x.assessment, orNumber: x.receipt?.orNumber, receipt: x.receipt, simulatedPayment: x.simulatedPayment, status: x.status, clearance: x.clearance, clearanceRevisedFrom: x.clearanceRevisedFrom });
+    const snapshot = (x: Application) => JSON.stringify({ applicant: x.applicant, businessName: x.businessName, ...(d.entries ? Object.fromEntries(reversionEntries.map(k => [k, x[k]])) : {}), clearanceType: x.clearanceType, assessment: x.assessment, orNumber: x.receipt?.orNumber, receipt: x.receipt, simulatedPayment: x.simulatedPayment, status: x.status, clearance: x.clearance, clearanceRevisedFrom: x.clearanceRevisedFrom });
     log(d.action, reference, snapshot(original), snapshot(a), d.reason, true);
+    // The Applicant's correction request this reversion answers (D10): resolved together, so it is not left open.
+    if (d.resolveCorrection) {
+      requireThat(openRequest, 'There is no open correction request to resolve.');
+      resolveOpenRequest();
+      notify(a.residentId, reference, 'correction_resolved', a.status === 'Ready for Download' || a.status === 'Closed - Cleared' ? 'An Admin made the correction you asked for. Download the new copy of your clearance, marked REVISED.'
+        : a.status === 'Void' ? 'An Admin reviewed the correction you asked for. This request was voided; contact the barangay office for details.' : 'An Admin made the correction you asked for. Your request will be checked again before the clearance is reissued.');
+      log('Correction request resolved', reference, openRequest.message, `Resolved with the transaction reversion (${d.action})`);
+    }
   }
   s.applications = s.applications.map(x => x.reference === reference ? a : x);
   notifyTeam(original, a);
