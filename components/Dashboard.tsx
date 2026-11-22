@@ -183,7 +183,7 @@ export function Dashboard({ role }: { role: UserRole }) {
           </div>
           <div className="grid xl:grid-cols-2 gap-6">
             {/* Bar chart – daily transaction volume */}
-            <div className="content-card p-6">
+            <div className="content-card p-6 min-w-0">
               <div className="flex items-center gap-2 mb-4">
                 <BarChart2 size={16} className="text-brand-primary" aria-hidden="true" />
                 <h3 className="text-sm font-bold text-brand-ink">Daily Transaction Volume</h3>
@@ -192,7 +192,7 @@ export function Dashboard({ role }: { role: UserRole }) {
               <p className="text-xs text-slate-500 mt-3">Applications submitted per day. Dates shown as MM-DD.</p>
             </div>
             {/* Line chart – average processing time */}
-            <div className="content-card p-6">
+            <div className="content-card p-6 min-w-0">
               <div className="flex items-center gap-2 mb-4">
                 <Clock3 size={16} className="text-brand-primary" aria-hidden="true" />
                 <h3 className="text-sm font-bold text-brand-ink">Avg. Processing Time (minutes)</h3>
@@ -201,7 +201,7 @@ export function Dashboard({ role }: { role: UserRole }) {
               <p className="text-xs text-slate-500 mt-3">Average time from application submission to receipt confirmation, by the day the Applicant confirmed receipt. Missing dots = no confirmed clearances that day.</p>
             </div>
             {/* Line chart – SLA compliance % */}
-            <div className="content-card p-6">
+            <div className="content-card p-6 min-w-0">
               <div className="flex items-center gap-2 mb-4">
                 <Gauge size={16} className="text-brand-primary" aria-hidden="true" />
                 <h3 className="text-sm font-bold text-brand-ink">Daily SLA Compliance (%)</h3>
@@ -210,7 +210,7 @@ export function Dashboard({ role }: { role: UserRole }) {
               <p className="text-xs text-slate-500 mt-3">Percentage of payment checks (receipt upload to Staff verification) completed within the {SLA_SECONDS}s demo target, by the day Staff verified.</p>
             </div>
             {/* Bar chart – daily satisfaction ratings average */}
-            <div className="content-card p-6">
+            <div className="content-card p-6 min-w-0">
               <div className="flex items-center gap-2 mb-4">
                 <Star size={16} className="text-brand-primary" aria-hidden="true" />
                 <h3 className="text-sm font-bold text-brand-ink">Daily Avg. Satisfaction Rating</h3>
@@ -240,7 +240,7 @@ export function Dashboard({ role }: { role: UserRole }) {
           </div>
           <p className="text-sm text-slate-600 mb-5">{feedback.total} feedback {feedback.total === 1 ? 'response' : 'responses'} · {feedback.commentCount} with comments. Includes all available feedback, across all dates.</p>
           <div className="grid md:grid-cols-2 gap-6">
-            <div className="content-card p-6">
+            <div className="content-card p-6 min-w-0">
               <h3 className="font-bold text-brand-ink mb-4">Count per Star Rating</h3>
               <ul aria-label="Feedback counts by star rating" className="space-y-4">
                 {feedback.ratingCounts.map(({ rating, count }) => (
@@ -253,19 +253,19 @@ export function Dashboard({ role }: { role: UserRole }) {
               </ul>
               {!feedback.total && <p className="text-sm text-slate-500 mt-4">No feedback submitted yet.</p>}
             </div>
-            <div className="content-card p-6">
+            <div className="content-card p-6 min-w-0">
               <h3 className="font-bold text-brand-ink mb-2">Most Common Comment Words</h3>
               <p className="text-xs text-slate-500 mb-4">Top 10 words by number of occurrences. Capitalization and punctuation are ignored; common English and Filipino connecting words are excluded.</p>
               {feedback.commonWords.length ? <ReportTable headers={['Word', 'Occurrences']} rows={feedback.commonWords.map(({ word, count }) => [word, count])} /> : <p className="text-sm text-slate-500">No words to summarize yet.</p>}
             </div>
           </div>
           <div className="grid md:grid-cols-2 gap-6 mt-6">
-            <div className="content-card p-6" role="region" aria-label="Average Rating by Clearance Type">
+            <div className="content-card p-6 min-w-0" role="region" aria-label="Average Rating by Clearance Type">
               <h3 className="font-bold text-brand-ink mb-2">Average Rating by Clearance Type</h3>
               <p className="text-xs text-slate-500 mb-4">Each response counts once, including ratings without comments.</p>
               <ReportTable headers={['Clearance Type', 'Responses', 'Average Rating']} rows={feedback.byType.map(row => [row.clearanceType, row.count, row.average.toFixed(1) + '/5'])} />
             </div>
-            <div className="content-card p-6" role="region" aria-label="Monthly Feedback Trend">
+            <div className="content-card p-6 min-w-0" role="region" aria-label="Monthly Feedback Trend">
               <h3 className="font-bold text-brand-ink mb-2">Monthly Feedback Trend</h3>
               <p className="text-xs text-slate-500 mb-4">Grouped by feedback submission month in Manila time, oldest first. Months without responses have no average. Entries without a valid submission date remain in the overall totals only.</p>
               <ReportTable headers={['Month', 'Responses', 'Average Rating']} rows={feedback.monthly.map(row => [row.month, row.count, row.average === null ? '—' : row.average.toFixed(1) + '/5'])} />

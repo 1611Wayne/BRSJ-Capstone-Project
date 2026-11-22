@@ -16,7 +16,7 @@ import type { PortalState, User } from '@/types';
 async function loadMe(): Promise<User> {
   const response = await fetch('/api/me', { cache: 'no-store' });
   const body = await response.json().catch(() => ({}));
-  if (!response.ok) { await supabaseBrowser().auth.signOut(); throw new Error(body.error || 'Could not load your account.'); }
+  if (!response.ok) { await supabaseBrowser().auth.signOut({ scope: 'local' }); throw new Error(body.error || 'Could not load your account.'); }
   void fetch('/api/account/signed-in', { method: 'POST' }).catch(() => {});   // Audit Trail: the sign-in (DB-7); never blocks signing in
   return body.user as User;
 }
@@ -135,12 +135,12 @@ export default function LoginPage(){
  :mode==='password'?<form onSubmit={e=>{e.preventDefault();void submit(new FormData(e.currentTarget));}}>
   <div className="mt-6 space-y-4"><Field label="Email or Username"><input name="email" autoComplete="username" required className="text-field" placeholder="Enter your email or username"/></Field><Field label="Password"><PasswordInput name="password" autoComplete="current-password" required placeholder="Enter your password"/></Field></div>
   {useSupabaseAuth&&<p className="text-right mt-2"><button type="button" className="text-xs underline text-brand-primary" onClick={startReset}>Forgot password?</button></p>}
-  <Captcha onToken={setCaptchaToken} resetKey={captchaReset}/><ErrorMessage message={error}/><button className="primary-btn w-full mt-6" disabled={busy||needCheck}>{busy?'Signing in…':'Login'}</button>
+  <Captcha onToken={setCaptchaToken} resetKey={captchaReset}/><ErrorMessage message={error}/><button className="primary-btn w-full mt-6" disabled={busy||needCheck}>{busy?'Signing in…':needCheck?'Checking that you are not a robot…':'Login'}</button>
  </form>
  :!phone?<form onSubmit={e=>{e.preventDefault();void requestCode();}}>
   <p className="text-xs text-slate-600 mt-6">{mode==='reset'?'Enter the mobile number on your account. We will text it a 6-digit code. No mobile number on your account? Ask the barangay office to set a temporary password for you.':'We will text a 6-digit code to your mobile number. If this number is not registered yet, you can finish registering after signing in.'}</p>
   <div className="mt-4"><Field label="Mobile Number"><input type="tel" inputMode="tel" autoComplete="tel" required className="text-field" placeholder="09171234567" value={mobile} onChange={e=>setMobile(e.target.value)}/></Field></div>
-  <Captcha onToken={setCaptchaToken} resetKey={captchaReset}/><ErrorMessage message={error}/><button className="primary-btn w-full mt-6" disabled={busy||needCheck}>{busy?'Sending the code…':'Send Code'}</button>
+  <Captcha onToken={setCaptchaToken} resetKey={captchaReset}/><ErrorMessage message={error}/><button className="primary-btn w-full mt-6" disabled={busy||needCheck}>{busy?'Sending the code…':needCheck?'Checking that you are not a robot…':'Send Code'}</button>
   {mode==='reset'&&<button type="button" className="text-xs underline text-brand-primary mt-4" onClick={()=>{setResetBy('email');setError('');}}>Email me a reset link instead</button>}
  </form>
  :<form onSubmit={e=>{e.preventDefault();void submitCode();}}>

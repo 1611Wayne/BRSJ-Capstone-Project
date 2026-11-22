@@ -1,7 +1,7 @@
 // Runs every browser check in this folder against the running app and prints a summary. Exit code 0 = all passed.
 const { spawnSync } = require('child_process');
 const path = require('path');
-const files = ['reports-and-timer.cjs', 'release-and-return.cjs', 'notifications.cjs', 'team-notifications.cjs', 'verify-page.cjs', 'business-verification.cjs', 'staff-queue.cjs', 'spam-handling.cjs', 'records-requests.cjs', 'admin-reversion.cjs', 'feedback-summary.cjs', 'transaction-log.cjs', 'monthly-collections.cjs', 'inspection-scheduling.cjs', 'waiting-times.cjs', 'staff-reports.cjs', 'reversion-filter.cjs', 'fees-new-renewal.cjs', 'database-export.cjs', 'late-corrections.cjs'];
+const files = ['reports-and-timer.cjs', 'release-and-return.cjs', 'notifications.cjs', 'team-notifications.cjs', 'verify-page.cjs', 'business-verification.cjs', 'staff-queue.cjs', 'spam-handling.cjs', 'records-requests.cjs', 'admin-reversion.cjs', 'feedback-summary.cjs', 'transaction-log.cjs', 'monthly-collections.cjs', 'inspection-scheduling.cjs', 'waiting-times.cjs', 'staff-reports.cjs', 'reversion-filter.cjs', 'fees-new-renewal.cjs', 'database-export.cjs', 'late-corrections.cjs', 'uat-fixes.cjs'];
 files.push('ft-report-payment-regressions.cjs');
 const rows = [];
 for (const f of files) {
