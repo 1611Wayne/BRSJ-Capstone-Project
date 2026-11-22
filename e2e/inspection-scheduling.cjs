@@ -20,6 +20,9 @@ let checks=0;const check=(name,ok)=>{assert.ok(ok,name);checks++;console.log('PA
   const appointment=form.getByLabel('Scheduled Date and Time (Manila)');
   const save=()=>form.getByRole('button',{name:'Save Inspection Report',exact:true}).click();
   await page.goto(BASE+'/staff/assessment/'+ref);await form.waitFor();
+  // The size is not pre-selected (2026-11-22): Staff pick it from the business photo (again after each new page).
+  const pickSize=async()=>{if(await page.getByLabel(/^Classification/).count())await page.getByLabel(/^Classification/).selectOption({index:1});};
+  await pickSize();
   check('ordinary assessment stays available before scheduling',await page.getByRole('button',{name:'Confirm Assessment',exact:true}).isEnabled());
   await appointment.fill(future);
   check('an appointment requires an inspector',await form.evaluate(el=>!el.checkValidity()));
@@ -41,13 +44,13 @@ let checks=0;const check=(name,ok)=>{assert.ok(ok,name);checks++;console.log('PA
   check('dashboard link opens the saved inspection form',await appointment.inputValue()===future);
   await appointment.fill(later);await save();state=await saved();
   check('rescheduling records old and new appointments',state.audits.some(a=>a.action==='Inspection rescheduled'&&JSON.parse(a.oldValue).scheduledAt===inspectionTimestamp(future)&&JSON.parse(a.newValue).scheduledAt===inspectionTimestamp(later)));
-  await appointment.fill('');await save();
+  await appointment.fill('');await save();await pickSize();
   check('clearing an appointment removes the assessment block',await page.getByRole('button',{name:'Confirm Assessment',exact:true}).isEnabled());
   await page.goto(BASE+'/staff/dashboard');await list.waitFor();
   check('cleared appointment disappears from upcoming visits',!(await upcoming.innerText()).includes(ref));
   await page.goto(BASE+'/staff/assessment/'+ref);await form.waitFor();
   await appointment.fill(future);await save();
-  await form.getByLabel(/^Inspection Status/).selectOption('Completed');await form.getByLabel('Date Inspected').fill(today());await save();
+  await form.getByLabel(/^Inspection Status/).selectOption('Completed');await form.getByLabel('Date Inspected').fill(today());await save();await pickSize();
   check('recording completion releases the assessment block',await page.getByRole('button',{name:'Confirm Assessment',exact:true}).isEnabled());
   state=await saved();application=state.applications.find(a=>a.reference===ref);
   check('completion retains the planned appointment and actual inspection date',application.inspection.status==='Completed'&&application.inspection.date===today()&&application.inspection.scheduledAt===inspectionTimestamp(future));

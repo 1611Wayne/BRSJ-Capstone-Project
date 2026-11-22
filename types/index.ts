@@ -16,7 +16,7 @@ export interface BusinessCategory { name: string; classifications?: BusinessClas
 export type RevenueCategory = BusinessCategory;
 export interface FeeComponent { name: string; amount: number; ordinance?: string }
 export interface AssessmentItem extends FeeComponent {}
-export interface FeeSchedule { id: string; clearanceType: string; category: string; classification: string; items: FeeComponent[]; effectiveDate: string; ordinance: string; notes: string; changedBy: string; createdAt: string }
+export interface FeeSchedule { id: string; clearanceType: string; category: string; classification: string; items: FeeComponent[]; effectiveDate: string; ordinance: string; notes: string; changedBy: string; createdAt: string; retired?: boolean }
 export interface Assessment { items: AssessmentItem[]; total: number; category: string; classification: string; assessedBy: string; assessedAt: string; scheduleId: string; ordinance?: string }
 export interface BusinessAssessment extends Assessment {}
 export interface OfficialReceipt { orNumber: string; orDate: string; amountPaid: number; recordedAt: string; encodedBy: string; receiptPhoto?: UploadedDocument }

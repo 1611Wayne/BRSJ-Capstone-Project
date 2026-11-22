@@ -43,8 +43,9 @@ export function validFile(file: Pick<UploadedDocument, 'name' | 'size' | 'type'>
   return /\.(jpe?g|png|pdf)$/i.test(file.name) && ['image/jpeg', 'image/png', 'application/pdf'].includes(file.type) && file.size > 0 && file.size <= 5 * 1024 * 1024;
 }
 function requireThat(condition: unknown, message: string): asserts condition { if (!condition) throw new Error(message); }
+// A retired category or size (the barangay dropped it; its schedules stay as history) is never in force.
 export function activeSchedule(schedules: FeeSchedule[], type: string, category: string, classification: string, date = today()) {
-  return schedules.filter(s => s.clearanceType === type && s.category === category && s.classification === classification && s.effectiveDate <= date).sort((a,b) => b.effectiveDate.localeCompare(a.effectiveDate) || b.createdAt.localeCompare(a.createdAt))[0];
+  return schedules.filter(s => !s.retired && s.clearanceType === type && s.category === category && s.classification === classification && s.effectiveDate <= date).sort((a,b) => b.effectiveDate.localeCompare(a.effectiveDate) || b.createdAt.localeCompare(a.createdAt))[0];
 }
 // The fee categories (and their sizes) Staff and Admin choose from for a clearance type: every category with a schedule
 // in force, A to Z. They come from the loaded schedules, so in connected mode they are the database's (the Revenue Code,
@@ -52,36 +53,33 @@ export function activeSchedule(schedules: FeeSchedule[], type: string, category:
 export function feeCategoryOptions(schedules: FeeSchedule[], type: string, date = today()): { name: string; classifications?: { name: string }[] }[] {
   const found = new Map<string, Set<string>>();
   for (const s of schedules) {
-    if (s.clearanceType !== type || !s.category || s.effectiveDate > date) continue;
+    if (s.retired || s.clearanceType !== type || !s.category || s.effectiveDate > date) continue;
     if (!found.has(s.category)) found.set(s.category, new Set());
     if (s.classification) found.get(s.category)!.add(s.classification);
   }
   const rank = (size: string) => { const i = ['Small', 'Medium', 'Large', 'Big'].indexOf(size); return i < 0 ? 9 : i; };
   return sortedOptions(found, rank);
 }
-// Business size from the employees the Applicant entered (barangay, 2026-11-18): the MSME bands without Micro, so
-// 1–99 Small, 100–199 Medium, 200+ Large; where the code has only two sizes, 100+ is the larger one (Large or Big).
-// Other size lists (Lessor units, Retailer / Dealer, fencing area) are not about employees: no suggestion.
-export function suggestedSize(sizes: string[], employees: number): string | undefined {
-  const has = (n: string) => sizes.includes(n);
-  if (!has('Small')) return undefined;
-  if (has('Medium') && has('Large')) return employees >= 200 ? 'Large' : employees >= 100 ? 'Medium' : 'Small';
-  const larger = has('Large') ? 'Large' : has('Big') ? 'Big' : undefined;
-  if (!larger || sizes.length !== 2) return undefined;
-  return employees >= 100 ? larger : 'Small';
-}
 export const employeesOf = (a: Pick<Application, 'hasEmployees' | 'employeeCount'>) => a.hasEmployees ? Math.max(0, Number(a.employeeCount) || 0) : 0;
-// The amounts an assessment starts from (Staff may still change them; changes are logged). FT-1, confirmed by the
-// barangay 2026-11-18: a NEW business pays the Plate and the Inspection Fee (50 small, 100 big: 100+ employees), no
-// Sticker; a RENEWAL pays the Sticker, no Plate and no Inspection Fee (Staff add an inspection when one is done).
-// An Inspection Fee the schedule sets to anything but the standard 50 (the seasonal stall's 100) is kept as it is.
-export function assessmentDefaults(a: Pick<Application, 'clearanceType' | 'applicationType' | 'hasEmployees' | 'employeeCount'>, schedule: Pick<FeeSchedule, 'items'>): number[] {
-  if (a.clearanceType !== 'Business Clearance') return schedule.items.map(i => i.amount);
+// Sizes that count as "big" for the Inspection Fee (small 50 / big 100).
+const BIG_SIZES = ['Medium', 'Large', 'Big'];
+// The amounts an assessment starts from (Staff may still change them; changes are logged). The barangay's written answers
+// (2026-11-22) on top of FT-1 (2026-11-18):
+// - Business, NEW: Plate and Inspection Fee, no Sticker. RENEWAL: Sticker, no Plate, no Inspection Fee (Staff add an
+//   inspection when one is done). Staff pick the size from the photo of the business; the Inspection Fee follows it
+//   (Small 50; Medium, Large or Big 100). A schedule's own non-standard inspection (the seasonal stall's 100) is kept.
+// - Business: "No. of Employee" holds the rate, 50 per head, times the employees the Applicant entered (New and Renewal).
+// - TODA: NEW = the plate only (150 in total); RENEWAL = the franchise permit only (50).
+export function assessmentDefaults(a: Pick<Application, 'clearanceType' | 'applicationType' | 'hasEmployees' | 'employeeCount'>, schedule: Pick<FeeSchedule, 'items' | 'classification'>): number[] {
   const renewal = a.applicationType === 'Renewal';
+  // (Only when the schedule has a plate amount: the sample fees have none, so they keep the franchise fee.)
+  if (a.clearanceType === 'TODA Clearance' && schedule.items.some(i => i.name === 'Plate' && i.amount > 0)) return schedule.items.map(i => i.name === 'Plate' ? (renewal ? 0 : i.amount) : i.name === 'TODA Clearance' ? (renewal ? i.amount : 0) : i.amount);
+  if (a.clearanceType !== 'Business Clearance') return schedule.items.map(i => i.amount);
   return schedule.items.map(i => {
     if (i.name === 'Plate') return renewal ? 0 : i.amount;
     if (i.name === 'Sticker') return renewal ? i.amount : 0;
-    if (i.name === 'Inspection Fee') return renewal ? 0 : i.amount === 50 ? (employeesOf(a) >= 100 ? 100 : 50) : i.amount;
+    if (i.name === 'Inspection Fee') return renewal ? 0 : i.amount === 50 ? (BIG_SIZES.includes(schedule.classification) ? 100 : 50) : i.amount;
+    if (i.name === 'No. of Employee') return Math.round(i.amount * employeesOf(a) * 100) / 100;
     return i.amount;
   });
 }

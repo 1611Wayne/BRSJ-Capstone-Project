@@ -10,7 +10,7 @@ const one = (x: unknown) => (Array.isArray(x) ? x[0] : x) as Row | undefined;
 // the one saved last). The id is the database id; changedBy is the name of the Admin who saved that version.
 export async function loadFeeSchedules(db: SupabaseClient, clearanceType?: string): Promise<(FeeSchedule & { categoryId: number | null; classificationId: number | null })[]> {
   let query = db.from('fee_schedules')
-    .select('id, effective_date, ordinance_reference, reason_notes, created_at, business_category_id, classification_id, clearance_types!inner ( name ), business_categories ( name ), business_classifications ( name ), profiles ( first_name, last_name ), fee_schedule_items ( id, component_name, amount )');
+    .select('id, effective_date, ordinance_reference, reason_notes, created_at, business_category_id, classification_id, clearance_types!inner ( name ), business_categories ( name, active ), business_classifications ( name, active ), profiles ( first_name, last_name ), fee_schedule_items ( id, component_name, amount )');
   if (clearanceType !== undefined) query = query.eq('clearance_types.name', clearanceType);
   const { data, error } = await query;
   if (error) throw new Error('Could not load the fee schedules: ' + error.message);
@@ -22,6 +22,8 @@ export async function loadFeeSchedules(db: SupabaseClient, clearanceType?: strin
       effectiveDate: s.effective_date, ordinance: s.ordinance_reference, notes: s.reason_notes,
       changedBy: [by?.first_name, by?.last_name].filter(Boolean).join(' ') || 'Admin', createdAt: s.created_at,
       categoryId: s.business_category_id, classificationId: s.classification_id,
+      // A category or size the barangay dropped is switched off (active = false); its versions stay as history.
+      ...(one(s.business_categories)?.active === false || one(s.business_classifications)?.active === false ? { retired: true } : {}),
     };
   });
 }

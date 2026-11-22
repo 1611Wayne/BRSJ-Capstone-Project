@@ -35,31 +35,44 @@ test('DB-8 fee categories come from the schedules in force, A to Z, sizes in ord
  assert.deepEqual(feeCategoryOptions(s.schedules,'Building Clearance'),[{name:'Building Permit',classifications:[{name:'Commercial'},{name:'Residential'}]}]);
  assert.deepEqual(feeCategoryOptions(s.schedules,'Fencing Clearance')[0].classifications.map(c=>c.name),['100 sq m','200 sq m','300 sq m and above']);
 });
-test('size from employees (barangay 2026-11-18, MSME bands without Micro): 1-99 Small, 100-199 Medium, 200+ Large; two sizes: 100+ the larger',()=>{
- const {suggestedSize,employeesOf}=require('../lib/workflow.ts');
- const three=['Small','Medium','Large'];
- for(const [n,size] of [[0,'Small'],[1,'Small'],[99,'Small'],[100,'Medium'],[199,'Medium'],[200,'Large'],[5000,'Large']])assert.equal(suggestedSize(three,n),size,`${n} employees`);
- assert.equal(suggestedSize(['Small','Large'],99),'Small');assert.equal(suggestedSize(['Small','Large'],100),'Large');
- assert.equal(suggestedSize(['Small','Big'],150),'Big');assert.equal(suggestedSize(['Small','Big'],10),'Small');
- for(const other of [['1–4 Units','5–8 Units','9+ Units'],['Both Categories','Dealer','Retailer'],['100 sq m','200 sq m','300 sq m and above'],['Small','Medium','Big'],[]])assert.equal(suggestedSize(other,150),undefined,other.join());
+test('written answers (2026-11-22): no size suggestion; retired categories and sizes are never offered or in force',()=>{
+ const w=require('../lib/workflow.ts');const {feeCategoryOptions,activeSchedule,employeesOf}=w;
+ assert.equal(w.suggestedSize,undefined,'Staff pick the size from the business photo: no suggestion from employees');
  assert.equal(employeesOf({hasEmployees:true,employeeCount:12}),12);assert.equal(employeesOf({hasEmployees:false,employeeCount:12}),0);assert.equal(employeesOf({}),0);
+ const sch=(category,classification,extra={})=>({id:'r-'+category+classification,clearanceType:'Business Clearance',category,classification,items:[{name:'Business Clearance',amount:300}],effectiveDate:'2026-11-18',ordinance:'RC',notes:'',changedBy:'System',createdAt:'2026-11-18T00:00:00Z',...extra});
+ const list=[sch('Watch Repair Shop','Small',{retired:true}),sch('Watch Repair Shop','Large',{retired:true}),sch('Watch Repair Shop','Repair Only'),sch('Watch Repair Shop','Repair and Selling'),sch('Household Beauty Products','',{retired:true})];
+ const opts=feeCategoryOptions(list,'Business Clearance');
+ assert.deepEqual(opts.map(o=>o.name),['Watch Repair Shop'],'a retired category is not offered');
+ assert.deepEqual(new Set(opts[0].classifications.map(c=>c.name)),new Set(['Repair Only','Repair and Selling']),'retired sizes are not offered');
+ assert.equal(activeSchedule(list,'Business Clearance','Watch Repair Shop','Small'),undefined,'a retired size is never in force');
+ assert.equal(activeSchedule(list,'Business Clearance','Household Beauty Products',''),undefined);
+ assert.equal(activeSchedule(list,'Business Clearance','Watch Repair Shop','Repair Only').classification,'Repair Only');
 });
-test('FT-1 (barangay 2026-11-18): new pays Plate + Inspection (100 for 100+ employees), no Sticker; renewal pays the Sticker only',()=>{
+test('fee defaults (FT-1 + written answers 2026-11-22): plate/inspection for new, sticker for renewal; inspection by size; employees 50 per head; TODA new = plate only',()=>{
  const {assessmentDefaults}=require('../lib/workflow.ts');
- const sched={items:[{name:'Business Clearance',amount:300},{name:'Plate',amount:150},{name:'Inspection Fee',amount:50},{name:'Sticker',amount:100},{name:'Penalty',amount:0},{name:'No. of Employee',amount:0}]};
+ const items=[{name:'Business Clearance',amount:300},{name:'Plate',amount:150},{name:'Inspection Fee',amount:50},{name:'Sticker',amount:100},{name:'Penalty',amount:0},{name:'No. of Employee',amount:50}];
+ const sized=classification=>({items,classification});
  const biz=(applicationType,employeeCount)=>({clearanceType:'Business Clearance',applicationType,hasEmployees:employeeCount!==undefined,employeeCount});
- assert.deepEqual(assessmentDefaults(biz('New Application'),sched),[300,150,50,0,0,0]);
- assert.deepEqual(assessmentDefaults(biz('New Application',150),sched),[300,150,100,0,0,0]);
- assert.deepEqual(assessmentDefaults(biz('Renewal',150),sched),[300,0,0,100,0,0]);
- const stall={items:[{name:'Business Clearance',amount:250},{name:'Plate',amount:150},{name:'Inspection Fee',amount:100},{name:'Sticker',amount:100}]};
- assert.deepEqual(assessmentDefaults(biz('New Application',3),stall),[250,150,100,0],'a schedule\'s own non-standard inspection fee is kept');
- const building={items:[{name:'Building Clearance',amount:500},{name:'Plate',amount:0},{name:'Inspection Fee',amount:0}]};
+ assert.deepEqual(assessmentDefaults(biz('New Application'),sized('Small')),[300,150,50,0,0,0]);
+ for(const big of ['Medium','Large','Big'])assert.deepEqual(assessmentDefaults(biz('New Application'),sized(big)),[300,150,100,0,0,0],big+' pays the big inspection');
+ assert.deepEqual(assessmentDefaults(biz('New Application',150),sized('Small')),[300,150,50,0,0,7500],'the inspection follows the size, not the employees; 150 employees x 50');
+ assert.deepEqual(assessmentDefaults(biz('New Application',3),sized('')),[300,150,50,0,0,150],'no size: the standard 50; 3 employees x 50');
+ assert.deepEqual(assessmentDefaults(biz('Renewal',4),sized('Large')),[300,0,0,100,0,200],'renewal: sticker only, employees still charged');
+ assert.deepEqual(assessmentDefaults({clearanceType:'Business Clearance',applicationType:'New Application',hasEmployees:false,employeeCount:9},sized('Small'))[5],0,'no employees ticked: 0');
+ const stall={items:[{name:'Business Clearance',amount:250},{name:'Plate',amount:150},{name:'Inspection Fee',amount:100},{name:'Sticker',amount:100}],classification:''};
+ assert.deepEqual(assessmentDefaults(biz('New Application',3),stall),[250,150,100,0],"a schedule's own non-standard inspection fee is kept");
+ const building={items:[{name:'Building Clearance',amount:500},{name:'Plate',amount:0},{name:'Inspection Fee',amount:0}],classification:''};
  assert.deepEqual(assessmentDefaults({clearanceType:'Building Clearance',applicationType:'Renewal'},building),[500,0,0],'other clearance types keep the schedule');
+ const toda={items:[{name:'TODA Clearance',amount:50},{name:'Plate',amount:150},{name:'Inspection Fee',amount:0},{name:'Sticker',amount:0},{name:'Penalty',amount:0},{name:'No. of Employee',amount:0}],classification:''};
+ assert.deepEqual(assessmentDefaults({clearanceType:'TODA Clearance',applicationType:'New Application'},toda),[0,150,0,0,0,0],'TODA new: 150 in total');
+ assert.deepEqual(assessmentDefaults({clearanceType:'TODA Clearance',applicationType:'Renewal'},toda),[50,0,0,0,0,0],'TODA renewal: 50');
+ const sampleToda={items:[{name:'TODA Clearance',amount:50},{name:'Plate',amount:0}],classification:''};
+ assert.deepEqual(assessmentDefaults({clearanceType:'TODA Clearance',applicationType:'New Application'},sampleToda),[50,0],'a schedule without a plate amount keeps the franchise fee');
  // On the shared rules: assessing without amounts starts from these; only a change from them is logged as adjusted.
  const fresh=state('staff-maria');assert.equal(app(fresh).applicationType,'New Application');
  const s=transition(fresh,{type:'assess',reference:ref,category:'Sari-Sari Store',classification:'Medium'},at);
  const lines=Object.fromEntries(app(s).assessment.items.map(i=>[i.name,i.amount]));
- assert.equal(lines.Plate,150);assert.equal(lines.Sticker,0);assert.equal(lines['Inspection Fee'],50);assert.equal(app(s).assessment.total,500);
+ assert.equal(lines.Plate,150);assert.equal(lines.Sticker,0);assert.equal(lines['Inspection Fee'],100,'Medium is big: 100');assert.equal(app(s).assessment.total,500);
  assert.ok(!s.audits.some(x=>x.action==='Assessment fee amounts adjusted'),'the New / Renewal rule is not an adjustment');
  const changed=transition(fresh,{type:'assess',reference:ref,category:'Sari-Sari Store',classification:'Medium',amounts:app(s).assessment.items.map(i=>i.name==='Sticker'?100:i.amount)},at);
  assert.ok(changed.audits.some(x=>x.action==='Assessment fee amounts adjusted'),'Staff adding the sticker by hand is logged');

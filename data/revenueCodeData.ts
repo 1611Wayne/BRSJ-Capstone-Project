@@ -5,7 +5,7 @@ export const revenueCategories: RevenueCategory[] = [
     name: 'Sari-Sari Store',
     classifications: [
       { name: 'Small', businessClearance: 100 },
-      { name: 'Medium', businessClearance: 300 },
+      { name: 'Medium', businessClearance: 250 },   // sample: 250 + plate 150 + big inspection 100 = 500
       { name: 'Large', businessClearance: 500 },
     ],
   },
