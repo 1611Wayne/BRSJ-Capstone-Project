@@ -1,7 +1,7 @@
 export const applicationSteps = [
   { title: 'Choose Clearance', description: 'Select the clearance you need from our 13 available services.' },
   { title: 'Submit Requirements', description: 'Complete the form and upload your documents. Staff will review your request and prepare the assessment.' },
-  { title: 'Pay at Treasury / Enter OR', description: 'After assessment, pay at the Municipal Treasury. Return to the portal to enter your Official Receipt details.' },
+  { title: 'Pay at Treasury', description: 'After assessment, pay at the Municipal Treasury. Return to the portal to upload a photo of your Official Receipt.' },
   { title: 'Download Clearance', description: 'Download your available clearance and confirm receipt to close your request.' },
 ];
 

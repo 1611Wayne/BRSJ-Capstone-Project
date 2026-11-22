@@ -91,7 +91,7 @@ export default function HomePage() {
         <section aria-labelledby="notice-heading" className="max-w-[1000px] mx-auto px-6 md:px-8 py-8">
           <div className="border border-amber-200 bg-amber-50 p-5 flex gap-4 rounded-[4px]">
             <Info size={23} className="text-amber-800 shrink-0 mt-0.5" aria-hidden="true" />
-            <div><h2 id="notice-heading" className="text-base font-bold text-amber-950">Important Notice</h2><p className="text-sm leading-6 text-amber-950 mt-1">Payments are made at the Municipal Treasury. The portal does not collect payments or issue Official Receipts.</p><p className="text-sm leading-6 text-amber-900 mt-2">Bring your Pre-Assessment Slip when paying, then enter your Treasury-issued OR details in the portal.</p></div>
+            <div><h2 id="notice-heading" className="text-base font-bold text-amber-950">Important Notice</h2><p className="text-sm leading-6 text-amber-950 mt-1">Payments are made at the Municipal Treasury. The portal does not collect payments or issue Official Receipts.</p><p className="text-sm leading-6 text-amber-900 mt-2">Bring your Pre-Assessment Slip when paying.</p></div>
           </div>
         </section>
         <section id="faq" aria-labelledby="faq-heading" className="max-w-[1000px] mx-auto px-6 md:px-8 pt-6 pb-14">

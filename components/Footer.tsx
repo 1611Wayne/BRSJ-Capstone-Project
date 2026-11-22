@@ -11,7 +11,6 @@ export function Footer({ compact = false }: { compact?: boolean }) {
           <Brand compact />
           <nav aria-label="Policy links" className="flex flex-wrap justify-center gap-6 text-xs underline underline-offset-2">
             <Link href="/information#privacy">Privacy Policy</Link>
-            <Link href="/information#terms">Terms of Service</Link>
           </nav>
         </div>
       </footer>
@@ -32,8 +31,7 @@ export function Footer({ compact = false }: { compact?: boolean }) {
           <div className="space-y-3 underline underline-offset-2">
             <Link href="/information#contact">Contact Us</Link><br/>
             <Link href="/information#hours">Office Hours</Link><br/>
-            <Link href="/information#privacy">Privacy Policy</Link><br/>
-            <Link href="/information#terms">Terms of Service</Link>
+            <Link href="/information#privacy">Privacy Policy</Link>
           </div>
         </div>
         <div>
