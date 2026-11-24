@@ -4,7 +4,7 @@ import type { Application, ApplicationEdits, CorrectionRequest } from '@/types';
 import { usePortal } from './PortalProvider';
 import { Field, ErrorMessage, Notice } from './Field';
 import { businessSubcategories } from '@/data/clearanceTypes';
-import { correctableStatuses, correctionNeedsAdmin, correctionRequestStatuses, dateLabel, today } from '@/lib/workflow';
+import { PROPERTY_TYPES, VEHICLE_TYPES, correctableStatuses, correctionNeedsAdmin, correctionRequestStatuses, dateLabel, today } from '@/lib/workflow';
 
 const MAX_MESSAGE = 500;
 export const openCorrection = (a: Application) => a.corrections?.find(c => c.status === 'Open');
@@ -34,29 +34,31 @@ function SendRequest({ application: a }: { application: Application }) {
   </form>;
 }
 
-type Form = { applicant: string; address: string; contact: string; purpose: string; applicationType: Application['applicationType']; businessLocation: string; businessName: string; initialOperation: string; businessContact: string; ownership: Application['ownership']; propertyOwner: string; businessSubcategory: string; hasEmployees: string; employeeCount: string };
+type Form = { applicant: string; address: string; contact: string; purpose: string; applicationType: Application['applicationType']; businessLocation: string; businessName: string; initialOperation: string; businessContact: string; ownership: Application['ownership']; propertyOwner: string; businessSubcategory: string; hasEmployees: string; employeeCount: string; propertyUse: string; vehicleType: string; registrationNumber: string; plateNumber: string; bodyNumber: string };
 const toForm = (a: Application): Form => ({
   applicant: a.applicant, address: a.address, contact: a.contact, purpose: a.purpose, applicationType: a.applicationType, businessLocation: a.businessLocation, businessName: a.businessName,
   initialOperation: a.initialOperation, businessContact: a.businessContact, ownership: a.ownership, propertyOwner: a.propertyOwner, businessSubcategory: a.businessSubcategory || '',
-  hasEmployees: a.hasEmployees === undefined ? '' : a.hasEmployees ? 'yes' : 'no', employeeCount: a.employeeCount == null ? '' : String(a.employeeCount),
+  hasEmployees: a.hasEmployees === undefined ? '' : a.hasEmployees ? 'yes' : 'no', employeeCount: a.employeeCount == null ? '' : String(a.employeeCount), propertyUse: a.propertyUse || '', vehicleType: a.vehicleType || '', registrationNumber: a.registrationNumber || '', plateNumber: a.plateNumber || '', bodyNumber: a.bodyNumber || '',
 });
-const toEdits = (f: Form, business: boolean): ApplicationEdits => ({
+const toEdits = (f: Form, business: boolean, property = false, vehicle = '' as '' | 'TODA Clearance' | 'PODA Clearance'): ApplicationEdits => ({
   applicant: f.applicant, address: f.address, contact: f.contact, purpose: f.purpose, applicationType: f.applicationType, businessLocation: f.businessLocation, ownership: f.ownership, propertyOwner: f.propertyOwner,
   hasEmployees: f.hasEmployees === '' ? undefined : f.hasEmployees === 'yes', employeeCount: f.hasEmployees === 'yes' && f.employeeCount !== '' ? Number(f.employeeCount) : undefined,
   ...(business ? { businessName: f.businessName, initialOperation: f.initialOperation, businessContact: f.businessContact, businessSubcategory: (f.businessSubcategory || undefined) as ApplicationEdits['businessSubcategory'] } : {}),
+  ...(property && f.propertyUse ? { propertyUse: f.propertyUse as ApplicationEdits['propertyUse'] } : {}),
+  ...(vehicle ? { vehicleType: f.vehicleType, bodyNumber: f.bodyNumber, ...(vehicle === 'TODA Clearance' ? { registrationNumber: f.registrationNumber, plateNumber: f.plateNumber } : {}) } : {}),
 });
 
 // Staff change the Applicant's entries for them. Every change is logged with the old and new values.
 function EditEntries({ application: a, onSaved }: { application: Application; onSaved: () => void }) {
   const { act } = usePortal();
-  const business = a.clearanceType === 'Business Clearance';
+  const business = a.clearanceType === 'Business Clearance', property = PROPERTY_TYPES.includes(a.clearanceType), vehicle = VEHICLE_TYPES.includes(a.clearanceType) ? a.clearanceType as 'TODA Clearance' | 'PODA Clearance' : '';
   // After assessment the business fee depends on New/Renewal and the employees (FT-1); changing them needs a new assessment.
   const feeLocked = business && !!a.assessment && (a.status === 'Awaiting OR' || a.status === 'For Checking');
   const [form, setForm] = useState<Form>(() => toForm(a)), [error, setError] = useState('');
   const set = <K extends keyof Form>(key: K, value: Form[K]) => setForm(f => ({ ...f, [key]: value }));
   function save(e: React.FormEvent) {
     e.preventDefault();
-    try { act({ type: 'editApplication', reference: a.reference, changes: toEdits(form, business) }); setError(''); onSaved(); }
+    try { act({ type: 'editApplication', reference: a.reference, changes: toEdits(form, business, property, vehicle) }); setError(''); onSaved(); }
     catch (err) { setError((err as Error).message); }
   }
   return <form onSubmit={save} className="mt-4 border border-brand-border p-4">
@@ -66,10 +68,17 @@ function EditEntries({ application: a, onSaved }: { application: Application; on
       <Field label="Complete Address *"><input required className="text-field" value={form.address} onChange={e => set('address', e.target.value)} /></Field>
       <Field label="Contact Number *"><input required className="text-field" value={form.contact} onChange={e => set('contact', e.target.value)} /></Field>
       <Field label="Purpose of Clearance *"><input required className="text-field" value={form.purpose} onChange={e => set('purpose', e.target.value)} /></Field>
-      <Field label="Business / Property Location *"><input required className="text-field" value={form.businessLocation} onChange={e => set('businessLocation', e.target.value)} /></Field>
+      {!vehicle && <Field label="Location *"><input required className="text-field" value={form.businessLocation} onChange={e => set('businessLocation', e.target.value)} /></Field>}
+      {vehicle && <>
+        <Field label="Type of Vehicle *"><input required maxLength={40} className="text-field" value={form.vehicleType} onChange={e => set('vehicleType', e.target.value)} /></Field>
+        {vehicle === 'TODA Clearance' && <Field label="Registration No. *"><input required maxLength={40} className="text-field" value={form.registrationNumber} onChange={e => set('registrationNumber', e.target.value)} /></Field>}
+        {vehicle === 'TODA Clearance' && <Field label="Plate No. *"><input required maxLength={30} className="text-field" value={form.plateNumber} onChange={e => set('plateNumber', e.target.value)} /></Field>}
+        <Field label="Body Number *"><input required maxLength={40} className="text-field" value={form.bodyNumber} onChange={e => set('bodyNumber', e.target.value)} /></Field>
+      </>}
       <Field label="Application Type"><select disabled={feeLocked} className="select-field" value={form.applicationType} onChange={e => set('applicationType', e.target.value as Form['applicationType'])}><option>New Application</option><option>Renewal</option></select></Field>
       <Field label="Ownership"><select className="select-field" value={form.ownership} onChange={e => set('ownership', e.target.value as Form['ownership'])}><option>Owner</option><option>Renter</option><option>Occupant</option></select></Field>
       {form.ownership !== 'Owner' && <Field label="Name of Property Owner *"><input required className="text-field" value={form.propertyOwner} onChange={e => set('propertyOwner', e.target.value)} /></Field>}
+      {property && <Field label="Remarks *"><select required className="select-field" value={form.propertyUse} onChange={e => set('propertyUse', e.target.value)}><option value="" disabled>Choose…</option><option>Residential</option><option>Commercial</option></select></Field>}
       {business && <>
         <Field label="Name of Business *"><input required className="text-field" value={form.businessName} onChange={e => set('businessName', e.target.value)} /></Field>
         <Field label="Business Contact Number *"><input required className="text-field" value={form.businessContact} onChange={e => set('businessContact', e.target.value)} /></Field>

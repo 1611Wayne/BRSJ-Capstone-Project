@@ -21,7 +21,7 @@ const fresh = () => structuredClone({ users: mockUsers, applications: mockApplic
 const as = (s, id) => ({ ...s, currentUserId: id });
 const assessed = () => transition(fresh(), { type: 'assess', reference: ref, category: 'Sari-Sari Store', classification: 'Medium' }, at);
 const checking = () => transition(as(assessed(), 'resident-maria'), { type: 'receiptPhoto', reference: ref, photo }, at);
-const ready = () => transition(as(checking(), 'staff-maria'), { type: 'verifyPayment', reference: ref, orNumber: '123456', orDate: '2026-09-06', amountPaid: 500 }, at);
+const ready = () => transition(as(checking(), 'staff-maria'), { type: 'verifyPayment', reference: ref, orNumber: '12345600', orDate: '2026-09-06', amountPaid: 500 }, at);
 
 const results = [], errors = [];
 const check = (name, ok, detail = '') => { results.push(ok); console.log((ok ? 'PASS ' : 'FAIL ') + name + (detail ? '  [' + detail + ']' : '')); };

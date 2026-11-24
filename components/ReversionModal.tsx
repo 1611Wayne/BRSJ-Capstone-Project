@@ -6,7 +6,7 @@ import { StatusBadge } from './StatusBadge';
 import { usePortal } from './PortalProvider';
 import { clearanceTypes } from '@/data/clearanceTypes';
 import { formatPeso } from '@/data/revenueCodeData';
-import { activeSchedule, today } from '@/lib/workflow';
+import { activeSchedule, today, PLATE_TYPES, OR_DIGITS } from '@/lib/workflow';
 import type { Application, ReversionAction, TransactionReversion } from '@/types';
 
 export function ReversionModal({application:a,onClose,onConfirm}:{application:Application;onClose:()=>void;onConfirm:(data:TransactionReversion)=>void}) {
@@ -16,9 +16,9 @@ export function ReversionModal({application:a,onClose,onConfirm}:{application:Ap
  const [feeDraft,setFeeDraft]=useState<{scheduleId:string;amounts:string[]}>();
  // Other entries printed on the clearance, and the Applicant's open correction request this reversion answers (D10).
  const openRequest=a.corrections?.find(c=>c.status==='Open');
- const [entries,setEntries]=useState({address:a.address,contact:a.contact,purpose:a.purpose,businessLocation:a.businessLocation,initialOperation:a.initialOperation,businessContact:a.businessContact,propertyOwner:a.propertyOwner}),[resolveCorrection,setResolveCorrection]=useState(!!openRequest);
+ const [entries,setEntries]=useState({address:a.address,contact:a.contact,purpose:a.purpose,businessLocation:a.businessLocation,initialOperation:a.initialOperation,businessContact:a.businessContact,propertyOwner:a.propertyOwner,plateNumber:a.plateNumber||''}),[resolveCorrection,setResolveCorrection]=useState(!!openRequest);
  const setEntry=(key:keyof typeof entries,value:string)=>setEntries(e=>({...e,[key]:value}));
- const changedEntries=Object.fromEntries(Object.entries(entries).filter(([k,v])=>v!==a[k as keyof typeof entries]));
+ const changedEntries=Object.fromEntries(Object.entries(entries).filter(([k,v])=>(v||'')!==(a[k as keyof typeof entries]||'')));
  const schedules=state.schedules.filter(s=>s.clearanceType===clearanceType&&activeSchedule(state.schedules,clearanceType,s.category,s.classification)?.id===s.id);
  const schedule=schedules.find(s=>s.id===scheduleId)||schedules.find(s=>s.category===a.assessment?.category&&s.classification===a.assessment?.classification)||schedules[0];
  const correctingFees=editFees||clearanceType!==a.clearanceType;
@@ -40,15 +40,15 @@ export function ReversionModal({application:a,onClose,onConfirm}:{application:Ap
     <Field label="Complete Address *"><input required className="text-field" value={entries.address} onChange={e=>setEntry('address',e.target.value)}/></Field>
     <Field label="Contact Number *"><input required className="text-field" value={entries.contact} onChange={e=>setEntry('contact',e.target.value)}/></Field>
     <Field label="Purpose of Clearance *"><input required className="text-field" value={entries.purpose} onChange={e=>setEntry('purpose',e.target.value)}/></Field>
-    <Field label="Business / Property Location *"><input required className="text-field" value={entries.businessLocation} onChange={e=>setEntry('businessLocation',e.target.value)}/></Field>
-    {a.ownership!=='Owner'&&<Field label="Name of Property Owner *"><input required className="text-field" value={entries.propertyOwner} onChange={e=>setEntry('propertyOwner',e.target.value)}/></Field>}
+    <Field label="Location *"><input required className="text-field" value={entries.businessLocation} onChange={e=>setEntry('businessLocation',e.target.value)}/></Field>
+    {PLATE_TYPES.includes(clearanceType)&&<Field label="Plate No. (optional)"><input className="text-field" maxLength={30} value={entries.plateNumber} onChange={e=>setEntry('plateNumber',e.target.value)} placeholder="Empty = NO PLATE"/></Field>}{a.ownership!=='Owner'&&<Field label="Name of Property Owner *"><input required className="text-field" value={entries.propertyOwner} onChange={e=>setEntry('propertyOwner',e.target.value)}/></Field>}
     {clearanceType==='Business Clearance'&&<>
      <Field label="Business Contact Number *"><input required className="text-field" value={entries.businessContact} onChange={e=>setEntry('businessContact',e.target.value)}/></Field>
      <Field label="Date of Initial Operation *"><input required type="date" max={today()} className="text-field" value={entries.initialOperation} onChange={e=>setEntry('initialOperation',e.target.value)}/></Field>
     </>}
     <p className="text-xs text-slate-600">To change the application type, ownership or employees, correct the fee assessment below (the request returns to Pending Assessment, where Staff can edit them and assess again).</p>
     {a.receipt&&<>
-     <Field label="OR Number *"><input required className="text-field" value={orNumber} onChange={e=>setOrNumber(e.target.value)}/></Field>
+     <Field label="OR Number *" hint={OR_DIGITS+" digits, the number after NO. RZL on the Treasury receipt"}><input required className="text-field" value={orNumber} onChange={e=>setOrNumber(e.target.value)}/></Field>
      <Field label="OR Date *"><input required type="date" max={today()} className="text-field" value={orDate} onChange={e=>setOrDate(e.target.value)}/></Field>
      <Field label="Amount Paid (PHP) *"><input required type="number" inputMode="decimal" min="0" step="0.01" className="text-field" value={amountPaid} onChange={e=>setAmountPaid(e.target.value)}/></Field>
     </>}

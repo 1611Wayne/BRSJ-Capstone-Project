@@ -33,7 +33,7 @@ b = T(b, 'staff-maria', { type: 'assess', reference: ref, category: 'Sari-Sari S
 b = T(b, 'resident-maria', { type: 'receiptPhoto', reference: ref, photo }, '2026-09-07T01:40:00.000Z');
 b = T(b, 'staff-maria', { type: 'returnPayment', reference: ref, reason: 'The OR number is cut off.' }, '2026-09-07T01:50:00.000Z');
 b = T(b, 'resident-maria', { type: 'receiptPhoto', reference: ref, photo }, '2026-09-07T02:00:00.000Z');
-b = T(b, 'staff-maria', { type: 'verifyPayment', reference: ref, orNumber: '123456', orDate: '2026-09-06', amountPaid: 500 }, '2026-09-07T02:10:00.000Z');
+b = T(b, 'staff-maria', { type: 'verifyPayment', reference: ref, orNumber: '12345600', orDate: '2026-09-06', amountPaid: 500 }, '2026-09-07T02:10:00.000Z');
 const stateB = as(b, 'resident-maria');
 
 const results = [], errors = [];

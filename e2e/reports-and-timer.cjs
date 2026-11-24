@@ -36,12 +36,12 @@ const shot = (page, n) => page.screenshot({ path: path.join(__dirname, 'shots', 
   // 1. Staff verify through the real form
   await page.goto(BASE_URL + '/staff/applications/' + ref);
   await page.waitForSelector('h2:has-text("Payment Verification")');
-  const num = page.locator('input[placeholder^="Enter the OR number"]');
+  const num = page.getByLabel('Official Receipt (OR) Number', { exact: false });
   const date = page.locator('form input[type=date]');
   const btn = page.locator('button:has-text("Verify Payment")');
   check('form shows an OR Date field for the receipt-photo flow', await date.count() === 1);
   check('Verify is disabled until both OR number and OR date are filled', await btn.isDisabled());
-  await num.fill('123456');
+  await num.fill('12345600');
   check('still disabled with only the OR number', await btn.isDisabled());
   await date.fill('2026-09-06');
   const amount = page.locator('form input[type=number]');
@@ -58,7 +58,7 @@ const shot = (page, n) => page.screenshot({ path: path.join(__dirname, 'shots', 
   await btn.click();
   await page.waitForSelector('text=Checked by Maria Staff');
   let body = await page.locator('body').innerText();
-  check('verified: OR number shown, status Ready for Download', body.includes('OR Number: 123456') && /Ready for Download/.test(body));
+  check('verified: OR number shown, status Ready for Download', body.includes('OR Number: 12345600') && /Ready for Download/.test(body));
   check('the OR date field is gone after verification', await page.locator('form input[type=date]').count() === 0);
 
   // 2. Detail page: processing table

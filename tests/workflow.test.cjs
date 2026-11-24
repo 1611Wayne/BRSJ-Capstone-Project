@@ -228,7 +228,7 @@ test('FT-10 correction, payment and release notices preserve Applicant events an
  s=transition(role(s,'resident-maria'),{type:'receiptPhoto',reference:ref,photo},'2026-09-07T03:00:00.000Z');
  assert.equal(notificationsFor(s,'admin').filter(n=>n.event==='payment_pending').length,1);
  assert.equal(notificationsFor(s,'staff-maria').filter(n=>n.event==='payment_pending').length,2);
- s=transition(role(s,'staff-maria'),{type:'verifyPayment',reference:ref,orNumber:'FT10-OR',orDate:'2026-09-06',amountPaid:500},at);
+ s=transition(role(s,'staff-maria'),{type:'verifyPayment',reference:ref,orNumber:'10101010',orDate:'2026-09-06',amountPaid:500},at);
  assert.ok(notificationsFor(s,'admin').some(n=>n.event==='release_pending'));
  assert.ok(notificationsFor(s,'resident-maria').some(n=>n.event==='clearance_ready'));
  assert.ok(notificationsFor(s,'resident-maria').every(n=>!['submission_received','correction_requested','payment_pending','release_pending'].includes(n.event)));
@@ -365,7 +365,7 @@ test('feedback summary handles empty feedback and limits word results with stabl
  assert.equal(feedbackSummary(invalid).total,0);
 });
 const assess = s => transition(role(s,'staff-maria'),{type:'assess',reference:ref,category:'Sari-Sari Store',classification:'Medium'},at);
-const or = s => transition(role(s,'staff-maria'),{type:'or',reference:ref,number:'TR-2026-54321',date:'2026-09-06',amount:'500.00'},at);
+const or = s => transition(role(s,'staff-maria'),{type:'or',reference:ref,number:'26654321',date:'2026-09-06',amount:'500.00'},at);
 // Updated 2026-10-05: the paper's Scope (Ch. 1.4) lists 13, but the user confirmed directly with Barangay
 // San Jose office staff that only 9 are real; Ambulant and Lessor (Paupahan) were folded into Business
 // Clearance, Film Shooting and Products Promo don't exist at this barangay. See CHANGES.md for the full note.
@@ -416,7 +416,7 @@ test('role separation blocks assessment, fees, and another residents OR entry',(
  const s=state();
  assert.throws(()=>transition(s,{type:'assess',reference:ref,category:'Bakery',classification:'Small'}),/Only Staff/);
  assert.throws(()=>transition(s,{type:'fees',schedule:mockFeeSchedules[0]}),/Only Admin/);
- for(const actor of ['resident-maria','admin'])assert.throws(()=>transition(role(assess(state()),actor),{type:'or',reference:ref,number:'TR-2026-99999',date:'2026-09-06',amount:'500.00'}),/Only Staff can record OR details/);
+ for(const actor of ['resident-maria','admin'])assert.throws(()=>transition(role(assess(state()),actor),{type:'or',reference:ref,number:'26699999',date:'2026-09-06',amount:'500.00'}),/Only Staff can record OR details/);
  assert.equal(app(or(assess(state()))).receipt.encodedBy,'Maria Staff');
 });
 test('assessment requires verified documents and automatically uses configured fees',()=>{
@@ -436,19 +436,19 @@ test('inspection requires inspector and date and persists its saved timestamp',(
 test('OR gate blocks premature, invalid, future, mismatched, duplicate and non-currency entries',()=>{
  assert.throws(()=>or(state()),/complete assessment/);
  for(const args of [
- ['12345','2026-09-06','600',600],['TR-2026-54321','2026-02-30','600',600],
- ['TR-2026-54321','2099-01-01','600',600],['TR-2025-54321','2026-09-06','600',600],
- ['TR-2026-54321','2026-09-06','600.001',600],['TR-2026-54321','2026-09-06','-600',600],
- ['TR-2026-54321','2026-09-06','500',600],['TR-2026-54321','2026-09-06','6e2',600]
+ ['12345','2026-09-06','600',600],['26654321','2026-02-30','600',600],
+ ['26654321','2099-01-01','600',600],['2605432','2026-09-06','600',600],['RZL 260543210','2026-09-06','600',600],
+ ['26654321','2026-09-06','600.001',600],['26654321','2026-09-06','-600',600],
+ ['26654321','2026-09-06','500',600],['26654321','2026-09-06','6e2',600]
  ])assert.throws(()=>validateOR(...args));
- assert.doesNotThrow(()=>validateOR('TR-2026-54321','2026-09-06','600.00',600));
+ assert.doesNotThrow(()=>validateOR('26654321','2026-09-06','600.00',600));
  const s=role(assess(state()),'staff-maria');
- assert.throws(()=>transition(s,{type:'or',reference:ref,number:'TR-2026-12342',date:'2026-09-06',amount:'500.00'}),/already recorded/);
+ assert.throws(()=>transition(s,{type:'or',reference:ref,number:'26612342',date:'2026-09-06',amount:'500.00'}),/already recorded/);
 });
 test('download precedes confirmation; closure timestamps and feedback are recorded',()=>{
  let s=or(assess(state()));assert.equal(app(s).status,'For Checking');
  assert.throws(()=>transition(s,{type:'download',reference:ref}),/not available/);
- s=role(transition(role(s,'staff-maria'),{type:'verifyPayment',reference:ref,orNumber:'TR-2026-54321',orDate:'2026-09-06',amountPaid:500},at),'resident-maria');assert.equal(app(s).status,'Ready for Download');
+ s=role(transition(role(s,'staff-maria'),{type:'verifyPayment',reference:ref,orNumber:'26654321',orDate:'2026-09-06',amountPaid:500},at),'resident-maria');assert.equal(app(s).status,'Ready for Download');
  assert.equal(app(s).receipt.amountPaid,app(s).assessment.total);assert.equal(processingSeconds(app(s)),null);assert.equal(paymentCheckSeconds(app(s)),0);
  assert.throws(()=>transition(s,{type:'confirm',reference:ref}),/Download your clearance/);
  assert.throws(()=>transition(s,{type:'feedback',reference:ref,rating:5,comment:''}),/confirmed receipt/);
@@ -471,7 +471,7 @@ test('fee histories retain old versions and do not change existing assessment sn
  assert.throws(()=>transition(s,{type:'fees',schedule:{...previous,items:[{name:'Test',amount:-1}]}}),/non-negative/);
 });
 test('admin reversion requires reason and preserves original and revised values',()=>{
- let s=role(transition(role(or(assess(state())),'staff-maria'),{type:'verifyPayment',reference:ref,orNumber:'TR-2026-54321',orDate:'2026-09-06',amountPaid:500},at),'resident-maria');const data={reference:ref,action:'Edit Fields',reason:'Correct applicant spelling',applicant:'Maria Clara Santos',businessName:'Maria Mini Mart',orNumber:'TR-2026-54321',orDate:'2026-09-06',amountPaid:500};
+ let s=role(transition(role(or(assess(state())),'staff-maria'),{type:'verifyPayment',reference:ref,orNumber:'26654321',orDate:'2026-09-06',amountPaid:500},at),'resident-maria');const data={reference:ref,action:'Edit Fields',reason:'Correct applicant spelling',applicant:'Maria Clara Santos',businessName:'Maria Mini Mart',orNumber:'26654321',orDate:'2026-09-06',amountPaid:500};
  assert.throws(()=>transition(s,{type:'revert',data}),/Only Admin/);
  assert.throws(()=>transition(role(s,'admin'),{type:'revert',data:{...data,reason:''}}),/Reason/);
  s=transition(role(s,'admin'),{type:'revert',data},at);
@@ -515,7 +515,7 @@ test('monthly totals count issued verified receipt photos, excluding legacy type
  app(s).status='Void';assert.equal(monthlyRows(s.applications).length,0);
 });
 test('generated PDF has valid object offsets, prototype watermark and a real QR matrix',async()=>{
- const pdf=await makePDF('Electrical Clearance',['SJ-2026-000125','OR: TR-2026-12342'],'http://localhost:3001/verify/SJ-2026-000125').text();
+ const pdf=await makePDF('Electrical Clearance',['SJ-2026-000125','OR: 26612342'],'http://localhost:3001/verify/SJ-2026-000125').text();
  assert.ok(pdf.startsWith('%PDF-1.4'));assert.ok(pdf.includes('SAMPLE ONLY'));assert.match(pdf,/ re f/);
  const start=Number(pdf.match(/startxref\n(\d+)/)[1]);assert.equal(pdf.slice(start,start+4),'xref');
  const offsets=[...pdf.matchAll(/(\d{10}) 00000 n/g)].map(m=>Number(m[1]));
@@ -532,9 +532,9 @@ test('all payment methods require staff verification and block release beforehan
   let s=role(assess(state()),'resident-maria');s=transition(s,command,at);
   assert.equal(app(s).status,'For Checking');assert.equal(app(s).clearance,undefined);
   assert.throws(()=>transition(s,{type:'download',reference:ref}),/not available/);
-  assert.throws(()=>transition(s,{type:'verifyPayment',reference:ref,orNumber:'TR-2026-54321'}),/Only Staff/);
-  assert.throws(()=>transition(role(s,'admin'),{type:'verifyPayment',reference:ref,orNumber:'TR-2026-54321'}),/Only Staff/);
-  const verify={type:'verifyPayment',reference:ref,orNumber:'TR-2026-54321',orDate:'2026-09-06',amountPaid:500};
+  assert.throws(()=>transition(s,{type:'verifyPayment',reference:ref,orNumber:'26654321'}),/Only Staff/);
+  assert.throws(()=>transition(role(s,'admin'),{type:'verifyPayment',reference:ref,orNumber:'26654321'}),/Only Staff/);
+  const verify={type:'verifyPayment',reference:ref,orNumber:'26654321',orDate:'2026-09-06',amountPaid:500};
   s=transition(role(s,'staff-maria'),verify,at);
   assert.equal(app(s).status,'Ready for Download');assert.equal(app(s).paymentVerification.status,'Verified');
   assert.ok(app(s).paymentVerification.checkedBy);assert.ok(app(s).clearance);
@@ -553,21 +553,21 @@ test('staff returns payment with reason and resubmission requires another check'
 });
 
 test('changing OR details revokes release and requires staff verification again',()=>{
- let s=transition(role(or(assess(state())),'staff-maria'),{type:'verifyPayment',reference:ref,orNumber:'TR-2026-54321',orDate:'2026-09-06',amountPaid:500},at);
- s=transition(role(s,'admin'),{type:'revert',data:{reference:ref,action:'Edit Fields',reason:'Correct OR',applicant:app(s).applicant,orNumber:'TR-2026-77777',orDate:'2026-09-06',amountPaid:500}},at);
+ let s=transition(role(or(assess(state())),'staff-maria'),{type:'verifyPayment',reference:ref,orNumber:'26654321',orDate:'2026-09-06',amountPaid:500},at);
+ s=transition(role(s,'admin'),{type:'revert',data:{reference:ref,action:'Edit Fields',reason:'Correct OR',applicant:app(s).applicant,orNumber:'26677777',orDate:'2026-09-06',amountPaid:500}},at);
  assert.equal(app(s).status,'For Checking');assert.equal(app(s).clearance,undefined);
- assert.deepEqual([app(s).receipt.orNumber,app(s).receipt.orDate,app(s).receipt.amountPaid],['TR-2026-77777','2026-09-06',500]);
+ assert.deepEqual([app(s).receipt.orNumber,app(s).receipt.orDate,app(s).receipt.amountPaid],['26677777','2026-09-06',500]);
  assert.throws(()=>transition(role(s,'resident-maria'),{type:'download',reference:ref}),/not available/);
 });
 
 test('Admin can revise OR number, date, and amount together with an assessment change',()=>{
- const issued=releasedByPhoto('TR-2026-77777'),original=structuredClone(app(issued));
+ const issued=releasedByPhoto('26677777'),original=structuredClone(app(issued));
  const schedule=activeSchedule(issued.schedules,original.clearanceType,original.assessment.category,original.assessment.classification);
  const amounts=schedule.items.map(item=>item.amount);amounts[0]+=25;
  const amountPaid=amounts.reduce((sum,amount)=>sum+amount,0);
- const data={reference:ref,action:'Edit Fields',reason:'Correct receipt details',applicant:original.applicant,orNumber:'654321',orDate:'2026-09-07',amountPaid,feeAssessment:{scheduleId:schedule.id,amounts}};
+ const data={reference:ref,action:'Edit Fields',reason:'Correct receipt details',applicant:original.applicant,orNumber:'65432100',orDate:'2026-09-07',amountPaid,feeAssessment:{scheduleId:schedule.id,amounts}};
  const corrected=transition(role(issued,'admin'),{type:'revert',data},at),a=app(corrected);
- assert.deepEqual([a.receipt.orNumber,a.receipt.orDate,a.receipt.amountPaid],['654321','2026-09-07',amountPaid]);
+ assert.deepEqual([a.receipt.orNumber,a.receipt.orDate,a.receipt.amountPaid],['65432100','2026-09-07',amountPaid]);
  assert.equal(a.assessment.total,amountPaid);assert.equal(a.status,'Pending Assessment');
  assert.equal(corrected.audits[0].reason,data.reason);assert.equal(corrected.audits[0].reversion,true);
  assert.deepEqual(JSON.parse(corrected.audits[0].newValue).receipt,a.receipt);
@@ -692,6 +692,60 @@ test('submitted documents start pending review and require staff verification fo
 });
 
 
+test('UAT 2026-11-24: an Ambulant vendor may submit without a DTI / SEC document; other businesses still need it',()=>{
+ const {requirements}=require('../lib/workflow.ts');
+ const dti=sub=>requirements({clearanceType:'Business Clearance',ownership:'Owner',applicationType:'New Application',businessSubcategory:sub}).find(r=>r.name==='DTI / SEC Document');
+ assert.equal(dti('Ambulant').required,false,'listed, but optional');
+ for(const sub of [undefined,'Lessor (Paupahan)'])assert.equal(dti(sub).required,true,String(sub));
+ for(const sub of [undefined,'Ambulant'])assert.ok(requirements({clearanceType:'Business Clearance',ownership:'Owner',applicationType:'New Application',businessSubcategory:sub}).filter(r=>r.name!=='DTI / SEC Document').every(r=>r.required),'the valid ID and the picture of the business stay required');
+ const noDti={...app(state()),documents:app(state()).documents.filter(d=>d.requirement!=='DTI / SEC Document')};
+ const submit=sub=>{const s=transition(state(),{type:'saveApplication',application:{...noDti,businessSubcategory:sub},draft:true},at);return transition(s,{type:'saveApplication',application:s.applications[0],reference:s.applications[0].reference,draft:false},at);};
+ assert.equal(submit('Ambulant').applications[0].status,'Pending Assessment');
+ assert.throws(()=>submit(undefined),/Upload all required documents/);
+});
+test('UAT 2026-11-24: the property clearances ask only Name, Residential Address, Location, Remarks (Residential or Commercial) and Purpose',()=>{
+ const {PROPERTY_TYPES,requirements}=require('../lib/workflow.ts');
+ assert.deepEqual(PROPERTY_TYPES,['Building Clearance','Electrical Clearance','Fencing Clearance','Excavation Clearance','Lot Survey Clearance','Water/MWSS Clearance']);
+ assert.deepEqual(requirements({clearanceType:'Fencing Clearance',ownership:'Owner',applicationType:'New Application'}).map(r=>r.name),['Valid ID','Proof of Ownership'],'the second document is the Proof of Ownership');
+ const building={...app(state()),clearanceType:'Building Clearance',businessName:'',initialOperation:'',businessContact:'',hasEmployees:undefined,employeeCount:undefined,businessSubcategory:undefined,
+  documents:[{requirement:'Valid ID',name:'id.jpg',size:1000,type:'image/jpeg',status:'Pending Review'},{requirement:'Proof of Ownership',name:'plan.pdf',size:1000,type:'application/pdf',status:'Pending Review'}]};
+ const submit=input=>{const s=transition(state(),{type:'saveApplication',application:input,draft:true},at);return transition(s,{type:'saveApplication',application:s.applications[0],reference:s.applications[0].reference,draft:false},at);};
+ for(const use of ['Residential','Commercial']){const s=submit({...building,propertyUse:use});assert.equal(s.applications[0].status,'Pending Assessment');assert.equal(s.applications[0].propertyUse,use);assert.equal(s.applications[0].initialOperation,'');}
+ assert.throws(()=>submit({...building,propertyUse:undefined}),/Residential or Commercial/);
+ assert.throws(()=>submit({...building,propertyUse:'Industrial'}),/Residential or Commercial/);
+ // No business name, date of initial operation, contact or employees needed; "-SAME AS ABOVE-" is a valid Location.
+ for(const type of PROPERTY_TYPES){const s=submit({...building,clearanceType:type,propertyUse:'Commercial',businessLocation:'-SAME AS ABOVE-'});assert.equal(s.applications[0].status,'Pending Assessment',type);}
+ assert.throws(()=>submit({...building,clearanceType:'Electrical Clearance',propertyUse:undefined}),/Residential or Commercial/);
+ // Staff can correct it; it only exists on the property clearances.
+ const submitted=submit({...building,propertyUse:'Residential'});const r=submitted.applications[0].reference;
+ const edited=transition(role(submitted,'staff-maria'),{type:'editApplication',reference:r,changes:{propertyUse:'Commercial'}},at);
+ assert.equal(edited.applications.find(a=>a.reference===r).propertyUse,'Commercial');
+ assert.throws(()=>transition(role(submitted,'staff-maria'),{type:'editApplication',reference:r,changes:{propertyUse:'Industrial'}},at),/Residential or Commercial/);
+ assert.throws(()=>transition(role(state(),'staff-maria'),{type:'editApplication',reference:ref,changes:{propertyUse:'Residential'}},at),/Lot Survey and Water clearances only/);
+});
+test('UAT 2026-11-24: TODA asks the vehicle (type, registration, plate, body number) with the OR/CR; PODA the type and body number with the association certification',()=>{
+ const {requirements}=require('../lib/workflow.ts');
+ assert.deepEqual(requirements({clearanceType:'TODA Clearance',ownership:'Owner',applicationType:'New Application'}).map(r=>[r.name,r.required]),[['OR/CR of the Vehicle',true],['Valid ID',true]]);
+ assert.deepEqual(requirements({clearanceType:'PODA Clearance',ownership:'Owner',applicationType:'New Application'}).map(r=>[r.name,r.required]),[['Certification from the Association',true],['Valid ID',true]]);
+ const doc=n=>({requirement:n,name:n+'.jpg',size:1000,type:'image/jpeg',status:'Pending Review'});
+ const base={...app(state()),businessName:'',businessLocation:'',initialOperation:'',businessContact:'',purpose:'',hasEmployees:undefined,employeeCount:undefined,businessSubcategory:undefined};
+ const toda={...base,clearanceType:'TODA Clearance',vehicleType:'Tricycle',registrationNumber:'REG-12345',plateNumber:'ABC 123',bodyNumber:'TD-042',documents:[doc('OR/CR of the Vehicle'),doc('Valid ID')]};
+ const poda={...base,clearanceType:'PODA Clearance',vehicleType:'Pedicab',bodyNumber:'PD-7',documents:[doc('Certification from the Association'),doc('Valid ID')]};
+ const submit=input=>{const s=transition(state(),{type:'saveApplication',application:input,draft:true},at);return transition(s,{type:'saveApplication',application:s.applications[0],reference:s.applications[0].reference,draft:false},at);};
+ const t=submit(toda).applications[0];assert.equal(t.status,'Pending Assessment','no location and no purpose needed');assert.deepEqual([t.vehicleType,t.registrationNumber,t.plateNumber,t.bodyNumber],['Tricycle','REG-12345','ABC 123','TD-042']);
+ assert.equal(submit(poda).applications[0].status,'Pending Assessment');
+ for(const missing of ['vehicleType','registrationNumber','plateNumber','bodyNumber'])assert.throws(()=>submit({...toda,[missing]:''}),/vehicle|registration|plate/i,missing);
+ for(const missing of ['vehicleType','bodyNumber'])assert.throws(()=>submit({...poda,[missing]:''}),/vehicle/i,missing);
+ assert.throws(()=>submit({...toda,documents:[doc('Valid ID')]}),/Upload all required documents/,'the OR/CR is required');
+ assert.throws(()=>submit({...poda,documents:[doc('Valid ID')]}),/Upload all required documents/,'the certification is required');
+ assert.throws(()=>submit({...base,clearanceType:'Electrical Clearance',propertyUse:'Residential',purpose:''}),/Complete applicant details/,'other types still need a purpose');
+ // Staff can correct the vehicle; the payment check keeps the applicant's plate unless Staff type another.
+ const submitted=submit(toda),r=submitted.applications[0].reference;
+ const edited=transition(role(submitted,'staff-maria'),{type:'editApplication',reference:r,changes:{bodyNumber:'TD-043',plateNumber:'ABC 124'}},at).applications.find(a=>a.reference===r);
+ assert.deepEqual([edited.bodyNumber,edited.plateNumber],['TD-043','ABC 124']);
+ assert.throws(()=>transition(role(submitted,'staff-maria'),{type:'editApplication',reference:r,changes:{bodyNumber:'x'.repeat(41)}},at),/vehicle details/);
+ assert.throws(()=>transition(role(state(),'staff-maria'),{type:'editApplication',reference:ref,changes:{vehicleType:'Tricycle'}},at),/TODA and PODA clearances only/);
+});
 test('business clearance supports optional Ambulant and Lessor subcategories',()=>{
  for(const subcategory of [undefined,'Ambulant','Lessor (Paupahan)']){
   const input={...app(state()),businessSubcategory:subcategory};
@@ -704,34 +758,71 @@ test('business clearance supports optional Ambulant and Lessor subcategories',()
  assert.equal(s.applications[0].businessSubcategory,undefined);
 });
 
+// FT-15 / UT-04 (Treasury and barangay samples, 2026-11-24): the Treasury prints "NO. RZL 26662152"; the barangay
+// uses only the number. Staff may type it with NO. / RZL / spaces; it is saved as the 8 digits.
+test('FT-15: the OR number is the Treasury number only, 8 digits; typed RZL, NO. and spaces are dropped',()=>{
+ const {normalizeOrNumber,validOrNumber,OR_DIGITS}=require('../lib/workflow.ts');
+ assert.equal(OR_DIGITS,8);
+ for(const typed of ['26662152','RZL 26662152','RZL26662152','NO. RZL 26662152','no rzl 26662152',' 2666 2152 ','RZL-26662152'])assert.equal(normalizeOrNumber(typed),'26662152',typed);
+ for(const bad of ['2666215','266621520','RZL','TR-2026-54321','2666215A','RZL 2666-215'])assert.equal(validOrNumber(normalizeOrNumber(bad)),false,bad);
+ const photo={requirement:'Official Receipt',name:'receipt.jpg',size:1000,type:'image/jpeg',status:'Pending Review'};
+ const s=role(transition(role(assess(state()),'resident-maria'),{type:'receiptPhoto',reference:ref,photo},at),'staff-maria');
+ const verify=(orNumber,extra={})=>transition(s,{type:'verifyPayment',reference:ref,orNumber,orDate:'2026-09-06',amountPaid:500,...extra},at);
+ const done=verify('NO. RZL 26662152');
+ assert.equal(app(done).receipt.orNumber,'26662152');assert.equal(app(done).paymentVerification.orNumber,'26662152');
+ assert.match(done.audits.find(x=>x.action==='OR details recorded by staff').newValue,/"orNumber":"26662152"/);
+ for(const bad of ['2666215','TR-2026-54321','26662152X'])assert.throws(()=>verify(bad),/8 digits/,bad);
+ // A duplicate is found whichever way either number was typed.
+ const other=s.applications.find(a=>a.reference!==ref);other.receipt={...other.receipt,orNumber:'RZL 26662152'};
+ assert.throws(()=>verify('26662152'),/already recorded/);
+});
+test('Plate No. (Business and TODA): optional at payment verification, printed as NO PLATE without one, correctable by an Admin',()=>{
+ const photo={requirement:'Official Receipt',name:'receipt.jpg',size:1000,type:'image/jpeg',status:'Pending Review'};
+ const s=role(transition(role(assess(state()),'resident-maria'),{type:'receiptPhoto',reference:ref,photo},at),'staff-maria');
+ const verify=extra=>transition(s,{type:'verifyPayment',reference:ref,orNumber:'26662152',orDate:'2026-09-06',amountPaid:500,...extra},at);
+ assert.equal(app(verify({})).plateNumber,undefined,'no plate typed: NO PLATE on the clearance');
+ const withPlate=verify({plateNumber:'  SJ-0042 '});assert.equal(app(withPlate).plateNumber,'SJ-0042');
+ assert.ok(withPlate.audits.some(x=>x.action==='Plate number recorded by staff'&&x.newValue==='SJ-0042'));
+ for(const bad of ['#12','-12','x'.repeat(31)])assert.throws(()=>verify({plateNumber:bad}),/plate number/,bad);
+ const building=structuredClone(s);app(building).clearanceType='Building Clearance';
+ assert.throws(()=>transition(building,{type:'verifyPayment',reference:ref,orNumber:'26662152',orDate:'2026-09-06',amountPaid:500,plateNumber:'X1'},at),/only recorded for Business and TODA/);
+ // The Admin corrects a mistyped plate; the clearance is reissued as REVISED and the change is logged.
+ const a0=app(withPlate);
+ const data={reference:ref,action:'Edit Fields',reason:'Plate number mistyped',applicant:a0.applicant,orNumber:a0.receipt.orNumber,orDate:a0.receipt.orDate,amountPaid:a0.receipt.amountPaid};
+ const fixed=transition(role(withPlate,'admin'),{type:'revert',data:{...data,entries:{plateNumber:'SJ-0024'}}},at);
+ assert.equal(app(fixed).plateNumber,'SJ-0024');assert.ok(app(fixed).clearance.revisedFrom);
+ const rev=fixed.audits.find(x=>x.reversion);assert.equal(JSON.parse(rev.oldValue).plateNumber,'SJ-0042');assert.equal(JSON.parse(rev.newValue).plateNumber,'SJ-0024');
+ assert.equal(app(transition(role(withPlate,'admin'),{type:'revert',data:{...data,entries:{plateNumber:''}}},at)).plateNumber,undefined,'emptied: back to NO PLATE');
+ assert.throws(()=>transition(role(withPlate,'admin'),{type:'revert',data:{...data,entries:{plateNumber:'#bad'}}},at),/plate number/);
+});
 test('receipt photo verification requires a unique staff-entered OR number',()=>{
  const photo={requirement:'Official Receipt',name:'receipt.jpg',size:1000,type:'image/jpeg',status:'Pending Review'};
  let s=transition(role(assess(state()),'resident-maria'),{type:'receiptPhoto',reference:ref,photo},at);
  s=role(s,'staff-maria');
  for(const orNumber of [undefined,'','   '])assert.throws(()=>transition(s,{type:'verifyPayment',reference:ref,orNumber,orDate:'2026-09-06',amountPaid:500},at),/OR number/);
- const duplicate=s.applications.find(a=>a.reference!==ref);duplicate.paymentVerification={status:'Verified',submittedAt:at,orNumber:'TR-2026-77777'};
- assert.throws(()=>transition(s,{type:'verifyPayment',reference:ref,orNumber:'TR-2026-77777',orDate:'2026-09-06',amountPaid:500},at),/already recorded/);
- for(const orDate of [undefined,'','2026-13-40','06/09/2026','2999-01-01'])assert.throws(()=>transition(s,{type:'verifyPayment',reference:ref,orNumber:'TR-2026-88888',orDate,amountPaid:500},at),/OR date/);
- for(const amountPaid of [undefined,'','abc','-5','0','599.99','600.001','1e3'])assert.throws(()=>transition(s,{type:'verifyPayment',reference:ref,orNumber:'TR-2026-88888',orDate:'2026-09-06',amountPaid},at),/amount/i,String(amountPaid));
- assert.throws(()=>transition(s,{type:'verifyPayment',reference:ref,orNumber:'TR-2026-88888',orDate:'2026-09-06',amountPaid:'599.99'},at),/must match the assessed amount/);
- s=transition(s,{type:'verifyPayment',reference:ref,orNumber:' 123456 ',orDate:'2026-09-06',amountPaid:'500.00'},at);
- assert.equal(app(s).paymentVerification.orNumber,'123456');
+ const duplicate=s.applications.find(a=>a.reference!==ref);duplicate.paymentVerification={status:'Verified',submittedAt:at,orNumber:'26677777'};
+ assert.throws(()=>transition(s,{type:'verifyPayment',reference:ref,orNumber:'26677777',orDate:'2026-09-06',amountPaid:500},at),/already recorded/);
+ for(const orDate of [undefined,'','2026-13-40','06/09/2026','2999-01-01'])assert.throws(()=>transition(s,{type:'verifyPayment',reference:ref,orNumber:'26688888',orDate,amountPaid:500},at),/OR date/);
+ for(const amountPaid of [undefined,'','abc','-5','0','599.99','600.001','1e3'])assert.throws(()=>transition(s,{type:'verifyPayment',reference:ref,orNumber:'26688888',orDate:'2026-09-06',amountPaid},at),/amount/i,String(amountPaid));
+ assert.throws(()=>transition(s,{type:'verifyPayment',reference:ref,orNumber:'26688888',orDate:'2026-09-06',amountPaid:'599.99'},at),/must match the assessed amount/);
+ s=transition(s,{type:'verifyPayment',reference:ref,orNumber:' 12345600 ',orDate:'2026-09-06',amountPaid:'500.00'},at);
+ assert.equal(app(s).paymentVerification.orNumber,'12345600');
  const entry=s.audits.find(log=>log.action==='OR details recorded by staff');
- assert.deepEqual(JSON.parse(entry.newValue),{orNumber:'123456',orDate:'2026-09-06',amountPaid:500});assert.equal(entry.reference,ref);assert.equal(entry.role,'staff');assert.equal(entry.timestamp,at);
+ assert.deepEqual(JSON.parse(entry.newValue),{orNumber:'12345600',orDate:'2026-09-06',amountPaid:500});assert.equal(entry.reference,ref);assert.equal(entry.role,'staff');assert.equal(entry.timestamp,at);
  assert.equal(app(s).status,'Ready for Download');assert.deepEqual(app(s).receiptPhoto,photo);
  // Staff verification records the full receipt: the number and date they typed, and the assessed total as the amount.
- assert.deepEqual([app(s).receipt.orNumber,app(s).receipt.orDate,app(s).receipt.amountPaid,app(s).receipt.encodedBy,app(s).receipt.recordedAt],['123456','2026-09-06',app(s).assessment.total,'Maria Staff',at]);
+ assert.deepEqual([app(s).receipt.orNumber,app(s).receipt.orDate,app(s).receipt.amountPaid,app(s).receipt.encodedBy,app(s).receipt.recordedAt],['12345600','2026-09-06',app(s).assessment.total,'Maria Staff',at]);
  assert.deepEqual(app(s).receipt.receiptPhoto,photo);assert.equal(JSON.parse(entry.newValue).orDate,'2026-09-06');
 });
 
 test('Staff must encode all OR fields when an official receipt already exists',()=>{
  const pending=or(assess(state()));
- assert.throws(()=>transition(role(pending,'staff-maria'),{type:'verifyPayment',reference:ref,orNumber:'123456',amountPaid:500},at),/OR date/);
- assert.throws(()=>transition(role(pending,'staff-maria'),{type:'verifyPayment',reference:ref,orNumber:'123456',orDate:'2026-09-06'},at),/valid currency amount/);
- const verified=transition(role(pending,'staff-maria'),{type:'verifyPayment',reference:ref,orNumber:'123456',orDate:'2026-09-07',amountPaid:500},at);
- assert.deepEqual([app(verified).receipt.orNumber,app(verified).receipt.orDate,app(verified).receipt.amountPaid],['123456','2026-09-07',500]);
+ assert.throws(()=>transition(role(pending,'staff-maria'),{type:'verifyPayment',reference:ref,orNumber:'12345600',amountPaid:500},at),/OR date/);
+ assert.throws(()=>transition(role(pending,'staff-maria'),{type:'verifyPayment',reference:ref,orNumber:'12345600',orDate:'2026-09-06'},at),/valid currency amount/);
+ const verified=transition(role(pending,'staff-maria'),{type:'verifyPayment',reference:ref,orNumber:'12345600',orDate:'2026-09-07',amountPaid:500},at);
+ assert.deepEqual([app(verified).receipt.orNumber,app(verified).receipt.orDate,app(verified).receipt.amountPaid],['12345600','2026-09-07',500]);
  const entry=verified.audits.find(log=>log.action==='OR details recorded by staff');
- assert.deepEqual(JSON.parse(entry.newValue),{orNumber:'123456',orDate:'2026-09-07',amountPaid:500});
+ assert.deepEqual(JSON.parse(entry.newValue),{orNumber:'12345600',orDate:'2026-09-07',amountPaid:500});
 });
 
 test('staff can adjust assessment fees per application with validation and audit history',()=>{
@@ -927,14 +1018,14 @@ test('a correction that makes another document required adds it as Missing, to b
 test('a released clearance can be verified whichever way payment was shown: typed OR, receipt photo, or simulation',()=>{
  const verify=(s,orNumber)=>transition(role(s,'staff-maria'),{type:'verifyPayment',reference:ref,orNumber,orDate:'2026-09-06',amountPaid:500},at);
  const total=app(assess(state())).assessment.total;
- const typed=verify(or(assess(state())),'TR-2026-54321');
- const photo=verify(transition(role(assess(state()),'resident-maria'),{type:'receiptPhoto',reference:ref,photo:{requirement:'Official Receipt',name:'or.jpg',size:1000,type:'image/jpeg',status:'Pending Review'}},at),'TR-2026-77777');
+ const typed=verify(or(assess(state())),'26654321');
+ const photo=verify(transition(role(assess(state()),'resident-maria'),{type:'receiptPhoto',reference:ref,photo:{requirement:'Official Receipt',name:'or.jpg',size:1000,type:'image/jpeg',status:'Pending Review'}},at),'26677777');
  const sim=verify(transition(role(assess(state()),'resident-maria'),{type:'onlinePayment',reference:ref,method:'GCash',amount:total},at));
  for(const [name,s] of [['typed OR',typed],['receipt photo',photo],['simulation',sim]]){
   assert.equal(app(s).status,'Ready for Download',name);assert.ok(app(s).clearance,name);
   assert.equal(verifiableClearance(app(s)),true,name+' must be verifiable');
  }
- assert.equal(app(photo).receipt.orNumber,'TR-2026-77777');assert.equal(app(photo).paymentVerification.orNumber,'TR-2026-77777');
+ assert.equal(app(photo).receipt.orNumber,'26677777');assert.equal(app(photo).paymentVerification.orNumber,'26677777');
 });
 test('a request with no released clearance, or no payment evidence, cannot be verified',()=>{
  assert.equal(verifiableClearance(app(state())),false);
@@ -950,10 +1041,10 @@ test('a request with no released clearance, or no payment evidence, cannot be ve
 // payments at the assessed total; the Daily OR Summary groups by the Manila day Staff verified; the timer runs submission -> receipt
 // confirmation; the SLA indicators measure the Staff payment check.
 const photoFile={requirement:'Official Receipt',name:'or.jpg',size:1000,type:'image/jpeg',status:'Pending Review'};
-const releasedByPhoto=(orNumber='TR-2026-77777',orDate='2026-09-06')=>transition(role(transition(role(assess(state()),'resident-maria'),{type:'receiptPhoto',reference:ref,photo:photoFile},at),'staff-maria'),{type:'verifyPayment',reference:ref,orNumber,orDate,amountPaid:500},at);
+const releasedByPhoto=(orNumber='26677777',orDate='2026-09-06')=>transition(role(transition(role(assess(state()),'resident-maria'),{type:'receiptPhoto',reference:ref,photo:photoFile},at),'staff-maria'),{type:'verifyPayment',reference:ref,orNumber,orDate,amountPaid:500},at);
 
 test('Admin can correct clearance type and fees, with reassessment, retained receipt and full audit snapshots',()=>{
- const issued=releasedByPhoto('123456'),original=structuredClone(app(issued));
+ const issued=releasedByPhoto('12345600'),original=structuredClone(app(issued));
  const schedule=activeSchedule(issued.schedules,'Electrical Clearance','','');
  const amounts=schedule.items.map(item=>item.amount);amounts[0]=375.25;
  const data={reference:ref,action:'Edit Fields',reason:'Wrong clearance and assessment',applicant:original.applicant,orNumber:original.receipt.orNumber,orDate:original.receipt.orDate,amountPaid:original.receipt.amountPaid,clearanceType:'Electrical Clearance',feeAssessment:{scheduleId:schedule.id,amounts}};
@@ -970,15 +1061,15 @@ test('Admin can correct clearance type and fees, with reassessment, retained rec
  assert.equal(newValue.clearanceType,'Electrical Clearance');assert.equal(newValue.assessment.total,425.25);
  assert.deepEqual(app(issued),original);
  assert.throws(()=>transition(role(corrected,'resident-maria'),{type:'download',reference:ref},at),/not available/);
- assert.throws(()=>transition(role(corrected,'staff-maria'),{type:'verifyPayment',reference:ref,orNumber:'123456'},at),/awaiting staff checking/);
+ assert.throws(()=>transition(role(corrected,'staff-maria'),{type:'verifyPayment',reference:ref,orNumber:'12345600'},at),/awaiting staff checking/);
  assert.throws(()=>transition(role(corrected,'staff-maria'),{type:'assess',reference:ref,category:'',classification:'',amounts},at),/Verify every required document/);
  const documents=requirements(a).map(r=>({requirement:r.name,name:'test.pdf',size:100,type:'application/pdf',status:'Verified'}));
  let s=transition(role(corrected,'staff-maria'),{type:'review',reference:ref,documents},at);
  s=transition(s,{type:'assess',reference:ref,category:'',classification:'',amounts},at);
  assert.equal(app(s).assessment.total,425.25);assert.equal(app(s).status,'Awaiting OR');
  s=transition(role(s,'resident-maria'),{type:'receiptPhoto',reference:ref,photo:photoFile},at);
- assert.throws(()=>transition(role(s,'staff-maria'),{type:'verifyPayment',reference:ref,orNumber:'123456',orDate:'2026-09-06',amountPaid:500},at),/must match/);
- s=transition(role(s,'staff-maria'),{type:'verifyPayment',reference:ref,orNumber:'123456',orDate:'2026-09-06',amountPaid:425.25},at);
+ assert.throws(()=>transition(role(s,'staff-maria'),{type:'verifyPayment',reference:ref,orNumber:'12345600',orDate:'2026-09-06',amountPaid:500},at),/must match/);
+ s=transition(role(s,'staff-maria'),{type:'verifyPayment',reference:ref,orNumber:'12345600',orDate:'2026-09-06',amountPaid:425.25},at);
  assert.equal(app(s).status,'Ready for Download');assert.equal(app(s).clearance.revisedFrom,original.clearance.issueDate);
 });
 
@@ -1010,7 +1101,7 @@ test('Monthly Collection counts released payments at the assessed total, and nev
  assert.equal(app(sim).status,'Ready for Download');assert.equal(recorded(sim)-base,0);
 });
 test('the Daily OR Summary lists a payment on the Manila day Staff verified it, with its OR date and amount',()=>{
- const s=releasedByPhoto('TR-2026-77777','2026-09-06');
+ const s=releasedByPhoto('26677777','2026-09-06');
  assert.deepEqual(dailyOrApplications(s.applications,'2026-09-07').map(a=>a.reference).filter(r=>r===ref),[ref]);
  assert.equal(dailyOrApplications(s.applications,'2026-09-06').some(a=>a.reference===ref),false);
  assert.equal(dailyOrApplications(s.applications,'2026-09-07','Business Clearance').some(a=>a.reference===ref),true);
@@ -1061,7 +1152,7 @@ test('total processing time runs from submission to receipt confirmation (MM:SS)
 test('Staff transcribe the Amount Paid, and it must equal the assessed total (manuscript 3.3.1)',()=>{
  assert.doesNotThrow(()=>validateAmountPaid('600',600));assert.doesNotThrow(()=>validateAmountPaid(600.5,600.5));assert.doesNotThrow(()=>validateAmountPaid('600.00',600));
  assert.throws(()=>validateAmountPaid('599.99',600),/must match/);assert.throws(()=>validateAmountPaid('6e2',600),/valid currency/);assert.throws(()=>validateAmountPaid('',600),/valid currency/);
- const s=releasedByPhoto('TR-2026-12121');
+ const s=releasedByPhoto('26612121');
  assert.equal(app(s).receipt.amountPaid,500);assert.equal(JSON.parse(s.audits.find(l=>l.action==='OR details recorded by staff').newValue).amountPaid,500);
  // a receipt that shows another amount is not verified: Staff return it with a reason, and the Applicant uploads it again
  const sent=transition(role(transition(role(assess(state()),'resident-maria'),{type:'receiptPhoto',reference:ref,photo:photoFile},at),'staff-maria'),{type:'returnPayment',reference:ref,reason:'The receipt shows 500.00, not 600.00'},at);

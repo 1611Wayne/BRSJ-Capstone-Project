@@ -4,13 +4,13 @@ import type { Application, UploadedDocument } from '@/types';
 import { usePortal } from './PortalProvider';
 import { Field, ErrorMessage } from './Field';
 import { DocumentPreview } from './DocumentPreview';
-import { dateLabel,today } from '@/lib/workflow';
+import { dateLabel,today,normalizeOrNumber,validOrNumber,OR_DIGITS,PLATE_TYPES } from '@/lib/workflow';
 import { formatPeso } from '@/data/revenueCodeData';
 
 export function PaymentVerification({application:a}:{application:Application}) {
  const {user,act}=usePortal();
  const [error,setError]=useState(''),[preview,setPreview]=useState<UploadedDocument>();
- const [orNumber,setOrNumber]=useState(''),[orDate,setOrDate]=useState(''),[amountPaid,setAmountPaid]=useState(''),[reason,setReason]=useState('');
+ const [orNumber,setOrNumber]=useState(''),[plate,setPlate]=useState(a.plateNumber||''),[orDate,setOrDate]=useState(''),[amountPaid,setAmountPaid]=useState(''),[reason,setReason]=useState('');
  const photo=a.receiptPhoto||a.receipt?.receiptPhoto;
  if(!a.paymentVerification)return null;
  return <div className="content-card p-6 mt-6">
@@ -21,12 +21,13 @@ export function PaymentVerification({application:a}:{application:Application}) {
   {photo&&<button type="button" className="secondary-btn mt-4" onClick={()=>setPreview(photo)}>View Receipt Photo</button>}
   {user?.role==='staff'&&a.status==='For Checking'&&<>
    <p className="text-sm mt-4">Assessed amount: <strong>{formatPeso(a.assessment?.total||0)}</strong></p>
-   <form className="mt-4" onSubmit={e=>{e.preventDefault();try{act({type:'verifyPayment',reference:a.reference,orNumber:orNumber.trim(),orDate,amountPaid:amountPaid.trim()});setError('');}catch(e){setError((e as Error).message);}}}>
+   <form className="mt-4" onSubmit={e=>{e.preventDefault();try{act({type:'verifyPayment',reference:a.reference,orNumber:orNumber.trim(),orDate,amountPaid:amountPaid.trim(),...(plate.trim()?{plateNumber:plate.trim()}:{})});setError('');}catch(e){setError((e as Error).message);}}}>
     {!a.simulatedPayment&&<>
-     <Field label="Official Receipt (OR) Number *"><input className="text-field" required value={orNumber} onChange={e=>setOrNumber(e.target.value)} placeholder="Enter the OR number shown on the receipt"/><p className="text-xs text-slate-500 mt-2">Review the receipt photo and manually enter the OR number shown on it.</p></Field>
+     <Field label="Official Receipt (OR) Number *"><input className="text-field" required value={orNumber} onChange={e=>setOrNumber(e.target.value)} placeholder="e.g. 26662152"/><p className="text-xs text-slate-500 mt-2">Type the number after &quot;NO. RZL&quot; on the Treasury receipt ({OR_DIGITS} digits; typing RZL too is fine).{orNumber.trim()&&!validOrNumber(normalizeOrNumber(orNumber))?<span className="block text-red-700 mt-1">That is not {OR_DIGITS} digits yet.</span>:orNumber.trim()&&normalizeOrNumber(orNumber)!==orNumber.trim()?<span className="block mt-1">Saved as {normalizeOrNumber(orNumber)}.</span>:null}</p></Field>
      <Field label="OR Date *"><input type="date" className="text-field" required max={today()} value={orDate} onChange={e=>setOrDate(e.target.value)}/><p className="text-xs text-slate-500 mt-2">The date printed on the receipt.</p></Field>
      <Field label="Amount Paid (PHP) *"><input type="number" inputMode="decimal" min="0" step="0.01" className="text-field" required value={amountPaid} onChange={e=>setAmountPaid(e.target.value)} placeholder="Enter the amount printed on the receipt"/><p className="text-xs text-slate-500 mt-2">It must match the assessed amount. If the receipt shows a different amount, return the payment with a reason instead.</p></Field>
     </>}
+    {PLATE_TYPES.includes(a.clearanceType)&&<Field label="Plate No. (optional)"><input className="text-field" maxLength={30} value={plate} onChange={e=>setPlate(e.target.value)} placeholder="Leave empty if no plate was issued"/><p className="text-xs text-slate-500 mt-2">Printed on the clearance as Plate No.; it says NO PLATE when this is empty.</p></Field>}
     <button type="submit" className="primary-btn mt-4" disabled={!a.simulatedPayment&&(!orNumber.trim()||!orDate||!amountPaid.trim())}>Verify Payment</button>
    </form>
    <form className="mt-6 border-t pt-4" onSubmit={e=>{e.preventDefault();try{act({type:'returnPayment',reference:a.reference,reason:reason.trim()});setError('');setReason('');}catch(e){setError((e as Error).message);}}}>

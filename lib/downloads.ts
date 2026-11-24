@@ -1,5 +1,5 @@
 import type { Application, FeeSchedule } from '@/types';
-import { dateLabel } from './workflow';
+import { dateLabel, PROPERTY_TYPES, VEHICLE_TYPES } from './workflow';
 import qrcode from 'qrcode-generator';
 import { Zip, ZipPassThrough } from 'fflate';
 import { MAX_BYTES_PER_PART, type MonthlyExportFile } from './monthlyFileExport';
@@ -271,7 +271,6 @@ function buildClearancePDF(
   const ordinance = a.assessment?.ordinance?.trim() || schedule?.ordinance?.trim() || 'and applicable municipal and barangay tax ordinances';
   const amtPaid = a.receipt?.amountPaid ?? a.simulatedPayment?.amount ?? 0;
   const orNo = a.receipt?.orNumber ?? a.paymentVerification?.orNumber ?? '';
-  const orDate = a.receipt?.orDate ?? '';
   const verURL = window.location.origin + '/verify/' + a.reference;
   const operator = a.ownership === 'Owner' ? a.applicant : (a.propertyOwner || a.applicant);
   const isRevised = !!clearance.revisedFrom;
@@ -364,7 +363,7 @@ function buildClearancePDF(
   ops.push(`BT /Fb 9 Tf 0.2 0.2 0.2 rg 50 720 Td (To Whom It May Concern:) Tj ET`);
 
   const introLines = [
-    `  This is to certify that the person whose name and thumb mark appears hereon has`,
+    `  This is to certify that the person whose name appears hereon has`,
     `  requested ${article} ${esc(a.clearanceType)} from this office and the information`,
     `  is listed below;`,
   ];
@@ -385,11 +384,24 @@ function buildClearancePDF(
   let cy = 656;
   const FR = 20; // row height for field rows
 
-  field('Name',               a.applicant, cy); cy -= FR;
-  field('Residential Address', a.address,  cy); cy -= FR;
-  field('Location',           'Same as above', cy); cy -= FR;
-  field('Remarks',            'N/A',       cy); cy -= FR;
+  // TODA and PODA print the vehicle instead of a location (UAT notes 2026-11-24).
+  const vehicle = VEHICLE_TYPES.includes(a.clearanceType), toda = a.clearanceType === 'TODA Clearance';
+  field(toda ? 'Name / Operator' : 'Name', a.applicant, cy); cy -= FR;
+  field(vehicle ? 'Address' : 'Residential Address', a.address, cy); cy -= FR;
+  if (vehicle) {
+    field('Type of Vehicle', a.vehicleType || '-', cy); cy -= FR;
+    if (toda) { field('Registration No.', a.registrationNumber || '-', cy); cy -= FR; field('Plate No.', a.plateNumber || '-', cy); cy -= FR; }
+    field('Body Number', a.bodyNumber || '-', cy); cy -= FR;
+    if (a.purpose.trim()) { field('Purpose', a.purpose, cy); cy -= FR; }
+  } else {
+  // A business shows its location in its own block below; any other clearance prints the property's location here
+  // (it said "Same as above" before 2026-11-24). The property clearances print Remarks: Residential / Commercial.
+  const property = PROPERTY_TYPES.includes(a.clearanceType);
+  field('Location',           isBusiness ? 'Same as above' : a.businessLocation || '-', cy); cy -= FR;
+  field('Remarks',            property ? a.propertyUse || '-' : 'N/A', cy); cy -= FR;
   field('Purpose',            a.purpose,   cy); cy -= FR;
+  }
+
 
   if (isBusiness) {
     field('Business Name',     a.businessName || '-',     cy); cy -= FR;
@@ -414,49 +426,45 @@ function buildClearancePDF(
   ops.push(`0.6 G 0.4 w 50 ${cy} m 545 ${cy} l S 0 G`);
   cy -= 16;
 
-  // ── 12. CTC / PAYMENT BLOCK (left) + THUMB MARK BOX (right) ─────────────
-  // Left column: CTC, Issued at/on, Amount, OR No.
+  // ── 12. PAYMENT BLOCK (bottom right) + APPLICANT SIGNATURE (left) ────────
+  // As on the barangay's own clearance (sample received 2026-11-24): O.R. NO., Amount, Plate No., then Date Issued and
+  // Place Issued, which refer to the business permit and are left blank to fill in by hand (the barangay leaves them
+  // blank too). The OR number is the Treasury's number only ("NO. RZL 26662152" on the receipt -> 26662152).
+  // No CTC lines and no thumb-mark box (not on the barangay's clearance).
   const blockTop = cy;
-  const lx = 87; // label start x
-  const ex = 170; // value / blank-line start x
-  const blankEnd = 260;
+  const rx = 330;   // label start x
+  const rvx = 410;  // value / blank-line start x
+  const rEnd = 545;
+  const hasPlate = a.clearanceType === 'Business Clearance' || a.clearanceType === 'TODA Clearance';
 
   function payRow(label: string, vy: number, valueText: string | null) {
-    ops.push(`BT /F1 9 Tf 0.4 0.4 0.4 rg ${lx} ${vy} Td (${esc(label)}) Tj ET`);
+    ops.push(`BT /F1 9 Tf 0.4 0.4 0.4 rg ${rx} ${vy} Td (${esc(label)}) Tj ET`);
     if (valueText !== null) {
-      ops.push(`BT /Fb 9 Tf 0.12 0.12 0.12 rg ${ex} ${vy} Td (${esc(valueText)}) Tj ET`);
+      ops.push(`BT /Fb 9 Tf 0.12 0.12 0.12 rg ${rvx} ${vy} Td (${esc(valueText)}) Tj ET`);
     } else {
-      blank(ex, vy - 2, blankEnd); // underline for handwriting
+      blank(rvx, vy - 2, rEnd); // underline for handwriting
     }
   }
 
   if (a.simulatedPayment) {
-    payRow('Payment:',    cy, `${a.simulatedPayment.method} (Simulated PoC)`); cy -= 16;
+    payRow('Payment:',    cy, `${a.simulatedPayment.method} (Simulated)`); cy -= 16;
     payRow('Sim. Ref:',   cy, a.simulatedPayment.referenceNumber); cy -= 16;
-    payRow('Amount:',     cy, `PHP ${amtPaid.toFixed(2)}`); cy -= 16;
-    ops.push(`BT /Fb 8 Tf 0.7 0.1 0.1 rg ${lx} ${cy} Td (SIMULATION - Not an official Treasury payment) Tj ET`); cy -= 16;
-    ops.push(`BT /F1 7.5 Tf 0.45 0.45 0.45 rg ${lx} ${cy} Td (Academic Service Management Proof of Concept only) Tj ET`); cy -= 8;
+    payRow('Amount:',     cy, `Php ${amtPaid.toFixed(2)}`); cy -= 16;
+    ops.push(`BT /Fb 8 Tf 0.7 0.1 0.1 rg ${rx} ${cy} Td (SIMULATION - Not an official Treasury payment) Tj ET`); cy -= 12;
+    ops.push(`BT /F1 7.5 Tf 0.45 0.45 0.45 rg ${rx} ${cy} Td (Academic Service Management Proof of Concept only) Tj ET`); cy -= 8;
   } else {
-    payRow('CTC No.:',   cy,      null);      cy -= 16;
-    payRow('Issued at:', cy,      null);      cy -= 16;
-    payRow('Issued On:', cy,      null);      cy -= 16;
-    payRow('Amount:',    cy,      `PHP ${amtPaid.toFixed(2)}`); cy -= 16;
-    payRow('OR No.:',    cy,      orNo || '-'); cy -= 16;
-    payRow('OR Date:',   cy,      orDate || '-'); cy -= 8;
+    payRow('O.R. NO. :',     cy, orNo || '-'); cy -= 16;
+    payRow('Amount:',        cy, `Php ${amtPaid.toFixed(2)}`); cy -= 16;
+    if (hasPlate) { payRow('Plate No. :', cy, a.plateNumber?.trim() || 'NO PLATE'); cy -= 16; }
+    payRow('Date Issued:',   cy, null); cy -= 16;
+    payRow('Place Issued:',  cy, null); cy -= 8;
   }
 
-  // Thumb mark box at right side, spanning the height of the payment block.
-  const boxL = 350, boxR = 475;
-  const boxTop = blockTop + 6, boxBot = cy - 4;
-  ops.push(`0.4 G 0.6 w ${boxL} ${boxBot} m ${boxL} ${boxTop} l ${boxR} ${boxTop} l ${boxR} ${boxBot} l ${boxL} ${boxBot} l S 0 G`);
-  ops.push(`BT /F1 8 Tf 0.4 0.4 0.4 rg ${boxL + 18} ${boxTop - 14} Td (Thumb mark) Tj ET`);
-
-  // 30 pt clear space for the applicant's handwritten signature, then a thin line.
-  cy -= 30;
-  blank(50, cy, 320);
-  cy -= 12; // 12 pt gap: 9 pt cap-height sits 5 pt below the line
-  ops.push(`BT /Fb 9 Tf 0.2 0.2 0.2 rg 52 ${cy} Td (Signature over printed name of applicant) Tj ET`);
-  cy -= 22;
+  // The applicant signs on the left, level with the bottom of the payment block.
+  const sigY = Math.min(cy + 8, blockTop - 30);
+  blank(50, sigY, 300);
+  ops.push(`BT /Fb 9 Tf 0.2 0.2 0.2 rg 52 ${sigY - 12} Td (Signature over printed name of applicant) Tj ET`);
+  cy = Math.min(cy, sigY - 12) - 22;
 
   // ── 12. LIGHT SEPARATOR ─────────────────────────────────────────────────────
   ops.push(`0.6 G 0.4 w 50 ${cy} m 545 ${cy} l S 0 G`);

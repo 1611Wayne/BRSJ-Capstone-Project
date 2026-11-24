@@ -183,6 +183,11 @@ export async function POST(request: Request) {
       const { error } = await db.from('official_receipts').update({ or_number: after.receipt.orNumber, or_date: after.receipt.orDate, amount_paid: after.receipt.amountPaid }).eq('application_id', row.id);
       if (error) return fail(error.code === '23505' ? 'This OR number is already recorded for another request.' : 'Could not save the OR details: ' + error.message, error.code === '23505' ? 400 : 500);
     }
+    // Plate No. (Business and TODA; migration 28). Printed on the clearance, NO PLATE when empty.
+    if ((after.plateNumber ?? null) !== (before.plateNumber ?? null)) {
+      const { error } = await db.from('applications').update({ plate_number: after.plateNumber ?? null }).eq('id', row.id);
+      if (error) return fail('Could not save the plate number. Check that migration 28 (20261124000000_plate_number_and_property_use.sql, run kit part 24) has been run on Supabase. ' + error.message);
+    }
     const { error: vError } = await db.from('payment_verifications').update({ status: 'Verified', checked_by: me.user.id, checked_at: now, notes: null }).eq('application_id', row.id);
     if (vError) return fail('Could not save the payment check: ' + vError.message);
     // After an Admin correction withdrew the clearance, the new one is REVISED and keeps the original issue date.
@@ -223,7 +228,8 @@ export async function POST(request: Request) {
     if (edit && command.data.entries) {
       const columns = applicantColumns(after, row.clearance_type_id);
       Object.assign(changes, { address: columns.address, contact_number: columns.contact_number, purpose: columns.purpose, business_location: columns.business_location,
-        date_initial_operation: columns.date_initial_operation, business_contact: columns.business_contact, property_owner_name: columns.property_owner_name });
+        date_initial_operation: columns.date_initial_operation, business_contact: columns.business_contact, property_owner_name: columns.property_owner_name,
+        plate_number: after.plateNumber ?? null });
     }
     if (edit && after.clearanceType !== before.clearanceType) {
       const { data: type } = await db.from('clearance_types').select('id').eq('name', after.clearanceType).eq('active', true).maybeSingle();

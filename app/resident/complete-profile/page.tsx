@@ -4,6 +4,8 @@ import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { usePortal } from '@/components/PortalProvider';
 import { Field, ErrorMessage } from '@/components/Field';
+import { PasswordInput } from '@/components/PasswordInput';
+import { placeholderEmail } from '@/lib/accountEmail';
 import { FileUpload } from '@/components/FileUpload';
 import { supabaseBrowser } from '@/lib/supabase/browser';
 import { mobileForms } from '@/lib/phone';
@@ -16,7 +18,7 @@ const safeFileName = (name: string) => name.replace(/[^A-Za-z0-9._-]+/g, '_').sl
 export default function CompleteProfilePage() {
   const { user, act } = usePortal();
   const router = useRouter();
-  const [id, setId] = useState<UploadedDocument>(), [error, setError] = useState(''), [busy, setBusy] = useState(false);
+  const [id, setId] = useState<UploadedDocument>(), [error, setError] = useState(''), [busy, setBusy] = useState(false), [email, setEmail] = useState(() => (user?.email && !placeholderEmail(user.email) ? user.email : ''));
   if (!user) return null;
   const me = user;
   const mobile = mobileForms(me.contact)?.local ?? me.contact;
@@ -34,8 +36,10 @@ export default function CompleteProfilePage() {
         if (uploadError) throw new Error('Your ID could not be uploaded: ' + uploadError.message);
       }
       const get = (name: string) => String(f.get(name) ?? '').trim();
+      if (email && String(f.get('password') ?? '').length < 8) throw new Error('Choose a password of 8 or more characters to log in with your email.');
+      if (email && f.get('password') !== f.get('confirm')) throw new Error('The two passwords do not match.');
       const response = await fetch('/api/profile/complete', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({
-        firstName: get('first'), lastName: get('last'), address: get('address'), email: get('email'), validIdPath, privacyConsent: f.get('privacy') === 'on',
+        firstName: get('first'), lastName: get('last'), address: get('address'), email: get('email'), password: email ? String(f.get('password') ?? '') : undefined, validIdPath, privacyConsent: f.get('privacy') === 'on',
       }) });
       const body = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(body.error || 'Your details could not be saved.');
@@ -56,7 +60,12 @@ export default function CompleteProfilePage() {
         <Field label="First Name *"><input name="first" required className="text-field" defaultValue={me.firstName} /></Field>
         <Field label="Last Name *"><input name="last" required className="text-field" defaultValue={me.lastName} /></Field>
         <div className="sm:col-span-2"><Field label="Full Address *"><input name="address" required className="text-field" placeholder="House No., Street, Subdivision" defaultValue={me.address} /></Field></div>
-        <div className="sm:col-span-2"><Field label="Email Address (optional)"><input name="email" type="email" className="text-field" placeholder="Leave empty if you have no email" defaultValue={me.email} /></Field></div>
+        <div className="sm:col-span-2"><Field label="Email Address (optional)"><input name="email" type="email" className="text-field" placeholder="Leave empty if you have no email" value={email} onChange={e => setEmail(e.target.value.trim())} /></Field></div>
+        {email && <>
+          <Field label="Password *"><PasswordInput name="password" required minLength={8} className="text-field" autoComplete="new-password" /></Field>
+          <Field label="Confirm Password *"><PasswordInput name="confirm" required minLength={8} className="text-field" autoComplete="new-password" /></Field>
+          <p className="sm:col-span-2 text-xs text-slate-600">With an email and password you can also log in with your email. Without an email, keep using &quot;Text me a code&quot;.</p>
+        </>}
         {!me.hasValidId && <div className="sm:col-span-2"><FileUpload label="Upload Valid ID" required idCard value={id} onChange={setId} /></div>}
       </div>
       <label className="flex gap-2 mt-5 text-xs leading-4 text-slate-600"><input name="privacy" type="checkbox" required />I have read and agree to the Privacy Notice regarding the processing of my personal information for barangay clearance services.</label>

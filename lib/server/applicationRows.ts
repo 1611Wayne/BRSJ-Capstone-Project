@@ -1,10 +1,11 @@
+import { PROPERTY_TYPES, VEHICLE_TYPES } from '@/lib/workflow';
 import 'server-only';
 import type { Application, ApplicationInput, UploadedDocument } from '@/types';
 
 // Column list for reading an application with its clearance type name and documents (see SCHEMA_MAP.md, section 2).
 export const APPLICATION_SELECT = `id, clearance_type_id, reference_no, resident_id, staff_encoder_id, applicant_name, address, contact_number, purpose, date_requested, created_at, status,
   business_name, business_location, date_initial_operation, application_type, ownership_type, property_owner_name, business_contact,
-  source, certified, has_employees, employee_count, business_subcategory, rejection_reason, rejected_at, clearance_revised_from,
+  source, certified, has_employees, employee_count, business_subcategory, rejection_reason, rejected_at, clearance_revised_from, plate_number, property_use, vehicle_type, registration_number, body_number,
   clearance_types ( name ),
   rejecter:profiles!applications_rejected_by_fkey ( first_name, last_name ),
   encoder:profiles!applications_staff_encoder_id_fkey ( first_name, last_name ),
@@ -45,6 +46,9 @@ export function toApplication(r: Row, includeInspection = false): Application {
     ...(r.has_employees === null || r.has_employees === undefined ? {} : { hasEmployees: r.has_employees }),
     ...(r.employee_count ? { employeeCount: r.employee_count } : {}),
     ...(r.business_subcategory ? { businessSubcategory: r.business_subcategory } : {}),
+    ...(r.plate_number ? { plateNumber: r.plate_number } : {}),
+    ...(r.property_use ? { propertyUse: r.property_use } : {}),
+    ...(r.vehicle_type ? { vehicleType: r.vehicle_type } : {}), ...(r.registration_number ? { registrationNumber: r.registration_number } : {}), ...(r.body_number ? { bodyNumber: r.body_number } : {}),
     ...(r.clearance_revised_from ? { clearanceRevisedFrom: r.clearance_revised_from } : {}),
     ...(r.rejection_reason ? { rejection: { reason: r.rejection_reason, rejectedBy: name(one(r.rejecter)), timestamp: r.rejected_at } } : {}),
     ...(one(r.assessments) ? { assessment: toAssessment(one(r.assessments)!) } : {}),
@@ -97,5 +101,12 @@ export function applicantColumns(a: ApplicationInput, clearanceTypeId: number) {
     certified: !!a.certified,
     has_employees: a.hasEmployees ?? null, employee_count: a.hasEmployees && a.employeeCount && a.employeeCount > 0 ? Math.floor(a.employeeCount) : null,
     business_subcategory: business ? a.businessSubcategory ?? null : null,
+    property_use: PROPERTY_TYPES.includes(a.clearanceType) ? a.propertyUse ?? null : null,   // migration 28 (Remarks)
+    // TODA and PODA: the vehicle (migration 28). The TODA applicant types the plate; a business plate is typed by Staff
+    // when verifying payment, so plate_number is only sent here for TODA.
+    vehicle_type: VEHICLE_TYPES.includes(a.clearanceType) ? a.vehicleType?.trim() || null : null,
+    registration_number: a.clearanceType === 'TODA Clearance' ? a.registrationNumber?.trim() || null : null,
+    body_number: VEHICLE_TYPES.includes(a.clearanceType) ? a.bodyNumber?.trim() || null : null,
+    ...(a.clearanceType === 'TODA Clearance' ? { plate_number: a.plateNumber?.trim() || null } : {}),
   };
 }

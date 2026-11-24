@@ -29,17 +29,18 @@ async function signInWithSupabase(email: string, password: string, captchaToken:
 }
 
 // Sign-in by text (Semaphore, sender BrgySJMR): the server first puts the number on the account that already has it,
-// then Supabase texts a 6-digit code. A number with no account gets a new one, which must finish registering.
-// For "Forgot password?" (existingOnly), a number with no account gets no code and no new account.
+// then Supabase texts a 6-digit code. A number with no account gets no code and NO new account (decided 2026-11-24:
+// new accounts come only from the Register page, or the barangay office for walk-ins; a code for an unknown number
+// used to create an empty account that landed on "Complete Your Registration").
 async function sendCode(mobile: string, captchaToken: string, existingOnly = false): Promise<string> {
   const forms = mobileForms(mobile);
   if (!forms) throw new Error('Enter a mobile number like 09171234567.');
   const response = await fetch('/api/sms/prepare', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ mobile: forms.local }) });
   const body = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(body.error || 'The code could not be sent. Please try again.');
-  const { error } = await supabaseBrowser().auth.signInWithOtp({ phone: forms.international, options: { captchaToken: captchaToken || undefined, shouldCreateUser: !existingOnly } });
+  const { error } = await supabaseBrowser().auth.signInWithOtp({ phone: forms.international, options: { captchaToken: captchaToken || undefined, shouldCreateUser: false } });
   if (error) throw new Error(/captcha/i.test(error.message) ? 'The security check failed. Please try again.' : /rate|seconds|too many/i.test(error.message) ? 'Please wait a minute before asking for another code.'
-    : existingOnly && /signup|not allowed|not found/i.test(error.message) ? 'No account has this mobile number. Check the number, or ask the barangay office to set a temporary password for you.'
+    : /signup|not allowed|not found/i.test(error.message) ? (existingOnly ? 'No account has this mobile number. Check the number, or ask the barangay office to set a temporary password for you.' : 'No account has this mobile number. Register first, or log in with your email. (Use the mobile number you registered with.)')
     // The SMS hook refused (daily limit for this number or for the portal) or failed; Supabase hides its reason.
     : /hook/i.test(error.message) ? 'We could not send a code right now. This number may have reached today’s limit of codes. Please try again tomorrow, or sign in with email.'
     : 'The code could not be sent: ' + error.message);
@@ -138,7 +139,7 @@ export default function LoginPage(){
   <Captcha onToken={setCaptchaToken} resetKey={captchaReset}/><ErrorMessage message={error}/><button className="primary-btn w-full mt-6" disabled={busy||needCheck}>{busy?'Signing in…':needCheck?'Checking that you are not a robot…':'Login'}</button>
  </form>
  :!phone?<form onSubmit={e=>{e.preventDefault();void requestCode();}}>
-  <p className="text-xs text-slate-600 mt-6">{mode==='reset'?'Enter the mobile number on your account. We will text it a 6-digit code. No mobile number on your account? Ask the barangay office to set a temporary password for you.':'We will text a 6-digit code to your mobile number. If this number is not registered yet, you can finish registering after signing in.'}</p>
+  <p className="text-xs text-slate-600 mt-6">{mode==='reset'?'Enter the mobile number on your account. We will text it a 6-digit code. No mobile number on your account? Ask the barangay office to set a temporary password for you.':'We will text a 6-digit code to the mobile number on your account. No account yet? Register first.'}</p>
   <div className="mt-4"><Field label="Mobile Number"><input type="tel" inputMode="tel" autoComplete="tel" required className="text-field" placeholder="09171234567" value={mobile} onChange={e=>setMobile(e.target.value)}/></Field></div>
   <Captcha onToken={setCaptchaToken} resetKey={captchaReset}/><ErrorMessage message={error}/><button className="primary-btn w-full mt-6" disabled={busy||needCheck}>{busy?'Sending the code…':needCheck?'Checking that you are not a robot…':'Send Code'}</button>
   {mode==='reset'&&<button type="button" className="text-xs underline text-brand-primary mt-4" onClick={()=>{setResetBy('email');setError('');}}>Email me a reset link instead</button>}

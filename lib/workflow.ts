@@ -31,9 +31,14 @@ export function presetRange(preset: DateRangePreset, anchor = today()): { from: 
   }
   return { from: `${y}-01-01`, to: `${y}-12-31` };
 }
-export function requirements(a: Pick<Application, 'clearanceType' | 'ownership' | 'applicationType'>): DocumentRequirement[] {
-  if (a.clearanceType !== 'Business Clearance') return [{ name: 'Valid ID', required: true }, { name: 'Supporting Property / Clearance Document', required: true }];
-  return [{ name: 'Valid ID of Owner', required: true }, { name: 'Picture of Establishment / Business', required: true }, { name: 'DTI / SEC Document', required: true }, ...(a.ownership === 'Renter' ? [{ name: 'Contract of Lease', required: true }] : []), ...(a.applicationType === 'Renewal' ? [{ name: 'Old Business Clearance', required: true }] : [])];
+// Ambulant vendors often have no DTI / SEC registration (UAT notes, 2026-11-24): for them it is optional (they may still
+// upload one); the valid ID and the picture of the business stay required.
+export function requirements(a: Pick<Application, 'clearanceType' | 'ownership' | 'applicationType'> & { businessSubcategory?: Application['businessSubcategory'] }): DocumentRequirement[] {
+  // TODA: the OR/CR of the vehicle; PODA: the certification from their association (UAT notes 2026-11-24). Both with an ID.
+  if (a.clearanceType === 'TODA Clearance') return [{ name: 'OR/CR of the Vehicle', required: true }, { name: 'Valid ID', required: true }];
+  if (a.clearanceType === 'PODA Clearance') return [{ name: 'Certification from the Association', required: true }, { name: 'Valid ID', required: true }];
+  if (a.clearanceType !== 'Business Clearance') return [{ name: 'Valid ID', required: true }, { name: 'Proof of Ownership', required: true }];
+  return [{ name: 'Valid ID of Owner', required: true }, { name: 'Picture of Establishment / Business', required: true }, { name: 'DTI / SEC Document', required: a.businessSubcategory !== 'Ambulant' }, ...(a.ownership === 'Renter' ? [{ name: 'Contract of Lease', required: true }] : []), ...(a.applicationType === 'Renewal' ? [{ name: 'Old Business Clearance', required: true }] : [])];
 }
 // Payment evidence is a typed receipt, an uploaded receipt photo (the OR number is then kept in paymentVerification, not in
 // receipt), or a simulated payment. The download rule and the public verification page both use this, so they cannot drift apart.
@@ -88,10 +93,30 @@ function sortedOptions(found: Map<string, Set<string>>, rank: (size: string) => 
     ? { name, classifications: [...sizes].sort((a, b) => rank(a) - rank(b) || a.localeCompare(b, undefined, { numeric: true })).map(size => ({ name: size })) }
     : { name });
 }
+// The Treasury's OR number (FT-15, paper UT-04; samples received 2026-11-24): the Municipal Treasury's receipt prints
+// "NO. RZL 26662152" and the barangay's clearance shows only the number, "O.R. NO. : 26662152". Staff may type it with
+// "NO." / "RZL", spaces or a dash; it is saved as the digits only. OR_DIGITS is the one place to change if the
+// Treasury's series ever gets longer.
+export const OR_DIGITS = 8;
+export const OR_FORMAT_MESSAGE = `Enter the OR number from the Treasury receipt: ${OR_DIGITS} digits, for example 26662152 (printed as "NO. RZL 26662152").`;
+export const normalizeOrNumber = (input?: string) => String(input ?? '').trim().replace(/^no\.?\s*/i, '').replace(/^rzl\s*/i, '').replace(/[\s-]/g, '');
+export const validOrNumber = (orNumber: string) => new RegExp(`^\\d{${OR_DIGITS}}$`).test(orNumber);
+// A plate number Staff type for a Business or TODA clearance (printed as "Plate No."; NO PLATE when there is none).
+export const PLATE_TYPES = ['Business Clearance', 'TODA Clearance'];
+// The property clearances (UAT notes 2026-11-24): the form asks only Name, Residential Address, Location, Remarks and
+// Purpose, as printed on the clearance. Remarks is what the property is used for: Residential or Commercial.
+export const PROPERTY_TYPES = ['Building Clearance', 'Electrical Clearance', 'Fencing Clearance', 'Excavation Clearance', 'Lot Survey Clearance', 'Water/MWSS Clearance'];
+export const SAME_AS_ABOVE = '-SAME AS ABOVE-';
+// TODA and PODA (UAT notes 2026-11-24): the vehicle instead of a location. TODA asks Name / Operator, Address, Type of
+// Vehicle, Registration No., Plate No. and Body Number, with the OR/CR of the vehicle; PODA asks Name, Address, Type of
+// Vehicle and Body Number, with the certification from their association. Both also need a valid ID.
+export const VEHICLE_TYPES = ['TODA Clearance', 'PODA Clearance'];
+export const validVehicleText = (value?: string) => !!value && value.trim().length > 0 && value.trim().length <= 40;
+export const PROPERTY_USES = ['Residential', 'Commercial'];
+export const validPlateNumber = (plate: string) => /^[A-Za-z0-9][A-Za-z0-9 -]{0,29}$/.test(plate);
 export function validateOR(number: string, date: string, amount: string | number, total: number, currentDate = today()) {
-  requireThat(/^TR-\d{4}-\d{5}$/.test(number), 'Use the OR format TR-YYYY-#####.');
+  requireThat(validOrNumber(normalizeOrNumber(number)), OR_FORMAT_MESSAGE);
   requireThat(/^\d{4}-\d{2}-\d{2}$/.test(date) && !isNaN(Date.parse(date)) && new Date(date).toISOString().slice(0,10) === date && date <= currentDate, 'Enter a valid OR date that is not in the future.');
-  requireThat(number.slice(3,7) === date.slice(0,4), 'The OR year must match the OR date.');
   validateAmountPaid(amount, total);
 }
 // The Amount Paid read off a receipt: a currency amount with at most two decimals that equals the assessed total. A receipt that
@@ -100,8 +125,7 @@ export function validateAmountPaid(amount: string | number, total: number) {
   requireThat(/^\d+(\.\d{1,2})?$/.test(String(amount)) && Number.isFinite(Number(amount)) && Number(amount) >= 0, 'Enter a valid currency amount with at most two decimal places.');
   requireThat(Math.round(Number(amount) * 100) === Math.round(total * 100), 'Amount Paid must match the assessed amount.');
 }
-// The OR date Staff type from a receipt image: a real calendar date, not in the future. (validateOR also ties the OR number's year
-// to the date, which only fits the typed TR-YYYY-##### format; a number read off an image is not held to that pattern.)
+// The OR date Staff type from a receipt image: a real calendar date, not in the future.
 export const validOrDate = (date?: string, currentDate = today()) => !!date && /^\d{4}-\d{2}-\d{2}$/.test(date) && !isNaN(Date.parse(date)) && new Date(date).toISOString().slice(0, 10) === date && date <= currentDate;
 // Before the clearance is generated, an Applicant can ask for a correction and Staff can make it. A rejected request counts as
 // returned to the Applicant. After generation, changes go through the Admin transaction reversion.
@@ -113,7 +137,7 @@ export const correctionNeedsAdmin = (a: Pick<Application, 'status'>) => !correct
 // Entries the fee depends on for a business (New/Renewal, employees: FT-1). Once assessed, changing them means a new assessment.
 const feeEntries = ['applicationType', 'hasEmployees', 'employeeCount'];
 // Entries an Admin can correct on an issued clearance (besides the name and business name the reversion already had).
-export const reversionEntries = ['address', 'contact', 'purpose', 'businessLocation', 'initialOperation', 'businessContact', 'propertyOwner'] as const;
+export const reversionEntries = ['address', 'contact', 'purpose', 'businessLocation', 'initialOperation', 'businessContact', 'propertyOwner', 'plateNumber'] as const;
 export type Command =
   | { type: 'login'; email: string; password: string } | { type: 'logout' }
   | { type: 'sessionUser'; user: User }
@@ -138,7 +162,7 @@ export type Command =
   | { type: 'or'; reference: string; number: string; date: string; amount: string; receiptPhoto?: UploadedDocument }
   | { type: 'onlinePayment'; reference: string; method: SimulatedPayment['method']; amount: number }
   | { type: 'receiptPhoto'; reference: string; photo: UploadedDocument }
-  | { type: 'verifyPayment'; reference: string; orNumber?: string; orDate?: string; amountPaid?: string | number }
+  | { type: 'verifyPayment'; reference: string; orNumber?: string; orDate?: string; amountPaid?: string | number; plateNumber?: string }
   | { type: 'returnPayment'; reference: string; reason: string }
   | { type: 'download' | 'confirm' | 'printClearance'; reference: string }
   | { type: 'readNotifications' }
@@ -280,8 +304,13 @@ export function transition(state: PortalState, command: Command, now = new Date(
     requireThat(clearanceTypes.some(c => c.name === a.clearanceType), 'Choose a supported clearance type.');
     requireThat(!a.businessSubcategory || businessSubcategories.includes(a.businessSubcategory), 'Choose a supported business subcategory.');
     if (!command.draft) {
-      requireThat(a.applicant.trim() && a.address.trim() && a.purpose.trim() && /^(09\d{9}|\+639\d{9})$/.test(a.contact), 'Complete applicant details and enter a valid Philippine mobile number.');
-      requireThat(a.businessLocation.trim(), 'Business / property location is required.');
+      requireThat(a.applicant.trim() && a.address.trim() && (a.purpose.trim() || VEHICLE_TYPES.includes(a.clearanceType)) && /^(09\d{9}|\+639\d{9})$/.test(a.contact), 'Complete applicant details and enter a valid Philippine mobile number.');
+      requireThat(a.businessLocation.trim() || VEHICLE_TYPES.includes(a.clearanceType), 'Location is required.');
+      if (VEHICLE_TYPES.includes(a.clearanceType)) requireThat(validVehicleText(a.vehicleType) && validVehicleText(a.bodyNumber), 'Enter the type of vehicle and the body number (up to 40 characters each).');
+      if (a.clearanceType === 'TODA Clearance') requireThat(validVehicleText(a.registrationNumber) && !!a.plateNumber && validPlateNumber(a.plateNumber.trim()), 'Enter the registration number and the plate number of the vehicle.');
+      // Property clearances (PROPERTY_TYPES, UAT notes 2026-11-24): only Name, Residential Address, Location, Remarks
+      // (Residential or Commercial) and Purpose; no business name, date of initial operation, employees or ownership.
+      if (PROPERTY_TYPES.includes(a.clearanceType)) requireThat(PROPERTY_USES.includes(a.propertyUse as string), 'Choose Residential or Commercial under Remarks.');
       if (a.clearanceType === 'Business Clearance') requireThat(a.businessName.trim() && a.initialOperation && !isNaN(Date.parse(a.initialOperation)) && a.initialOperation <= today() && a.businessContact.trim(), 'Complete the business information and use a valid operation date.');
       requireThat(a.ownership === 'Owner' || a.propertyOwner.trim(), 'Property owner name is required for renters and occupants.');
       requireThat(a.certified, 'Certify that the information is true and correct.');
@@ -394,7 +423,7 @@ export function transition(state: PortalState, command: Command, now = new Date(
   // Correction requests. A rejected application is returned to the Applicant (it stays Rejected until Staff reopen it by
   // resolving the request). The Applicant never edits entries directly: they describe the mistake, Staff change it.
   // Once a clearance is generated, changes go through the Admin reversion instead.
-  const editableEntries = ['applicant', 'address', 'contact', 'purpose', 'applicationType', 'businessLocation', 'businessName', 'initialOperation', 'businessContact', 'ownership', 'propertyOwner', 'hasEmployees', 'employeeCount', 'businessSubcategory'];
+  const editableEntries = ['applicant', 'address', 'contact', 'purpose', 'applicationType', 'businessLocation', 'businessName', 'initialOperation', 'businessContact', 'ownership', 'propertyOwner', 'hasEmployees', 'employeeCount', 'businessSubcategory', 'propertyUse', 'vehicleType', 'registrationNumber', 'bodyNumber', 'plateNumber'];
   const openRequest = a.corrections?.find(c => c.status === 'Open');
   const resolveOpenRequest = (note?: string) => {
     a.corrections = a.corrections!.map(c => c.id === openRequest!.id ? { ...c, status: 'Resolved' as const, resolvedBy: fullName(actor), resolvedAt: now, resolutionNote: note } : c);
@@ -412,9 +441,18 @@ export function transition(state: PortalState, command: Command, now = new Date(
     staff(); requireThat(correctableStatuses.includes(a.status), 'This request can no longer be edited here. Use the Admin transaction reversion.');
     requireThat(Object.keys(command.changes).every(k => editableEntries.includes(k)), 'That entry cannot be edited here.');
     const business = a.clearanceType === 'Business Clearance', before: Record<string, unknown> = {}, after: Record<string, unknown> = {};
-    const next = { ...a, ...command.changes, contact: (command.changes.contact ?? a.contact).trim(), applicant: (command.changes.applicant ?? a.applicant).trim(), address: (command.changes.address ?? a.address).trim(), purpose: (command.changes.purpose ?? a.purpose).trim(), businessLocation: (command.changes.businessLocation ?? a.businessLocation).trim(), businessName: (command.changes.businessName ?? a.businessName).trim(), businessContact: (command.changes.businessContact ?? a.businessContact).trim(), propertyOwner: (command.changes.propertyOwner ?? a.propertyOwner).trim(), businessSubcategory: business ? ('businessSubcategory' in command.changes ? command.changes.businessSubcategory : a.businessSubcategory) : undefined };
-    requireThat(next.applicant && next.address && next.purpose && /^(09\d{9}|\+639\d{9})$/.test(next.contact), 'Complete applicant details and enter a valid Philippine mobile number.');
-    requireThat(next.businessLocation, 'Business / property location is required.');
+    const next = { ...a, ...command.changes, contact: (command.changes.contact ?? a.contact).trim(), applicant: (command.changes.applicant ?? a.applicant).trim(), address: (command.changes.address ?? a.address).trim(), purpose: (command.changes.purpose ?? a.purpose).trim(), businessLocation: (command.changes.businessLocation ?? a.businessLocation).trim(), businessName: (command.changes.businessName ?? a.businessName).trim(), businessContact: (command.changes.businessContact ?? a.businessContact).trim(), propertyOwner: (command.changes.propertyOwner ?? a.propertyOwner).trim(), businessSubcategory: business ? ('businessSubcategory' in command.changes ? command.changes.businessSubcategory : a.businessSubcategory) : undefined,
+      // TODA / PODA vehicle details (TODA also registration and plate); cleared for other types.
+      vehicleType: VEHICLE_TYPES.includes(a.clearanceType) ? ('vehicleType' in command.changes ? command.changes.vehicleType : a.vehicleType)?.trim() : undefined,
+      bodyNumber: VEHICLE_TYPES.includes(a.clearanceType) ? ('bodyNumber' in command.changes ? command.changes.bodyNumber : a.bodyNumber)?.trim() : undefined,
+      registrationNumber: a.clearanceType === 'TODA Clearance' ? ('registrationNumber' in command.changes ? command.changes.registrationNumber : a.registrationNumber)?.trim() : undefined,
+      plateNumber: 'plateNumber' in command.changes ? command.changes.plateNumber?.trim() || undefined : a.plateNumber,
+      propertyUse: PROPERTY_TYPES.includes(a.clearanceType) ? ('propertyUse' in command.changes ? command.changes.propertyUse : a.propertyUse) : undefined };
+    requireThat(!('propertyUse' in command.changes) || (PROPERTY_TYPES.includes(a.clearanceType) && PROPERTY_USES.includes(next.propertyUse as string)), 'Choose Residential or Commercial (Building, Electrical, Fencing, Excavation, Lot Survey and Water clearances only).');
+    requireThat(next.applicant && next.address && (next.purpose || VEHICLE_TYPES.includes(a.clearanceType)) && /^(09\d{9}|\+639\d{9})$/.test(next.contact), 'Complete applicant details and enter a valid Philippine mobile number.');
+    requireThat(next.businessLocation || VEHICLE_TYPES.includes(a.clearanceType), 'Location is required.');
+    requireThat(!['vehicleType', 'bodyNumber', 'registrationNumber'].some(k => k in command.changes) || (VEHICLE_TYPES.includes(a.clearanceType) && validVehicleText(next.vehicleType) && validVehicleText(next.bodyNumber) && (a.clearanceType !== 'TODA Clearance' || validVehicleText(next.registrationNumber))), 'Enter the vehicle details (up to 40 characters each; TODA and PODA clearances only).');
+    requireThat(!('plateNumber' in command.changes) || (PLATE_TYPES.includes(a.clearanceType) && (!next.plateNumber || validPlateNumber(next.plateNumber))), 'Enter the plate number with letters, numbers, spaces or dashes (up to 30), for Business and TODA clearances only.');
     if (business) requireThat(next.businessName && next.initialOperation && !isNaN(Date.parse(next.initialOperation)) && next.initialOperation <= today() && next.businessContact, 'Complete the business information and use a valid operation date.');
     requireThat(next.ownership === 'Owner' || next.propertyOwner, 'Property owner name is required for renters and occupants.');
     requireThat(!next.businessSubcategory || businessSubcategories.includes(next.businessSubcategory), 'Choose a supported business subcategory.');
@@ -447,11 +485,12 @@ export function transition(state: PortalState, command: Command, now = new Date(
     requireThat(actor.role === 'staff', 'Only Staff can record OR details.');
     requireThat(a.status === 'Awaiting OR' && a.assessment, 'Staff must complete assessment before OR entry.');
     validateOR(command.number, command.date, command.amount, a.assessment.total);
-    requireThat(!s.applications.some(x => x.reference !== reference && x.receipt?.orNumber === command.number), 'This OR number is already recorded for another request.');
-    a.receipt = { orNumber: command.number, orDate: command.date, amountPaid: Number(command.amount), recordedAt: now, encodedBy: fullName(actor), ...(command.receiptPhoto ? { receiptPhoto: command.receiptPhoto } : {}) };
+    const typedOr = normalizeOrNumber(command.number);
+    requireThat(!s.applications.some(x => x.reference !== reference && normalizeOrNumber(x.receipt?.orNumber) === typedOr), 'This OR number is already recorded for another request.');
+    a.receipt = { orNumber: typedOr, orDate: command.date, amountPaid: Number(command.amount), recordedAt: now, encodedBy: fullName(actor), ...(command.receiptPhoto ? { receiptPhoto: command.receiptPhoto } : {}) };
     a.receiptPhoto = command.receiptPhoto; a.simulatedPayment = undefined; a.clearance = undefined;
     a.paymentVerification = { status: 'Pending', submittedAt: now }; a.status = 'For Checking';
-    log('OR details submitted for checking', reference, '', JSON.stringify({ orNumber: command.number, orDate: command.date, amountPaid: command.amount, hasPhoto: !!command.receiptPhoto }));
+    log('OR details submitted for checking', reference, '', JSON.stringify({ orNumber: typedOr, orDate: command.date, amountPaid: command.amount, hasPhoto: !!command.receiptPhoto }));
   }
   if (command.type === 'onlinePayment') {
     requireThat(actor.role === 'resident' || actor.role === 'staff', 'Only Residents or Staff can record payment.');
@@ -487,14 +526,19 @@ export function transition(state: PortalState, command: Command, now = new Date(
       requireThat(a.receipt || a.receiptPhoto || a.simulatedPayment, 'Payment evidence is required.');
       if (a.simulatedPayment) requireThat(a.simulatedPayment.amount === a.assessment.total, 'Payment amount must match the assessed amount.');
       else if (!a.receipt) requireThat(a.receiptPhoto && validFile(a.receiptPhoto), 'A valid receipt photo is required.');
-      const orNumber = command.orNumber?.trim() ?? '';
+      const orNumber = a.simulatedPayment ? '' : normalizeOrNumber(command.orNumber);
+      // Plate No. (Business and TODA): optional; the clearance prints NO PLATE without one.
+      const plate = command.plateNumber === undefined ? (original.plateNumber ?? '') : command.plateNumber.trim();
+      requireThat(!plate || PLATE_TYPES.includes(a.clearanceType), 'A plate number is only recorded for Business and TODA clearances.');
+      requireThat(!plate || validPlateNumber(plate), 'Enter the plate number with letters, numbers, spaces or dashes (up to 30).');
       if (!a.simulatedPayment) {
         requireThat(orNumber, 'Enter the OR number from the receipt before verifying payment.');
+        requireThat(validOrNumber(orNumber), OR_FORMAT_MESSAGE);
         const orDate = command.orDate ?? '';
         const amountPaid = command.amountPaid ?? '';
         requireThat(validOrDate(orDate), 'Enter a valid OR date that is not in the future.');
         validateAmountPaid(amountPaid, a.assessment.total);
-        requireThat(!s.applications.some(x => x.reference !== reference && (x.receipt?.orNumber === orNumber || x.paymentVerification?.orNumber === orNumber)), 'This OR number is already recorded for another request.');
+        requireThat(!s.applications.some(x => x.reference !== reference && (normalizeOrNumber(x.receipt?.orNumber) === orNumber || normalizeOrNumber(x.paymentVerification?.orNumber) === orNumber)), 'This OR number is already recorded for another request.');
         const receiptPhoto = a.receipt?.receiptPhoto ?? a.receiptPhoto;
         a.receipt = { orNumber, orDate, amountPaid: Number(amountPaid), recordedAt: now, encodedBy: fullName(actor), ...(receiptPhoto ? { receiptPhoto } : {}) };
       }
@@ -502,7 +546,11 @@ export function transition(state: PortalState, command: Command, now = new Date(
       if (orNumber && !a.simulatedPayment) log('OR details recorded by staff', reference,
         JSON.stringify({ orNumber: original.receipt?.orNumber || original.paymentVerification?.orNumber || '', orDate: original.receipt?.orDate || '', amountPaid: original.receipt?.amountPaid ?? '' }),
         JSON.stringify({ orNumber, orDate: a.receipt!.orDate, amountPaid: a.receipt!.amountPaid }));
-      a.clearance = { issueDate: today(), generatedAt: now, ...(a.clearanceRevisedFrom ? { revisedFrom: a.clearanceRevisedFrom } : {}) }; a.status = 'Ready for Download';
+      if (PLATE_TYPES.includes(a.clearanceType)) {
+        if (plate !== (original.plateNumber ?? '')) log('Plate number recorded by staff', reference, original.plateNumber ?? '', plate || 'NO PLATE');
+        a.plateNumber = plate || undefined;
+      }
+      a.clearance ={ issueDate: today(), generatedAt: now, ...(a.clearanceRevisedFrom ? { revisedFrom: a.clearanceRevisedFrom } : {}) }; a.status = 'Ready for Download';
       log('Payment verified by staff', reference, original.status, a.status); log('Clearance generated', reference, original.status, a.status);
       notify(a.residentId, reference, 'clearance_ready', `Your clearance is ready. Claim the printed original, with the barangay’s official stamp, at the monitoring office. Bring your reference number (${reference}). Your digital copy is available as a backup.`);
     }
@@ -556,13 +604,14 @@ export function transition(state: PortalState, command: Command, now = new Date(
       const hasOrDetails = d.orNumber !== undefined || d.orDate !== undefined || d.amountPaid !== undefined;
       const orDetailsChanged = a.receipt && hasOrDetails && (d.orNumber !== original.receipt?.orNumber || d.orDate !== original.receipt?.orDate || d.amountPaid !== original.receipt?.amountPaid);
       if (a.receipt && orDetailsChanged) {
-        const orNumber = d.orNumber?.trim() ?? '';
+        const orNumber = normalizeOrNumber(d.orNumber);
         const orDate = d.orDate ?? '';
         const amountPaid = d.amountPaid ?? '';
         requireThat(orNumber, 'Enter the OR number.');
+        requireThat(validOrNumber(orNumber), OR_FORMAT_MESSAGE);
         requireThat(validOrDate(orDate), 'Enter a valid OR date that is not in the future.');
         validateAmountPaid(amountPaid, a.assessment!.total);
-        if (orNumber !== original.receipt?.orNumber) requireThat(!s.applications.some(x => x.reference !== reference && x.receipt?.orNumber === orNumber), 'This OR number is already in use.');
+        if (orNumber !== normalizeOrNumber(original.receipt?.orNumber)) requireThat(!s.applications.some(x => x.reference !== reference && normalizeOrNumber(x.receipt?.orNumber) === orNumber), 'This OR number is already in use.');
         a.receipt = { ...a.receipt, orNumber, orDate, amountPaid: Number(amountPaid) };
         a.clearanceRevisedFrom = original.clearance?.revisedFrom || original.clearance?.issueDate || original.clearanceRevisedFrom;
         a.status = 'For Checking'; a.clearance = undefined; a.confirmation = undefined; a.feedback = undefined;
@@ -574,9 +623,11 @@ export function transition(state: PortalState, command: Command, now = new Date(
         const e = d.entries;
         requireThat(Object.keys(e).every(k => (reversionEntries as readonly string[]).includes(k)), 'That entry cannot be corrected here.');
         const fixed = { address: (e.address ?? a.address).trim(), contact: (e.contact ?? a.contact).trim(), purpose: (e.purpose ?? a.purpose).trim(), businessLocation: (e.businessLocation ?? a.businessLocation).trim(),
-          initialOperation: e.initialOperation ?? a.initialOperation, businessContact: (e.businessContact ?? a.businessContact).trim(), propertyOwner: a.ownership === 'Owner' ? a.propertyOwner : (e.propertyOwner ?? a.propertyOwner).trim() };
+          initialOperation: e.initialOperation ?? a.initialOperation, businessContact: (e.businessContact ?? a.businessContact).trim(), propertyOwner: a.ownership === 'Owner' ? a.propertyOwner : (e.propertyOwner ?? a.propertyOwner).trim(),
+          plateNumber: ('plateNumber' in e ? e.plateNumber : a.plateNumber)?.trim() || undefined };
+        requireThat(!fixed.plateNumber || (PLATE_TYPES.includes(a.clearanceType) && validPlateNumber(fixed.plateNumber)), 'Enter the plate number with letters, numbers, spaces or dashes (up to 30), for Business and TODA clearances only.');
         requireThat(fixed.address && fixed.purpose && /^(09\d{9}|\+639\d{9})$/.test(fixed.contact), 'Complete the address and purpose, and enter a valid Philippine mobile number.');
-        requireThat(fixed.businessLocation, 'Business / property location is required.');
+        requireThat(fixed.businessLocation, 'Location is required.');
         if (a.clearanceType === 'Business Clearance') requireThat(fixed.businessContact && fixed.initialOperation && !isNaN(Date.parse(fixed.initialOperation)) && fixed.initialOperation <= today(), 'Complete the business contact and use a valid operation date.');
         requireThat(a.ownership === 'Owner' || fixed.propertyOwner, 'Property owner name is required for renters and occupants.');
         Object.assign(a, fixed);
