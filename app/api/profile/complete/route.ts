@@ -10,8 +10,10 @@ export const dynamic = 'force-dynamic';
 // Register page asks for): name, address, an optional email, a valid ID and privacy consent. The ID was uploaded by the
 // browser into the person's own folder of the private valid-ids bucket; it is checked here. The mobile number is taken
 // from the sign-in itself and saved in the 09XXXXXXXXX form the rest of the app uses.
-// An email comes with a password (UAT notes 2026-11-24): both are set on the person's Supabase sign-in, so they can
-// also log in with email; before, the email went to the profile only and email login could never work.
+// An email comes with a password (UAT notes 2026-11-24): both are set here on the person's Supabase sign-in, so they can
+// also log in with email (before, the email went to the profile only and email login could never work). Setting a
+// password signs every session out, so the page signs the browser in again with the new email right after. (The
+// browser cannot add an email itself: Supabase refuses an email change on an account that has no email yet.)
 export async function POST(request: Request) {
   const me = await currentUser(); if ('error' in me) return me.error;
   if (me.user.role !== 'resident') return NextResponse.json({ error: 'Only residents complete their registration here.' }, { status: 403 });

@@ -6,6 +6,7 @@ import { usePortal } from '@/components/PortalProvider';
 import { Field, ErrorMessage } from '@/components/Field';
 import { PasswordInput } from '@/components/PasswordInput';
 import { placeholderEmail } from '@/lib/accountEmail';
+import { Captcha, captchaSiteKey } from '@/components/Captcha';
 import { FileUpload } from '@/components/FileUpload';
 import { supabaseBrowser } from '@/lib/supabase/browser';
 import { mobileForms } from '@/lib/phone';
@@ -18,7 +19,7 @@ const safeFileName = (name: string) => name.replace(/[^A-Za-z0-9._-]+/g, '_').sl
 export default function CompleteProfilePage() {
   const { user, act } = usePortal();
   const router = useRouter();
-  const [id, setId] = useState<UploadedDocument>(), [error, setError] = useState(''), [busy, setBusy] = useState(false), [email, setEmail] = useState(() => (user?.email && !placeholderEmail(user.email) ? user.email : ''));
+  const [id, setId] = useState<UploadedDocument>(), [error, setError] = useState(''), [busy, setBusy] = useState(false), [email, setEmail] = useState(() => (user?.email && !placeholderEmail(user.email) ? user.email : '')), [captchaToken, setCaptchaToken] = useState('');
   if (!user) return null;
   const me = user;
   const mobile = mobileForms(me.contact)?.local ?? me.contact;
@@ -43,6 +44,11 @@ export default function CompleteProfilePage() {
       }) });
       const body = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(body.error || 'Your details could not be saved.');
+      // Setting a password signs every session out (Supabase), so sign this browser in again with the new email.
+      if (email) {
+        const { error: signInError } = await supabaseBrowser().auth.signInWithPassword({ email, password: String(f.get('password')), options: { captchaToken: captchaToken || undefined } });
+        if (signInError) { router.push('/login'); throw new Error('Your registration is saved. Please log in with your new email and password.'); }
+      }
       const meResponse = await fetch('/api/me', { cache: 'no-store' });
       const meBody = await meResponse.json().catch(() => ({}));
       if (!meResponse.ok) throw new Error(meBody.error || 'Could not load your account.');
@@ -65,13 +71,14 @@ export default function CompleteProfilePage() {
           <Field label="Password *"><PasswordInput name="password" required minLength={8} className="text-field" autoComplete="new-password" /></Field>
           <Field label="Confirm Password *"><PasswordInput name="confirm" required minLength={8} className="text-field" autoComplete="new-password" /></Field>
           <p className="sm:col-span-2 text-xs text-slate-600">With an email and password you can also log in with your email. Without an email, keep using &quot;Text me a code&quot;.</p>
+          <div className="sm:col-span-2"><Captcha onToken={setCaptchaToken} /></div>
         </>}
         {!me.hasValidId && <div className="sm:col-span-2"><FileUpload label="Upload Valid ID" required idCard value={id} onChange={setId} /></div>}
       </div>
       <label className="flex gap-2 mt-5 text-xs leading-4 text-slate-600"><input name="privacy" type="checkbox" required />I have read and agree to the Privacy Notice regarding the processing of my personal information for barangay clearance services.</label>
       <Link href="/information#privacy" target="_blank" className="text-xs underline mt-2 block w-fit">Read Privacy Notice</Link>
       <ErrorMessage message={error} />
-      <button className="primary-btn mt-6" disabled={busy}>{busy ? 'Saving…' : 'Finish Registration'}</button>
+      <button className="primary-btn mt-6" disabled={busy || (!!email && !!captchaSiteKey && !captchaToken)}>{busy ? 'Saving…' : 'Finish Registration'}</button>
     </form>
   </div>;
 }
